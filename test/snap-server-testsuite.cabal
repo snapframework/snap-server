@@ -1,0 +1,103 @@
+name:           snap-server-testsuite
+version:        0.1.1
+build-type:     Simple
+cabal-version:  >= 1.6
+
+Flag libev
+    Description: Use libev?
+    Default:     False
+
+Executable testsuite
+   hs-source-dirs:  ../src suite
+   main-is:         TestSuite.hs
+
+   c-sources: ../cbits/linger.c
+   include-dirs: ../cbits
+
+   build-depends:
+     QuickCheck >= 2,
+     attoparsec >= 0.8 && < 0.9,
+     attoparsec-iteratee >= 0.1 && <0.2,
+     base >= 4 && < 5,
+     binary >= 0.5 && < 0.6,
+     bytestring,
+     bytestring-nums >= 0.3.1 && < 0.4,
+     bytestring-show >= 0.3.2 && < 0.4,
+     containers,
+     directory-tree,
+     dlist >= 0.5 && < 0.6,
+     filepath,
+     haskell98,
+     hexpat >= 0.11,
+     HUnit >= 1.2 && < 2,
+     monads-fd,
+     network == 2.2.1.*,
+     network-bytestring >= 0.1.2 && < 0.2,
+     old-locale,
+     parallel > 2,
+     iteratee >= 0.3.1 && < 0.4,
+     snap-core == 0.1.1,
+     test-framework < 0.3,
+     test-framework-hunit < 0.3,
+     test-framework-quickcheck2 < 0.3,
+     time,
+     transformers
+     
+   if flag(libev)
+     build-depends: hlibev >= 0.2.1
+     other-modules: Snap.Internal.Http.Server.LibevBackend
+     cpp-options: -DLIBEV
+   else
+     build-depends: network-bytestring >= 0.1.2 && < 0.2
+     other-modules: Snap.Internal.Http.Server.SimpleBackend
+     build-depends: hlibev
+
+   ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
+
+
+Executable pongserver
+   hs-source-dirs:  ../src pongserver
+   main-is:         Main.hs
+
+   c-sources: ../cbits/linger.c
+   include-dirs: ../cbits
+
+   build-depends:
+     QuickCheck >= 2,
+     attoparsec >= 0.8 && < 0.9,
+     attoparsec-iteratee >= 0.1 && <0.2,
+     base >= 4 && < 5,
+     binary >= 0.5 && < 0.6,
+     bytestring,
+     bytestring-nums >= 0.3.1 && < 0.4,
+     bytestring-show >= 0.3.2 && < 0.4,
+     containers,
+     directory-tree,
+     dlist >= 0.5 && < 0.6,
+     filepath,
+     haskell98,
+     hexpat >= 0.11,
+     HUnit >= 1.2 && < 2,
+     monads-fd,
+     old-locale,
+     parallel > 2,
+     iteratee >= 0.3.1 && < 0.4,
+     network == 2.2.1.*,
+     network-bytestring >= 0.1.2 && < 0.2,
+     snap-core == 0.1.1,
+     test-framework < 0.3,
+     test-framework-hunit < 0.3,
+     test-framework-quickcheck2 < 0.3,
+     time,
+     transformers
+
+   if flag(libev)
+     build-depends: hlibev >= 0.2.1
+     other-modules: Snap.Internal.Http.Server.LibevBackend
+     cpp-options: -DLIBEV
+   else
+     build-depends: network-bytestring >= 0.1.2 && < 0.2
+     other-modules: Snap.Internal.Http.Server.SimpleBackend
+
+   ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
+   ghc-prof-options: -prof -auto-all

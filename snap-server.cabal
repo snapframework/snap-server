@@ -1,0 +1,72 @@
+name:           snap-server
+version:        0.1.1
+synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
+description:
+  FIXME: Snap is a simple web development framework
+license:        BSD3
+license-file:   LICENSE
+author:         James Sanders, Gregory Collins, Doug Beardsley
+maintainer:     snap@snapframework.com
+build-type:     Simple
+cabal-version:  >= 1.6
+homepage:       http://snapframework.com/
+category:       Web
+
+
+Flag libev
+    Description: Use libev?
+    Default:     False
+
+
+Library
+  hs-source-dirs: src
+
+  c-sources: cbits/linger.c
+  include-dirs: cbits
+
+  exposed-modules:
+    Snap.Http.Server,
+    Snap.Http.Server.Config,
+    System.FastLogger
+
+  other-modules:
+    Snap.Internal.Http.Parser,
+    Snap.Internal.Http.Server,
+    Snap.Internal.Http.Server.Date
+
+
+  build-depends:
+    array >= 0.2 && <0.3,
+    attoparsec >= 0.8 && < 0.9,
+    attoparsec-iteratee >= 0.1 && <0.2,
+    base >= 4 && < 5,
+    binary >= 0.5 && < 0.6,
+    bytestring,
+    bytestring-nums,
+    bytestring-show >= 0.3.2 && < 0.4,
+    containers,
+    directory-tree,
+    dlist >= 0.5 && < 0.6,
+    filepath,
+    iteratee >= 0.3.1 && <0.4,
+    monads-fd,
+    network == 2.2.1.*,
+    old-locale,
+    snap-core == 0.1.1,
+    time,
+    transformers
+
+  if flag(libev)
+    build-depends: hlibev >= 0.2.1
+    other-modules: Snap.Internal.Http.Server.LibevBackend
+    cpp-options: -DLIBEV
+  else
+    build-depends: network-bytestring >= 0.1.2 && < 0.2
+    other-modules: Snap.Internal.Http.Server.SimpleBackend
+
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+
+
+source-repository head
+  type:     git
+  location: http://git.snapframework.com/snap-server
