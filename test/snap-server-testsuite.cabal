@@ -50,7 +50,6 @@ Executable testsuite
    else
      build-depends: network-bytestring >= 0.1.2 && < 0.2
      other-modules: Snap.Internal.Http.Server.SimpleBackend
-     build-depends: hlibev
 
    ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
 
