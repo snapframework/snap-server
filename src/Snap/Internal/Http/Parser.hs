@@ -66,7 +66,7 @@ instance Show IRequest where
                , show r ]
 
 ------------------------------------------------------------------------------
-parseRequest :: (Monad m) => Iteratee m IRequest
+parseRequest :: (Monad m) => Iteratee m (Maybe IRequest)
 parseRequest = parserToIteratee pRequest
 
 
@@ -184,8 +184,11 @@ pSpaces :: Parser ByteString
 pSpaces = option "" $ takeWhile1 (isSpace . w2c)
 
 -- | Parser for the internal request data type.
-pRequest :: Parser IRequest
-pRequest = IRequest
+pRequest :: Parser (Maybe IRequest)
+pRequest = (Just <$> pRequest') <|> (endOfInput *> pure Nothing)
+
+pRequest' :: Parser IRequest
+pRequest' = IRequest
                <$> (option "" crlf *> pMethod)  <* sp
                <*> pUri                         <* sp
                <*> pVersion                     <* crlf

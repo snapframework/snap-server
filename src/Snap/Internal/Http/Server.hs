@@ -6,6 +6,7 @@ module Snap.Internal.Http.Server where
 
 ------------------------------------------------------------------------------
 import           Control.Arrow (first, second)
+import           Control.Concurrent.MVar
 import           Control.Monad.State.Strict
 import           Control.Exception
 import           Data.Char
@@ -195,35 +196,44 @@ httpSession :: Iteratee IO ()      -- ^ write end of socket
             -> ServerMonad ()
 httpSession writeEnd handler = do
     liftIO $ debug "Server.httpSession: entered"
-    req        <- receiveRequest
-    (req',rsp) <- lift $ handler req
+    mreq       <- receiveRequest
 
-    liftIO $ debug "Server.httpSession: handled, skipping request body"
-    lift $ joinIM $ rqBody req' skipToEof
+    case mreq of
+      (Just req) -> do
+          (req',rsp) <- lift $ handler req
 
-    date <- liftIO getDateString
+          liftIO $ debug "Server.httpSession: handled, skipping request body"
+          lift $ joinIM $ rqBody req' skipToEof
 
-    let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
-    let rsp' = updateHeaders ins rsp
-    liftIO $ debug "Server.httpSession: request body skipped, sending response"
-    sendResponse rsp' writeEnd
+          date <- liftIO getDateString
 
-    checkConnectionClose (rspHeaders rsp)
+          let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
+          let rsp' = updateHeaders ins rsp
+          liftIO $ debug "Server.httpSession: request body skipped, sending response"
+          sendResponse rsp' writeEnd
 
-    cc <- gets _forceConnectionClose
+          checkConnectionClose (rspHeaders rsp)
 
-    if cc
-       then return ()
-       else httpSession writeEnd handler
+          cc <- gets _forceConnectionClose
+
+          if cc
+             then return ()
+             else httpSession writeEnd handler
+
+      Nothing -> return ()
 
 
-receiveRequest :: ServerMonad Request
+receiveRequest :: ServerMonad (Maybe Request)
 receiveRequest = do
-    ireq <- lift parseRequest
-    req  <- toRequest ireq >>= setEnumerator >>= parseForm
+    mreq <- lift parseRequest
 
-    checkConnectionClose $ rqHeaders req
-    return req
+    case mreq of
+      (Just ireq) -> do
+          req  <- toRequest ireq >>= setEnumerator >>= parseForm
+          checkConnectionClose $ rqHeaders req
+          return $ Just req
+
+      Nothing     -> return Nothing
 
 
   where
