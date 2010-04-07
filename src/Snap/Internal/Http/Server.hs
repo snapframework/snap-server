@@ -22,12 +22,13 @@ import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Monoid
 import           Prelude hiding (catch)
 
--- FIXME: indentation
-import GHC.Conc
-import System.Exit
-import System.IO
-import System.IO.Error hiding (catch)
-import GHC.IOBase (IOErrorType(..))
+import           GHC.Conc
+import           Control.Concurrent.MVar
+import           System.Exit
+import           System.IO
+import           System.IO.Error hiding (catch)
+import           System.FastLogger
+import           GHC.IOBase (IOErrorType(..))
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
@@ -63,19 +64,23 @@ data ServerState = ServerState
     , _localPort             :: Int
     , _remoteAddr            :: ByteString
     , _remotePort            :: Int
+    , _logAccess             :: Request -> Response -> IO ()
+    , _logError              :: ByteString -> IO ()
     }
 
 
-runServerMonad :: ByteString      -- ^ local host name
-               -> ByteString      -- ^ local ip address
-               -> Int             -- ^ local port
-               -> ByteString      -- ^ remote ip address
-               -> Int             -- ^ remote port
-               -> ServerMonad a   -- ^ monadic action to run
+runServerMonad :: ByteString                     -- ^ local host name
+               -> ByteString                     -- ^ local ip address
+               -> Int                            -- ^ local port
+               -> ByteString                     -- ^ remote ip address
+               -> Int                            -- ^ remote port
+               -> (Request -> Response -> IO ()) -- ^ access log function
+               -> (ByteString -> IO ())          -- ^ error log function
+               -> ServerMonad a                  -- ^ monadic action to run
                -> Iteratee IO a
-runServerMonad lh lip lp rip rp m = evalStateT m st
+runServerMonad lh lip lp rip rp logA logE m = evalStateT m st
   where
-    st = ServerState False lh lip lp rip rp
+    st = ServerState False lh lip lp rip rp logA logE
 
 
 
@@ -88,26 +93,42 @@ runServerMonad lh lip lp rip rp m = evalStateT m st
 httpServe :: ByteString         -- ^ bind address, or \"*\" for all
           -> Int                -- ^ port to bind to
           -> ByteString         -- ^ local hostname (server name)
+          -> Maybe FilePath     -- ^ path to the access log
+          -> Maybe FilePath     -- ^ path to the error log
           -> ServerHandler      -- ^ handler procedure
           -> IO ()
-httpServe bindAddress bindPort localHostname handler = do
-    bracket (spawn numCapabilities)
-            (\xs -> do
-                 debug "Server.httpServe: SHUTDOWN"
-                 mapM_ (Backend.stop . fst) xs)
-            (runAll)
+httpServe bindAddress bindPort localHostname alogPath elogPath handler =
+    withLoggers alogPath elogPath
+                (\(alog, elog) -> spawnAll alog elog)
 
   where
-    runAll xs = do
+    spawnAll alog elog =
+        bracket (spawn numCapabilities)
+                (\xs -> do
+                     debug "Server.httpServe: SHUTDOWN"
+                     mapM_ (Backend.stop . fst) xs)
+                (runAll alog elog)
+
+
+    runAll alog elog xs = do
         mapM_ f $ xs `zip` [0..]
         mapM_ (takeMVar . snd) xs
       where
         f ((backend,mvar),cpu) =
             forkOnIO cpu $ do
                 labelMe $ "accThread " ++ show cpu
-                forever $ go backend cpu
+                forever $ go alog elog backend cpu
                 putMVar mvar ()
 
+    maybeSpawnLogger = maybe (return Nothing) $ (liftM Just) . newLogger
+
+    withLoggers afp efp =
+        bracket (do alog <- maybeSpawnLogger afp
+                    elog <- maybeSpawnLogger efp
+                    return (alog, elog))
+                (\(alog, elog) -> do
+                    maybe (return ()) stopLogger alog
+                    maybe (return ()) stopLogger elog)
 
     labelMe :: String -> IO ()
     labelMe s = do
@@ -122,7 +143,7 @@ httpServe bindAddress bindPort localHostname handler = do
         return (backends `zip` mvars)
 
 
-    runOne backend cpu = Backend.withConnection backend cpu $ \conn -> do
+    runOne alog elog backend cpu = Backend.withConnection backend cpu $ \conn -> do
         debug "Server.httpServe.runOne: entered"
         let readEnd = Backend.getReadEnd conn
         let writeEnd = I.bufferIteratee $ Backend.getWriteEnd conn
@@ -132,36 +153,37 @@ httpServe bindAddress bindPort localHostname handler = do
         let laddr = Backend.getLocalAddr conn
         let lport = Backend.getLocalPort conn
 
-        runHTTP localHostname laddr lport raddr rport readEnd writeEnd handler
+        runHTTP localHostname laddr lport raddr rport
+                alog elog readEnd writeEnd handler
         debug "Server.httpServe.runHTTP: finished"
 
 
-    go backend cpu = runOne backend cpu
-                   `catches`
-                   [ Handler $ \(e :: AsyncException) -> do
-                         debug $
-                           "Server.httpServe.go: got async exception, " ++
-                             "terminating:\n" ++ show e
-                         exitFailure
+    go alog elog backend cpu = runOne alog elog backend cpu
+        `catches`
+        [ Handler $ \(e :: AsyncException) -> do
+              debug $
+                "Server.httpServe.go: got async exception, " ++
+                  "terminating:\n" ++ show e
+              exitFailure
 
-                   , Handler $ \(_ :: Backend.BackendTerminatedException) -> do
-                         debug $ "Server.httpServe.go: got backend terminated, waiting for cleanup"
-                         let delay = 10 * ((10::Int)^(6::Int))
-                         threadDelay delay
-                         exitSuccess
+        , Handler $ \(_ :: Backend.BackendTerminatedException) -> do
+              debug $ "Server.httpServe.go: got backend terminated, waiting for cleanup"
+              let delay = 10 * ((10::Int)^(6::Int))
+              threadDelay delay
+              exitSuccess
 
-                   , Handler $ \(e :: IOException) -> do
-                         debug $
-                           "Server.httpServe.go: got io exception: " ++ show e
+        , Handler $ \(e :: IOException) -> do
+              debug $
+                "Server.httpServe.go: got io exception: " ++ show e
 
-                         let et = ioeGetErrorType e
+              let et = ioeGetErrorType e
 
-                         when (et == Interrupted) exitFailure
+              when (et == Interrupted) exitFailure
 
-                   , Handler $ \(e :: SomeException) -> do
-                         debug $
-                           "Server.httpServe.go: got exception: " ++ show e
-                         return () ]
+        , Handler $ \(e :: SomeException) -> do
+              debug $
+                "Server.httpServe.go: got exception: " ++ show e
+              return () ]
 
 
 runHTTP :: ByteString         -- ^ local host name
@@ -169,18 +191,39 @@ runHTTP :: ByteString         -- ^ local host name
         -> Int                -- ^ local port
         -> ByteString         -- ^ remote ip address
         -> Int                -- ^ remote port
+        -> Maybe Logger       -- ^ access logger
+        -> Maybe Logger       -- ^ error logger
         -> Enumerator IO ()   -- ^ read end of socket
         -> Iteratee IO ()     -- ^ write end of socket
         -> ServerHandler      -- ^ handler procedure
         -> IO ()
-runHTTP lh lip lp rip rp readEnd writeEnd handler =
-    go `catch` (\(e::SomeException) -> logError $ show e)
+runHTTP lh lip lp rip rp alog elog readEnd writeEnd handler =
+    go `catch` (\(e::SomeException) -> logE $ bshow e)
   where
-    -- FIXME: log error here
-    logError s = debug $ "Server.runHTTP: " ++ s
+    debugE s = debug $ "Server.runHTTP: " ++ (map w2c $ S.unpack s)
+
+    logE = maybe debugE (\l s -> debugE s >> logE' l s) elog
+    logE' logger s = (timestampedLogEntry s) >>= logMsg logger
+
+    logA = maybe (\_ _ -> return ()) logA' alog
+    logA' logger req rsp = do
+        let hdrs      = rqHeaders req
+        let host      = rqRemoteAddr req
+        let user      = Nothing -- FIXME we don't do authentication yet
+        let (v, v')   = rqVersion req
+        let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
+        let method    = bshow (rqMethod req)
+        let reql      = S.intercalate " " [ method, rqURI req, ver ]
+        let status    = rspStatus rsp
+        let cl        = rspContentLength rsp
+        let referer   = maybe Nothing (Just . head) $ Map.lookup "referer" hdrs
+        let userAgent = maybe "-" head $ Map.lookup "user-agent" hdrs
+
+        msg <- combinedLogEntry host user reql status cl referer userAgent
+        logMsg logger (S.concat $ L.toChunks msg)
 
     go = do
-        let iter = runServerMonad lh lip lp rip rp $
+        let iter = runServerMonad lh lip lp rip rp logA logE $
                                   httpSession writeEnd handler
         readEnd iter >>= run
 
@@ -189,6 +232,11 @@ sERVER_HEADER :: [ByteString]
 sERVER_HEADER = ["Snap/0.pre-1"]
 
 
+logAccess :: Request -> Response -> ServerMonad ()
+logAccess req rsp = gets _logAccess >>= (\l -> liftIO $ l req rsp)
+
+logError :: ByteString -> ServerMonad ()
+logError s = gets _logError >>= (\l -> liftIO $ l s)
 
 -- | Run an HTTP session.
 httpSession :: Iteratee IO ()      -- ^ write end of socket
@@ -206,11 +254,14 @@ httpSession writeEnd handler = do
           lift $ joinIM $ rqBody req' skipToEof
 
           date <- liftIO getDateString
-
           let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
           let rsp' = updateHeaders ins rsp
           liftIO $ debug "Server.httpSession: request body skipped, sending response"
-          sendResponse rsp' writeEnd
+          bytesSent <- sendResponse rsp' writeEnd
+
+          maybe (logAccess req rsp')
+                (\_ -> logAccess req $ setContentLength bytesSent rsp')
+                (rspContentLength rsp')
 
           checkConnectionClose (rspHttpVersion rsp) (rspHeaders rsp)
 
@@ -351,8 +402,8 @@ receiveRequest = do
 
 
 sendResponse :: Response
-             -> Iteratee IO a
-             -> ServerMonad a
+             -> Iteratee IO ()
+             -> ServerMonad Int
 sendResponse rsp writeEnd = do
     (hdrs, bodyEnum) <- maybe noCL hasCL (rspContentLength rsp)
 
@@ -367,17 +418,21 @@ sendResponse rsp writeEnd = do
                               , "\r\n" ]
 
     let enum = enumBS headerline >.
-               enumLBS (fmtHdrs hdrs) >.
+               enumLBS (L.fromChunks $ fmtHdrs hdrs) >.
                enumBS "\r\n" >.
                bodyEnum (rspBody rsp)
 
     -- send the data out. run throws an exception on error that we will catch
     -- in the toplevel handler.
-    liftIO $ enum writeEnd >>= run
+    (_, bs) <- liftIO $ enum (countBytes writeEnd) >>= run
+    let hdrsLength = S.length $ S.concat [ headerline
+                                         , S.concat $ fmtHdrs hdrs
+                                         , "\r\n" ]
+    return $! bs - hdrsLength
 
   where
     (major,minor) = rspHttpVersion rsp
-    fmtHdrs hdrs = L.fromChunks $ concat xs
+    fmtHdrs hdrs = concat xs
       where
         xs = map f $ Map.toList hdrs
 
@@ -414,9 +469,9 @@ sendResponse rsp writeEnd = do
 checkConnectionClose :: (Int, Int) -> Headers -> ServerMonad ()
 checkConnectionClose ver hdrs =
     -- For HTTP/1.1:
-    --   if there is an explicit Connection: close, close the socket
+    --   if there is an explicit Connection: close, close the socket.
     -- For HTTP/1.0:
-    --   if there is no explicit Connection: Keep-Alive, close the socket
+    --   if there is no explicit Connection: Keep-Alive, close the socket.
     if (ver == (1,1) && l == Just ["close"]) ||
        (ver == (1,0) && l /= Just ["Keep-Alive"])
        then modify $ \s -> s { _forceConnectionClose = True }

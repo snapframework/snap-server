@@ -4,6 +4,7 @@
 
 module System.FastLogger 
 ( Logger
+, timestampedLogEntry
 , combinedLogEntry
 , newLogger
 , logMsg
@@ -55,6 +56,46 @@ newLogger fp = do
 
     return lg
 
+-- | Prepare a log message with the time prepended.
+timestampedLogEntry :: ByteString -> IO ByteString
+timestampedLogEntry msg = do
+    -- FIXME: replace haskell time functions with something quicker if
+    -- available (e.g. @ev\_now()@ from libev which doesn't involve a context
+    -- switch)
+    zt <- getZonedTime
+
+    let t = zonedTimeToLocalTime zt
+    let (yr,mon,day) = toGregorian $ localDay t
+    let tod = localTimeOfDay t
+
+    let h = todHour tod
+    let m = todMin  tod
+    let s = (round $ todSec tod) :: Int
+
+    let p = do
+        showp yr
+        putCh '-'
+        when (mon < 10) $ putCh '0'
+        showp mon
+        putCh '-'
+        when (day < 10) $ putCh '0'
+        showp day
+        putCh ' '
+        when (h < 10) $ putCh '0'
+        showp h
+        putCh ':'
+        when (m < 10) $ putCh '0'
+        showp m
+        putCh ':'
+        when (s < 10) $ putCh '0'
+        showp s
+        putByteString ": "
+        putByteString msg
+
+    return $ B.concat $ L.toChunks (runPut p)
+
+  where
+    putCh = putWord8 . c2w
 
 -- | Prepare a log message in \"combined\" format.
 combinedLogEntry :: ByteString        -- ^ remote host
@@ -62,14 +103,15 @@ combinedLogEntry :: ByteString        -- ^ remote host
                  -> ByteString        -- ^ request line (up to you to ensure
                                       --   there are no quotes in here)
                  -> Int               -- ^ status code
-                 -> Int               -- ^ num bytes sent
+                 -> Maybe Int         -- ^ num bytes sent
                  -> Maybe ByteString  -- ^ referer (up to you to ensure
                                       --   there are no quotes in here)
                  -> ByteString        -- ^ user agent (up to you to ensure
                                       --   there are no quotes in here)
                  -> IO L.ByteString
-combinedLogEntry host mbUser req status numBytes mbReferer userAgent = do
+combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
     let user = fromMaybe "-" mbUser
+    let numBytes = maybe "-" (\s -> B.pack $ show s) mbNumBytes
     let referer = maybe "-" (\s -> B.concat ["\"", s, "\""]) mbReferer
 
     -- FIXME: replace haskell time functions with something quicker if
@@ -114,7 +156,7 @@ combinedLogEntry host mbUser req status numBytes mbReferer userAgent = do
         putByteString "\" "
         showp status
         putCh ' '
-        showp numBytes
+        putByteString numBytes
         putCh ' '
         putByteString referer
         putByteString " \""
