@@ -212,7 +212,7 @@ httpSession writeEnd handler = do
           liftIO $ debug "Server.httpSession: request body skipped, sending response"
           sendResponse rsp' writeEnd
 
-          checkConnectionClose (rspHeaders rsp)
+          checkConnectionClose (rspHttpVersion rsp) (rspHeaders rsp)
 
           cc <- gets _forceConnectionClose
 
@@ -230,7 +230,7 @@ receiveRequest = do
     case mreq of
       (Just ireq) -> do
           req  <- toRequest ireq >>= setEnumerator >>= parseForm
-          checkConnectionClose $ rqHeaders req
+          checkConnectionClose (rqVersion req) (rqHeaders req)
           return $ Just req
 
       Nothing     -> return Nothing
@@ -411,9 +411,14 @@ sendResponse rsp writeEnd = do
 
 
 ------------------------------------------------------------------------------
-checkConnectionClose :: Headers -> ServerMonad ()
-checkConnectionClose hdrs =
-    if l == Just ["close"]
+checkConnectionClose :: (Int, Int) -> Headers -> ServerMonad ()
+checkConnectionClose ver hdrs =
+    -- For HTTP/1.1:
+    --   if there is an explicit Connection: close, close the socket
+    -- For HTTP/1.0:
+    --   if there is no explicit Connection: Keep-Alive, close the socket
+    if (ver == (1,1) && l == Just ["close"]) ||
+       (ver == (1,0) && l /= Just ["Keep-Alive"])
        then modify $ \s -> s { _forceConnectionClose = True }
        else return ()
   where
