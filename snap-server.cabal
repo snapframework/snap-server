@@ -64,7 +64,7 @@ Library
     build-depends: network-bytestring >= 0.1.2 && < 0.2
     other-modules: Snap.Internal.Http.Server.SimpleBackend
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fno-warn-unused-do-bind
 
 
 source-repository head

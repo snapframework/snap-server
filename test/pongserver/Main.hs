@@ -25,5 +25,5 @@ main = do
 
   where
     go m = do
-        httpServe "*" 8000 "localhost" pongServer 
+        httpServe "*" 8000 "localhost" Nothing Nothing pongServer 
         putMVar m ()

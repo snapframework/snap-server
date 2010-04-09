@@ -16,6 +16,7 @@ Executable testsuite
 
    build-depends:
      QuickCheck >= 2,
+     array >= 0.3 && <0.4,
      attoparsec >= 0.8 && < 0.9,
      attoparsec-iteratee >= 0.1 && <0.2,
      base >= 4 && < 5,
@@ -28,7 +29,6 @@ Executable testsuite
      dlist >= 0.5 && < 0.6,
      filepath,
      haskell98,
-     hexpat >= 0.11,
      HUnit >= 1.2 && < 2,
      monads-fd,
      network == 2.2.1.*,
@@ -52,6 +52,7 @@ Executable testsuite
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
    ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
+                -fno-warn-unused-do-bind
 
 
 Executable pongserver
@@ -63,6 +64,7 @@ Executable pongserver
 
    build-depends:
      QuickCheck >= 2,
+     array >= 0.3 && <0.4,
      attoparsec >= 0.8 && < 0.9,
      attoparsec-iteratee >= 0.1 && <0.2,
      base >= 4 && < 5,
@@ -75,7 +77,6 @@ Executable pongserver
      dlist >= 0.5 && < 0.6,
      filepath,
      haskell98,
-     hexpat >= 0.11,
      HUnit >= 1.2 && < 2,
      monads-fd,
      old-locale,
@@ -99,4 +100,5 @@ Executable pongserver
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
+                -fno-warn-unused-do-bind
    ghc-prof-options: -prof -auto-all

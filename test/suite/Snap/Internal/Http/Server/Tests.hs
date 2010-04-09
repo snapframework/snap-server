@@ -12,6 +12,7 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w)
 import           Data.IORef
 import qualified Data.Map as Map
+import           Data.Maybe (fromJust)
 import           Data.Time.Calendar
 import           Data.Time.Clock
 import           Prelude hiding (take)
@@ -63,7 +64,7 @@ testHttpRequest1 =
     testCase "HttpRequest1" $ do
         iter <- enumBS sampleRequest $
                 do
-                    r <- rsm receiveRequest
+                    r <- liftM fromJust $ rsm receiveRequest
                     b <- liftM fromWrap $ joinIM $ rqBody r stream2stream
                     return (r,b)
 
@@ -104,9 +105,9 @@ testMultiRequest =
     testCase "MultiRequest" $ do
         iter <- (enumBS sampleRequest >. enumBS sampleRequest) $
                 do
-                    r1 <- rsm receiveRequest
+                    r1 <- liftM fromJust $ rsm receiveRequest
                     b1 <- liftM fromWrap $ joinIM $ rqBody r1 stream2stream
-                    r2 <- rsm receiveRequest
+                    r2 <- liftM fromJust $ rsm receiveRequest
                     b2 <- liftM fromWrap $ joinIM $ rqBody r2 stream2stream
                     return (r1,b1,r2,b2)
 
@@ -127,7 +128,7 @@ testMultiRequest =
 
 testOneMethod :: Method -> IO ()
 testOneMethod m = do
-    iter <- enumLBS txt $ rsm receiveRequest
+    iter <- enumLBS txt $ liftM fromJust $ rsm receiveRequest
     req <- run iter
 
     assertEqual "method" m $ rqMethod req
@@ -141,7 +142,7 @@ sampleShortRequest = "GET /fo"
 
 testPartialParse :: Test
 testPartialParse = testCase "Short" $ do
-    iter <- enumBS sampleShortRequest $ rsm receiveRequest
+    iter <- enumBS sampleShortRequest $ liftM fromJust $ rsm receiveRequest
 
     e <- (try $ run iter) :: IO (Either SomeException Request)
 
@@ -172,7 +173,7 @@ testHttpRequest2 =
     testCase "HttpRequest2" $ do
         iter <- enumBS sampleRequest2 $
                 do
-                    r <- rsm receiveRequest
+                    r <- liftM fromJust $ rsm receiveRequest
                     b <- liftM fromWrap $ joinIM $ rqBody r stream2stream
                     return (r,b)
 
@@ -186,7 +187,7 @@ testHttpRequest3 =
     testCase "HttpRequest3" $ do
         iter <- enumBS sampleRequest3 $
                 do
-                    r <- rsm receiveRequest
+                    r <- liftM fromJust $ rsm receiveRequest
                     b <- liftM fromWrap $ joinIM $ rqBody r stream2stream
                     return (r,b)
 
@@ -225,13 +226,15 @@ sampleRequest3 =
 
 
 rsm :: ServerMonad a -> Iteratee IO a
-rsm = runServerMonad "localhost" "127.0.0.1" 80 "127.0.0.1" 58382
-
+rsm = runServerMonad "localhost" "127.0.0.1" 80 "127.0.0.1" 58382 alog elog
+  where
+    alog = const . const . return $ ()
+    elog = const $ return ()
 
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "HttpResponse1" $ do
     b <- run $ rsm $
-         sendResponse rsp1 stream2stream >>= return . fromWrap
+         sendResponse rsp1 stream2stream >>= return . fromWrap . snd
 
     assertEqual "http response" b $ L.concat [
                       "HTTP/1.0 600 Test\r\n"
@@ -241,7 +244,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     ]
 
     b2 <- run $ rsm $
-          sendResponse rsp2 stream2stream >>= return . fromWrap
+          sendResponse rsp2 stream2stream >>= return . fromWrap . snd
 
     assertEqual "http response" b2 $ L.concat [
                       "HTTP/1.0 600 Test\r\n"
@@ -250,7 +253,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     ]
 
     b3 <- run $ rsm $
-          sendResponse rsp3 stream2stream >>= return . fromWrap
+          sendResponse rsp3 stream2stream >>= return . fromWrap . snd
 
     assertEqual "http response" b3 $ L.concat [
                       "HTTP/1.1 600 Test\r\n"
@@ -308,7 +311,7 @@ testHttp1 = testCase "http session" $ do
     let iter = mkIter ref
 
     runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            enumBody iter echoServer
+            Nothing Nothing enumBody iter echoServer
 
     s <- readIORef ref
 
@@ -362,7 +365,7 @@ testHttp2 = testCase "connection: close" $ do
     let iter = mkIter ref
 
     runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            enumBody iter echoServer2
+            Nothing Nothing enumBody iter echoServer2
 
     s <- readIORef ref
 

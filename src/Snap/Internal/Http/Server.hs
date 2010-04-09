@@ -257,7 +257,7 @@ httpSession writeEnd handler = do
           let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
           let rsp' = updateHeaders ins rsp
           liftIO $ debug "Server.httpSession: request body skipped, sending response"
-          bytesSent <- sendResponse rsp' writeEnd
+          (bytesSent,_) <- sendResponse rsp' writeEnd
 
           maybe (logAccess req rsp')
                 (\_ -> logAccess req $ setContentLength bytesSent rsp')
@@ -402,8 +402,8 @@ receiveRequest = do
 
 
 sendResponse :: Response
-             -> Iteratee IO ()
-             -> ServerMonad Int
+             -> Iteratee IO a
+             -> ServerMonad (Int,a)
 sendResponse rsp writeEnd = do
     (hdrs, bodyEnum) <- maybe noCL hasCL (rspContentLength rsp)
 
@@ -417,18 +417,18 @@ sendResponse rsp writeEnd = do
                               , rspStatusReason rsp
                               , "\r\n" ]
 
-    let enum = enumBS headerline >.
-               enumLBS (L.fromChunks $ fmtHdrs hdrs) >.
-               enumBS "\r\n" >.
+    let headerString = L.fromChunks $ concat [ [headerline]
+                                             , fmtHdrs hdrs
+                                             , ["\r\n"] ]
+
+    let enum = enumLBS headerString >.
                bodyEnum (rspBody rsp)
 
     -- send the data out. run throws an exception on error that we will catch
     -- in the toplevel handler.
-    (_, bs) <- liftIO $ enum (countBytes writeEnd) >>= run
-    let hdrsLength = S.length $ S.concat [ headerline
-                                         , S.concat $ fmtHdrs hdrs
-                                         , "\r\n" ]
-    return $! bs - hdrsLength
+    (x, bs) <- liftIO $ enum (countBytes writeEnd) >>= run
+    let hdrsLength = fromEnum $ L.length headerString
+    return $! (bs - hdrsLength, x)
 
   where
     (major,minor) = rspHttpVersion rsp
