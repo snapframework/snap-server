@@ -40,9 +40,6 @@ import           Prelude hiding (catch)
 import           Snap.Iteratee
 
 
-import System.IO
-
-
 data BackendTerminatedException = BackendTerminatedException
    deriving (Typeable)
 

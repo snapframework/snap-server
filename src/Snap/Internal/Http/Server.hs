@@ -6,7 +6,6 @@ module Snap.Internal.Http.Server where
 
 ------------------------------------------------------------------------------
 import           Control.Arrow (first, second)
-import           Control.Concurrent.MVar
 import           Control.Monad.State.Strict
 import           Control.Exception
 import           Data.Char
@@ -25,7 +24,6 @@ import           Prelude hiding (catch)
 import           GHC.Conc
 import           Control.Concurrent.MVar
 import           System.Exit
-import           System.IO
 import           System.IO.Error hiding (catch)
 import           System.FastLogger
 import           GHC.IOBase (IOErrorType(..))
@@ -146,7 +144,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
     runOne alog elog backend cpu = Backend.withConnection backend cpu $ \conn -> do
         debug "Server.httpServe.runOne: entered"
         let readEnd = Backend.getReadEnd conn
-        let writeEnd = I.bufferIteratee $ Backend.getWriteEnd conn
+        writeEnd <- I.bufferIteratee $ Backend.getWriteEnd conn
 
         let raddr = Backend.getRemoteAddr conn
         let rport = Backend.getRemotePort conn
