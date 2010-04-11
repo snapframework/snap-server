@@ -1,7 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Snap.Internal.Http.Server.Tests
   ( tests ) where
 
+import           Control.Concurrent
 import           Control.Exception (try, SomeException)
 import           Control.Monad
 import           Control.Monad.Trans
@@ -15,8 +18,9 @@ import qualified Data.Map as Map
 import           Data.Maybe (fromJust)
 import           Data.Time.Calendar
 import           Data.Time.Clock
+import qualified Network.HTTP as HTTP
 import           Prelude hiding (take)
-import           Test.Framework 
+import           Test.Framework
 import           Test.Framework.Providers.HUnit
 import           Test.HUnit hiding (Test, path)
 
@@ -24,7 +28,7 @@ import           Test.HUnit hiding (Test, path)
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Http.Server
 import           Snap.Iteratee
-
+import           Snap.Types
 
 tests :: [Test]
 tests = [ testHttpRequest1
@@ -35,7 +39,8 @@ tests = [ testHttpRequest1
         , testHttp1
         , testHttp2
         , testPartialParse
-        , testMethodParsing ]
+        , testMethodParsing
+        , testServerStartupShutdown ]
 
 
 ------------------------------------------------------------------------------
@@ -140,14 +145,19 @@ testOneMethod m = do
 sampleShortRequest :: ByteString
 sampleShortRequest = "GET /fo"
 
+expectException :: IO a -> IO ()
+expectException m = do
+    e <- try m
+    case e of
+      Left (z::SomeException)  -> return ()
+      Right _ -> assertFailure "expected exception, didn't get it"
+
+
 testPartialParse :: Test
 testPartialParse = testCase "Short" $ do
     iter <- enumBS sampleShortRequest $ liftM fromJust $ rsm receiveRequest
 
-    e <- (try $ run iter) :: IO (Either SomeException Request)
-
-    case e of (Left _) -> return ()
-              Right x  -> assertFailure $ "expected exception, got " ++ show x
+    expectException $ run iter
 
 
 methodTestText :: Method -> L.ByteString
@@ -265,7 +275,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     , "0\r\n\r\n"
                     ]
 
-                
+
   where
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
@@ -278,7 +288,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
     rsp3 = setContentType "text/plain" $ (rsp2 { rspHttpVersion = (1,1) })
 
 
--- httpServe "127.0.0.1" 8080 "localhost" pongServer 
+-- httpServe "127.0.0.1" 8080 "localhost" pongServer
 
 
 
@@ -330,7 +340,7 @@ testHttp1 = testCase "http session" $ do
                 , "\r"
                 , "01234567890123" ]) -> (("Date" `L.isPrefixOf` d1) &&
                                           ("Date" `L.isPrefixOf` d2) &&
-                                          ("Server" `L.isPrefixOf` s1) && 
+                                          ("Server" `L.isPrefixOf` s1) &&
                                           ("Server" `L.isPrefixOf` s2))
 
                _ -> False
@@ -391,3 +401,31 @@ testHttp2 = testCase "connection: close" $ do
     mkIter ref = do
         x <- stream2stream
         liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
+
+
+
+pongServer :: Snap ()
+pongServer = modifyResponse $ setResponseBody (enumBS "PONG") .
+                              setContentType "text/plain" .
+                              setContentLength 4
+
+testServerStartupShutdown :: Test
+testServerStartupShutdown = testCase "startup/shutdown" $ do
+    tid <- forkIO $ httpServe "*" port "localhost"
+           (Just "test-access.log") (Just "test-error.log") $
+           runSnap pongServer
+    waitabit
+
+    rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
+    doc <- HTTP.getResponseBody rsp
+    assertEqual "server" "PONG" doc
+
+    killThread tid
+    waitabit
+
+    expectException $ HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
+
+    return ()
+  where
+    waitabit = threadDelay $ ((10::Int)^(6::Int))
+    port = 8123

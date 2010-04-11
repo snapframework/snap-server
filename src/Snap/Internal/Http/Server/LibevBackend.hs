@@ -100,6 +100,8 @@ data Backend = Backend
     , _loopLock          :: MVar ()
     , _asyncCb           :: FunPtr AsyncCallback
     , _asyncObj          :: EvAsyncPtr
+    , _killCb           :: FunPtr AsyncCallback
+    , _killObj          :: EvAsyncPtr
     , _connectionThreads :: MVar (Set ThreadId)
     , _backendCPU        :: Int
     }
@@ -157,9 +159,20 @@ new (sock,sockFd) cpu = do
     -- setup async callbacks -- these allow us to wake up the main loop
     -- (normally blocked in c-land) from other threads
     asyncObj <- mkEvAsync
-    asyncCB  <- mkAsyncCallback $ \_ _ _ -> return ()
+    asyncCB  <- mkAsyncCallback $ \_ _ _ -> do
+                            debug "async wakeup"
+                            return ()
+
+    killObj <- mkEvAsync
+    killCB  <- mkAsyncCallback $ \_ _ _ -> do
+                            debug "async kill wakeup"
+                            evUnloop lp 2
+                            return ()
+
     evAsyncInit asyncObj asyncCB
     evAsyncStart lp asyncObj
+    evAsyncInit killObj killCB
+    evAsyncStart lp killObj
 
     -- setup the accept callback; this watches for read readiness on the listen
     -- port
@@ -184,6 +197,8 @@ new (sock,sockFd) cpu = do
                     looplock
                     asyncCB
                     asyncObj
+                    killCB
+                    killObj
                     threadSetMVar
                     cpu
 
@@ -196,9 +211,14 @@ new (sock,sockFd) cpu = do
 
 -- | Run evLoop in a thread
 loopThread :: Backend -> IO ()
-loopThread backend = go `finally` cleanup
+loopThread backend = do
+    debug $ "starting loop"
+    go `finally` cleanup
+    debug $ "loop finished"
   where
-    cleanup = freeBackend backend
+    cleanup = do
+        debug $ "loopThread: cleaning up"
+        freeBackend backend
     lock    = _loopLock backend
     loop    = _evLoop backend
     go      = takeMVar lock >> block (evLoop loop 0)
@@ -257,17 +277,20 @@ stop b = do
 
     debug $ "Backend.stop: waiting at most 10 seconds for connection threads to die"
     waitForThreads b $ seconds 10
+    debug $ "Backend.stop: all threads dead, unlooping"
 
     withMVar lock $ \_ -> do
         -- FIXME: hlibev should export EVUNLOOP_ALL
-        evAsyncSend loop asyncObj
         evUnloop loop 2
+        evAsyncSend loop killObj
+
+    debug $ "unloop sent"
 
 
   where
     loop           = _evLoop b
     acceptObj      = _acceptIOObj b
-    asyncObj       = _asyncObj b
+    killObj        = _killObj b
     lock           = _loopLock b
     connQ          = _connectionQueue b
 
@@ -352,19 +375,26 @@ freeBackend backend = block $ do
     debug $ "Backend.freeBackend: wait at most 2 seconds for threads to die"
     waitForThreads backend $ seconds 2
 
-    withMVar lock $ \_ -> do
-        freeEvIo acceptObj
-        freeIoCallback acceptCb
-        c_close fd
+    debug $ "Backend.freeBackend: all threads dead"
 
-        evAsyncStop loop asyncObj
-        freeEvAsync asyncObj
-        freeAsyncCallback asyncCb
+    debug $ "Backend.freeBackend: destroying resources"
+    freeEvIo acceptObj
+    freeIoCallback acceptCb
+    c_close fd
 
-        freeMutexCallback mcb1
-        freeMutexCallback mcb2
+    evAsyncStop loop asyncObj
+    freeEvAsync asyncObj
+    freeAsyncCallback asyncCb
 
-        evLoopDestroy loop
+    evAsyncStop loop killObj
+    freeEvAsync killObj
+    freeAsyncCallback killCb
+
+    freeMutexCallback mcb1
+    freeMutexCallback mcb2
+
+    evLoopDestroy loop
+    debug $ "Backend.freeBackend: resources destroyed"
 
   where
     fd          = _acceptFd backend
@@ -373,6 +403,8 @@ freeBackend backend = block $ do
     tsetMVar    = _connectionThreads backend
     asyncObj    = _asyncObj backend
     asyncCb     = _asyncCb backend
+    killObj     = _killObj backend
+    killCb      = _killCb backend
     (mcb1,mcb2) = _mutexCallbacks backend
     loop        = _evLoop backend
     lock        = _loopLock backend

@@ -24,7 +24,7 @@ import           Prelude hiding (catch)
 import           GHC.Conc
 import           Control.Concurrent.MVar
 import           System.Exit
-import           System.IO.Error hiding (catch)
+import           System.IO.Error hiding (try,catch)
 import           System.FastLogger
 import           GHC.IOBase (IOErrorType(..))
 ------------------------------------------------------------------------------
@@ -115,7 +115,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         f ((backend,mvar),cpu) =
             forkOnIO cpu $ do
                 labelMe $ "accThread " ++ show cpu
-                forever $ go alog elog backend cpu
+                (try $ (forever $ go alog elog backend cpu)) :: IO (Either SomeException ())
                 putMVar mvar ()
 
     maybeSpawnLogger = maybe (return Nothing) $ (liftM Just) . newLogger
@@ -162,13 +162,11 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
               debug $
                 "Server.httpServe.go: got async exception, " ++
                   "terminating:\n" ++ show e
-              exitFailure
+              throwIO e
 
-        , Handler $ \(_ :: Backend.BackendTerminatedException) -> do
+        , Handler $ \(e :: Backend.BackendTerminatedException) -> do
               debug $ "Server.httpServe.go: got backend terminated, waiting for cleanup"
-              let delay = 10 * ((10::Int)^(6::Int))
-              threadDelay delay
-              exitSuccess
+              throwIO e
 
         , Handler $ \(e :: IOException) -> do
               debug $
@@ -176,7 +174,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
               let et = ioeGetErrorType e
 
-              when (et == Interrupted) exitFailure
+              when (et == Interrupted) $ throwIO e
 
         , Handler $ \(e :: SomeException) -> do
               debug $

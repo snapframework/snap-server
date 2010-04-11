@@ -29,6 +29,7 @@ Executable testsuite
      dlist >= 0.5 && < 0.6,
      filepath,
      haskell98,
+     HTTP >= 4000.0.9 && < 4001,
      HUnit >= 1.2 && < 2,
      monads-fd,
      network == 2.2.1.*,
