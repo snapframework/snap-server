@@ -53,32 +53,7 @@ import           Prelude hiding (catch)
 import           System.Timeout
 ------------------------------------------------------------------------------
 import           Snap.Iteratee
-
-
-import System.IO
-
-{-
-_debugMVar :: MVar ()
-_debugMVar = unsafePerformIO $ newMVar ()
-
-debug :: String -> IO ()
-debug s = withMVar _debugMVar $ \_ -> hPutStrLn stderr s >> hFlush stderr
-
-debugErrno :: String -> IO ()
-debugErrno loc = do
-    err <- getErrno
-    let ex = errnoToIOError loc err Nothing Nothing
-    debug $ show ex
--}
-
--- {-
-debug :: String -> IO ()
-debug _ = return ()
-
-debugErrno :: String -> IO ()
-debugErrno _ = return ()
--- -}
-{-# INLINE debug #-}
+import           Snap.Internal.Debug
 
 
 

@@ -37,6 +37,7 @@ import           Network.Socket
 import qualified Network.Socket.ByteString as SB
 import           Prelude hiding (catch)
 ------------------------------------------------------------------------------
+import           Snap.Internal.Debug
 import           Snap.Iteratee
 
 
@@ -47,18 +48,6 @@ instance Show BackendTerminatedException where
     show (BackendTerminatedException) = "Backend terminated"
 
 instance Exception BackendTerminatedException
-
-
--- _debugMVar :: MVar ()
--- _debugMVar = unsafePerformIO $ newMVar ()
-
--- debug :: String -> IO ()
--- debug s = withMVar _debugMVar $ \_ -> hPutStrLn stderr s >> hFlush stderr
-
-debug :: String -> IO ()
-debug _ = return ()
-{-# INLINE debug #-}
-
 
 
 -- foreign import ccall unsafe "set_linger"
