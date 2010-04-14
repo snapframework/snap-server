@@ -28,6 +28,7 @@ import           System.IO.Error hiding (try,catch)
 import           System.FastLogger
 import           GHC.IOBase (IOErrorType(..))
 ------------------------------------------------------------------------------
+import           Snap.Types (NoHandlerException(..))
 import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
 import           Snap.Iteratee hiding (foldl', head, take)
@@ -194,7 +195,8 @@ runHTTP :: ByteString         -- ^ local host name
         -> ServerHandler      -- ^ handler procedure
         -> IO ()
 runHTTP lh lip lp rip rp alog elog readEnd writeEnd handler =
-    go `catch` (\(e::SomeException) -> logE $ bshow e)
+    go `catch` (\(e :: SomeException) -> logE $ bshow e)
+
   where
     debugE s = debug $ "Server.runHTTP: " ++ (map w2c $ S.unpack s)
 
@@ -244,15 +246,15 @@ httpSession writeEnd handler = do
 
     case mreq of
       (Just req) -> do
-          (req',rsp) <- lift $ handler req
+          (req',rsp) <- liftIO $ run (handler req) `catch` (noHandlerHandler req)
 
           liftIO $ debug "Server.httpSession: handled, skipping request body"
           lift $ joinIM $ rqBody req' skipToEof
+          liftIO $ debug "Server.httpSession: request body skipped, sending response"
 
           date <- liftIO getDateString
           let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
           let rsp' = updateHeaders ins rsp
-          liftIO $ debug "Server.httpSession: request body skipped, sending response"
           (bytesSent,_) <- sendResponse rsp' writeEnd
 
           maybe (logAccess req rsp')
@@ -268,6 +270,14 @@ httpSession writeEnd handler = do
              else httpSession writeEnd handler
 
       Nothing -> return ()
+  where
+    noHandlerHandler :: Request
+                     -> NoHandlerException
+                     -> IO (Request, Response)
+    noHandlerHandler req _ = return (req, notFound)
+
+    notFound = Response Map.empty (1,1) Nothing body 404 "Not Found"
+    body = I.enumBS "404 - Not Found\n"
 
 
 receiveRequest :: ServerMonad (Maybe Request)
