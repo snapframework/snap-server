@@ -82,7 +82,7 @@ readChunkedTransferEncoding iter = do
 toHex :: Int64 -> ByteString
 toHex = S.pack . map c2w . printf "%x"
 
--- | Given an iteratee, produce a new one that wraps chunks sent to it with a
+-- | Given an iteratee, produces a new one that wraps chunks sent to it with a
 -- chunked transfer-encoding. Example usage:
 --
 -- > > (writeChunkedTransferEncoding

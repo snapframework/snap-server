@@ -34,7 +34,7 @@ import           Snap.Internal.Http.Parser
 import           Snap.Iteratee hiding (foldl', head, take)
 import qualified Snap.Iteratee as I
 
--- guard this by an ifdef later
+-- TODO guard this by an ifdef later
 #ifdef LIBEV
 import qualified Snap.Internal.Http.Server.LibevBackend as Backend
 import           Snap.Internal.Http.Server.LibevBackend (debug)
@@ -236,7 +236,7 @@ logAccess req rsp = gets _logAccess >>= (\l -> liftIO $ l req rsp)
 logError :: ByteString -> ServerMonad ()
 logError s = gets _logError >>= (\l -> liftIO $ l s)
 
--- | Run an HTTP session.
+-- | Runs an HTTP session.
 httpSession :: Iteratee IO ()      -- ^ write end of socket
             -> ServerHandler       -- ^ handler procedure
             -> ServerMonad ()

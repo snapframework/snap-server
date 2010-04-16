@@ -39,7 +39,7 @@ data Logger = Logger
     , _loggingThread  :: !(MVar ThreadId) }
 
 
--- | Create a new logger, logging to the given file. If the file argument is
+-- | Creates a new logger, logging to the given file. If the file argument is
 -- \"-\", then log to stdout; if it's \"stderr\" then we log to stderr,
 -- otherwise we log to a regular file in append mode. The file is closed and
 -- re-opened every 15 minutes to facilitate external log rotation.
@@ -56,7 +56,7 @@ newLogger fp = do
 
     return lg
 
--- | Prepare a log message with the time prepended.
+-- | Prepares a log message with the time prepended.
 timestampedLogEntry :: ByteString -> IO ByteString
 timestampedLogEntry msg = do
     -- FIXME: replace haskell time functions with something quicker if
@@ -97,7 +97,7 @@ timestampedLogEntry msg = do
   where
     putCh = putWord8 . c2w
 
--- | Prepare a log message in \"combined\" format.
+-- | Prepares a log message in \"combined\" format.
 combinedLogEntry :: ByteString        -- ^ remote host
                  -> Maybe ByteString  -- ^ remote user
                  -> ByteString        -- ^ request line (up to you to ensure
@@ -183,9 +183,9 @@ combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
 
     month i = monthArray ! i
 
--- | Send a log message out verbatim with a newline appended. Note: if you want
--- a fancy log message you'll have to format it yourself (or use
--- 'combinedLogEntry').
+-- | Sends out a log message verbatim with a newline appended. Note:
+-- if you want a fancy log message you'll have to format it yourself
+-- (or use 'combinedLogEntry').
 logMsg :: Logger -> ByteString -> IO ()
 logMsg lg s = do
     let s' = B.snoc s '\n'
@@ -266,7 +266,7 @@ loggingThread (Logger queue notifier filePath _) = do
         loop (href, lastOpened)
 
 
--- | Kill a logger thread, causing any unwritten contents to be flushed out to
--- disk
+-- | Kills a logger thread, causing any unwritten contents to be
+-- flushed out to disk
 stopLogger :: Logger -> IO ()
 stopLogger lg = withMVar (_loggingThread lg) killThread
