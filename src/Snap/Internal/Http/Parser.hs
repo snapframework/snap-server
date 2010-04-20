@@ -18,7 +18,6 @@ import           Control.Applicative
 import           Control.Arrow (first, second)
 import           Control.Monad (liftM)
 import           Control.Monad.Trans
-import qualified Data.Attoparsec as Atto
 import           Data.Attoparsec hiding (many, Result(..))
 import           Data.Attoparsec.Iteratee
 import           Data.ByteString (ByteString)
@@ -28,8 +27,6 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Nums.Careless.Hex as Cvt
 import           Data.Char
 import           Data.CIByteString
-import           Data.DList (DList)
-import qualified Data.DList as DL
 import           Data.List (foldl')
 import           Data.Int
 import           Data.Map (Map)
@@ -314,9 +311,6 @@ pQuotedString = q *> quotedText <* q
     qdtext = matchAll [ isRFCText, (/= '\"'), (/= '\\') ] . w2c
     
 
-char :: Char -> Parser Word8
-char = word8 . c2w
-
 pCookie :: Parser Cookie
 pCookie = do
     -- grab kvps and turn to strict bytestrings
@@ -354,10 +348,6 @@ pCookie = do
 pWord :: Parser ByteString
 pWord = pQuotedString <|> (option "" $ takeWhile1 ((/= ';') . w2c))
 
-finish :: Atto.Result a -> Atto.Result a
-finish (Atto.Partial f) = flip feed "" $ f ""
-finish x                = x
-
 pAvPairs :: Parser [(ByteString, ByteString)]
 pAvPairs = do
     a <- pAvPair
@@ -379,40 +369,6 @@ parseCookie = parseToCompletion pCookie
 -- MULTIPART/FORMDATA
 ------------------------------------------------------------------------------
 -- TODO
-
-
-------------------------------------------------------------------------------
--- URL ENCODING
-------------------------------------------------------------------------------
-
--- "...Only alphanumerics [0-9a-zA-Z], the special characters "$-_.+!*'(),"
--- [not including the quotes - ed], and reserved characters used for their
--- reserved purposes may be used unencoded within a URL."
-
-pUrlEscaped :: Parser ByteString
-pUrlEscaped = do
-    sq <- nextChunk DL.empty
-    return $ S.concat $ DL.toList sq
-
-  where
-    nextChunk s = plusSpace s <|> percentEncoded s <|> unEncoded s <|> pure s
-
-    percentEncoded :: DList ByteString -> Parser (DList ByteString)
-    percentEncoded l = do
-        char '%'
-        hx <- count 2 $ satisfy (isHexDigit . w2c)
-        let code = (Cvt.hex $ S.pack hx) :: Int
-        nextChunk $ DL.snoc l (S.singleton $ fromIntegral code)
-
-    unEncoded :: DList ByteString -> Parser (DList ByteString)
-    unEncoded l = do
-        bs <- takeTill (flip elem (map c2w "%+"))
-        if S.null bs
-          then pure l
-          else nextChunk $ DL.snoc l bs
-
-    plusSpace :: DList ByteString -> Parser (DList ByteString)
-    plusSpace l = char '+' *> nextChunk (DL.snoc l (S.singleton $ c2w ' '))
 
 
 parseUrlEncoded :: ByteString -> Map ByteString [ByteString]
@@ -438,15 +394,6 @@ parseUrlEncoded s = foldl' (\m (k,v) -> Map.insertWith' (++) k [v] m)
 ------------------------------------------------------------------------------
 -- utility functions
 ------------------------------------------------------------------------------
-
-parseToCompletion :: Parser a -> ByteString -> Maybe a
-parseToCompletion p s = toResult $ finish r
-  where
-    r = parse p s
-
-    toResult (Atto.Done _ c) = Just c
-    toResult _               = Nothing
-
 
 strictize :: L.ByteString -> ByteString
 strictize         = S.concat . L.toChunks
