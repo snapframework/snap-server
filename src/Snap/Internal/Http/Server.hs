@@ -246,7 +246,10 @@ httpSession writeEnd handler = do
 
     case mreq of
       (Just req) -> do
-          (req',rsp) <- liftIO $ run (handler req) `catch` (noHandlerHandler req)
+          --(req',rsp) <- liftIO $ (handler req) `catch` (noHandlerHandler req)
+
+          -- FIXME: catch exception
+          (req',rsp) <- lift $ handler req
 
           liftIO $ debug "Server.httpSession: handled, skipping request body"
           lift $ joinIM $ rqBody req' skipToEof
@@ -371,6 +374,7 @@ receiveRequest = do
                          method
                          version
                          cookies
+                         snapletPath
                          pathInfo
                          contextPath
                          uri
@@ -378,6 +382,8 @@ receiveRequest = do
                          params
 
       where
+        snapletPath = ""        -- TODO: snaplets in v0.2
+
         dropLeadingSlash s = maybe s f mbS
           where
             f (a,s') = if a == c2w '/' then s' else s

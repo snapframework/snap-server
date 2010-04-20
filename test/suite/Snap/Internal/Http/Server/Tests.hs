@@ -30,6 +30,9 @@ import           Snap.Internal.Http.Server
 import           Snap.Iteratee
 import           Snap.Types
 
+
+import System.IO
+
 tests :: [Test]
 tests = [ testHttpRequest1
         , testMultiRequest
@@ -99,9 +102,9 @@ testHttpRequest1 =
         assertEqual "server name" "www.zabble.com" $ rqServerName req
         assertEqual "version" (1,1) $ rqVersion req
         assertEqual "param1" (Just ["abc","abc"]) $
-                    rqParam req "param1"
+                    rqParam "param1" req
         assertEqual "param2" (Just ["def  "]) $
-                    rqParam req "param2"
+                    rqParam "param2" req
 
 
 
@@ -212,11 +215,11 @@ testHttpRequest3 =
                     (rqServerName req, rqServerPort req)
 
         assertEqual "post param 1"
-                    (rqParam req "postparam1")
+                    (rqParam "postparam1" req)
                     (Just ["1"])
 
         assertEqual "post param 2"
-                    (rqParam req "postparam2")
+                    (rqParam "postparam2" req)
                     (Just ["2"])
 
         -- if we're www-form-encoded then we will have read the body already
@@ -280,7 +283,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
-           filterResponseBody (>. (enumBS "0123456789")) $
+           modifyResponseBody (>. (enumBS "0123456789")) $
            setResponseBody return $
            emptyResponse { rspHttpVersion = (1,0) }
 
@@ -294,10 +297,10 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
 
 echoServer :: Request -> Iteratee IO (Request,Response)
 echoServer req = do
-    b <- liftM fromWrap $ joinIM $ rqBody req stream2stream
+    let i = joinIM $ rqBody req stream2stream
+    b <- liftM fromWrap i
     let cl = L.length b
-    let enum i = return $ joinI $ take 0 i
-    return (req {rqBody=enum}, rsp b cl)
+    return (req {rqBody=return . joinI . take 0}, rsp b cl)
   where
     rsp s cl = emptyResponse { rspBody = enumLBS s
                              , rspContentLength = Just $ fromIntegral cl }

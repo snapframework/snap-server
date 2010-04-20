@@ -16,6 +16,7 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w, w2c)
+import qualified Data.Map as Map
 import           Data.Maybe (fromJust)
 import           Data.Time.Clock
 import           Data.Time.Format
@@ -42,7 +43,8 @@ tests = [ testShow
         , testPartial
         , testIterateeError
         , testIterateeError2
-        , testParseError ]
+        , testParseError
+        , testFormEncoded ]
 
 
 emptyParser :: Parser ByteString
@@ -188,3 +190,11 @@ testCookie =
                   , "; path=/zzz; freeform=unparsed" ]
 
 
+testFormEncoded :: Test
+testFormEncoded = testCase "formEncoded" $ do
+    let bs = "foo1=bar1&foo2=bar2+baz2&foo3=foo%20bar"
+    let mp = parseUrlEncoded bs
+
+    assertEqual "foo1" (Just ["bar1"]     ) $ Map.lookup "foo1" mp
+    assertEqual "foo2" (Just ["bar2 baz2"]) $ Map.lookup "foo2" mp
+    assertEqual "foo3" (Just ["foo bar"]  ) $ Map.lookup "foo3" mp
