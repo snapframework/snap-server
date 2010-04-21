@@ -36,7 +36,7 @@ Library
 
 
   build-depends:
-    array >= 0.3 && <0.4,
+    array >= 0.2 && <0.4,
     attoparsec >= 0.8 && < 0.9,
     attoparsec-iteratee >= 0.1 && <0.2,
     base >= 4 && < 5,
