@@ -23,12 +23,10 @@ import           Prelude hiding (catch)
 
 import           GHC.Conc
 import           Control.Concurrent.MVar
-import           System.Exit
 import           System.IO.Error hiding (try,catch)
 import           System.FastLogger
 import           GHC.IOBase (IOErrorType(..))
 ------------------------------------------------------------------------------
-import           Snap.Types (NoHandlerException(..))
 import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
 import           Snap.Iteratee hiding (foldl', head, take)
@@ -246,8 +244,6 @@ httpSession writeEnd handler = do
 
     case mreq of
       (Just req) -> do
-          --(req',rsp) <- liftIO $ (handler req) `catch` (noHandlerHandler req)
-
           -- FIXME: catch exception
           (req',rsp) <- lift $ handler req
 
@@ -273,14 +269,6 @@ httpSession writeEnd handler = do
              else httpSession writeEnd handler
 
       Nothing -> return ()
-  where
-    noHandlerHandler :: Request
-                     -> NoHandlerException
-                     -> IO (Request, Response)
-    noHandlerHandler req _ = return (req, notFound)
-
-    notFound = Response Map.empty (1,1) Nothing body 404 "Not Found"
-    body = I.enumBS "404 - Not Found\n"
 
 
 receiveRequest :: ServerMonad (Maybe Request)
