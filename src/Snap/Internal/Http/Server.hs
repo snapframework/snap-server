@@ -15,6 +15,7 @@ import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Nums.Careless.Int as Cvt
+import           Data.IORef
 import           Data.List (foldl')
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, fromMaybe)
@@ -248,7 +249,9 @@ httpSession writeEnd handler = do
           (req',rsp) <- lift $ handler req
 
           liftIO $ debug "Server.httpSession: handled, skipping request body"
-          lift $ joinIM $ rqBody req' skipToEof
+          srqEnum <- liftIO $ readIORef $ rqBody req'
+          let (SomeEnumerator rqEnum) = srqEnum
+          lift $ joinIM $ rqEnum skipToEof
           liftIO $ debug "Server.httpSession: request body skipped, sending response"
 
           date <- liftIO getDateString
@@ -277,7 +280,9 @@ receiveRequest = do
 
     case mreq of
       (Just ireq) -> do
-          req  <- toRequest ireq >>= setEnumerator >>= parseForm
+          req' <- toRequest ireq
+          setEnumerator req'
+          req  <- parseForm req'
           checkConnectionClose (rqVersion req) (rqHeaders req)
           return $ Just req
 
@@ -293,10 +298,11 @@ receiveRequest = do
     --
     -- if no content-length and no chunked encoding, enumerate the entire
     -- socket and close afterwards
-    setEnumerator :: Request -> ServerMonad Request
+    setEnumerator :: Request -> ServerMonad ()
     setEnumerator req =
         if isChunked
-          then return req { rqBody = readChunkedTransferEncoding }
+          then liftIO $ writeIORef (rqBody req)
+                                   (SomeEnumerator readChunkedTransferEncoding)
           else maybe noContentLength hasContentLength mbCL
 
       where
@@ -304,16 +310,18 @@ receiveRequest = do
                           ((== ["chunked"]) . map toCI)
                           (Map.lookup "transfer-encoding" hdrs)
 
-        hasContentLength :: Int -> ServerMonad Request
+        hasContentLength :: Int -> ServerMonad ()
         hasContentLength l = do
-            return $ req { rqBody = e }
+            liftIO $ writeIORef (rqBody req)
+                         (SomeEnumerator e)
           where
             e :: Enumerator IO a
             e = return . joinI . I.take l
 
-        noContentLength :: ServerMonad Request
-        noContentLength = do
-            return $ req { rqBody = return . joinI . I.take 0 }
+        noContentLength :: ServerMonad ()
+        noContentLength =
+            liftIO $ writeIORef (rqBody req)
+                (SomeEnumerator $ return . joinI . I.take 0 )
 
 
         hdrs = rqHeaders req
@@ -328,11 +336,14 @@ receiveRequest = do
 
         getIt :: ServerMonad Request
         getIt = do
-            iter <- liftIO $ rqBody req stream2stream
+            senum <- liftIO $ readIORef $ rqBody req
+            let (SomeEnumerator enum) = senum
+            iter <- liftIO $ enum stream2stream
             body <- lift iter
             let newParams = parseUrlEncoded $ strictize $ fromWrap body
-            return $ req { rqBody = return
-                         , rqParams = rqParams req `mappend` newParams }
+            liftIO $ writeIORef (rqBody req)
+                         (SomeEnumerator $ return . I.joinI . I.take 0)
+            return $ req { rqParams = rqParams req `mappend` newParams }
 
 
     toRequest (IRequest method uri version kvps) = do
@@ -346,6 +357,9 @@ receiveRequest = do
                                          (localHostname, localPort)
                                          (liftM (parseHost . head)
                                                 (Map.lookup "host" hdrs))
+
+        -- will override in "setEnumerator"
+        enum <- liftIO $ newIORef $ SomeEnumerator return
 
 
         return $ Request serverName
@@ -394,7 +408,6 @@ receiveRequest = do
           where
             (a,b) = S.break (== (c2w ':')) h
 
-        enum            = return    -- will override in "setEnumerator"
         params          = parseUrlEncoded queryString
 
         (pathInfo, queryString) = first dropLeadingSlash . second (S.drop 1) $

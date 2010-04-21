@@ -73,7 +73,9 @@ testHttpRequest1 =
         iter <- enumBS sampleRequest $
                 do
                     r <- liftM fromJust $ rsm receiveRequest
-                    b <- liftM fromWrap $ joinIM $ rqBody r stream2stream
+                    se <- liftIO $ readIORef (rqBody r)
+                    let (SomeEnumerator e) = se
+                    b <- liftM fromWrap $ joinIM $ e stream2stream
                     return (r,b)
 
         (req,body) <- run iter
@@ -114,9 +116,13 @@ testMultiRequest =
         iter <- (enumBS sampleRequest >. enumBS sampleRequest) $
                 do
                     r1 <- liftM fromJust $ rsm receiveRequest
-                    b1 <- liftM fromWrap $ joinIM $ rqBody r1 stream2stream
+                    se1 <- liftIO $ readIORef (rqBody r1)
+                    let (SomeEnumerator e1) = se1
+                    b1 <- liftM fromWrap $ joinIM $ e1 stream2stream
                     r2 <- liftM fromJust $ rsm receiveRequest
-                    b2 <- liftM fromWrap $ joinIM $ rqBody r2 stream2stream
+                    se2 <- liftIO $ readIORef (rqBody r2)
+                    let (SomeEnumerator e2) = se2
+                    b2 <- liftM fromWrap $ joinIM $ e2 stream2stream
                     return (r1,b1,r2,b2)
 
         (req1,body1,req2,body2) <- run iter
@@ -187,7 +193,9 @@ testHttpRequest2 =
         iter <- enumBS sampleRequest2 $
                 do
                     r <- liftM fromJust $ rsm receiveRequest
-                    b <- liftM fromWrap $ joinIM $ rqBody r stream2stream
+                    se <- liftIO $ readIORef (rqBody r)
+                    let (SomeEnumerator e) = se
+                    b <- liftM fromWrap $ joinIM $ e stream2stream
                     return (r,b)
 
         (_,body) <- run iter
@@ -201,7 +209,9 @@ testHttpRequest3 =
         iter <- enumBS sampleRequest3 $
                 do
                     r <- liftM fromJust $ rsm receiveRequest
-                    b <- liftM fromWrap $ joinIM $ rqBody r stream2stream
+                    se <- liftIO $ readIORef (rqBody r)
+                    let (SomeEnumerator e) = se
+                    b <- liftM fromWrap $ joinIM $ e stream2stream
                     return (r,b)
 
         (req,body) <- run iter
@@ -297,10 +307,13 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
 
 echoServer :: Request -> Iteratee IO (Request,Response)
 echoServer req = do
-    let i = joinIM $ rqBody req stream2stream
+    se <- liftIO $ readIORef (rqBody req)
+    let (SomeEnumerator enum) = se
+    let i = joinIM $ enum stream2stream
     b <- liftM fromWrap i
     let cl = L.length b
-    return (req {rqBody=return . joinI . take 0}, rsp b cl)
+    liftIO $ writeIORef (rqBody req) (SomeEnumerator $ return . joinI . take 0)
+    return (req, rsp b cl)
   where
     rsp s cl = emptyResponse { rspBody = enumLBS s
                              , rspContentLength = Just $ fromIntegral cl }
