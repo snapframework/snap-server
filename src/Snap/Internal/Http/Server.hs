@@ -246,7 +246,15 @@ httpSession writeEnd handler = do
     case mreq of
       (Just req) -> do
           -- FIXME: catch exception
-          (req',rsp) <- lift $ handler req
+          (req',rspOrig) <- lift $ handler req
+          let rspTmp = rspOrig { rspHttpVersion = rqVersion req }
+          checkConnectionClose (rspHttpVersion rspTmp) (rspHeaders rspTmp)
+
+          cc <- gets _forceConnectionClose
+          let rsp = if cc
+                      then (setHeader "Connection" "close" rspTmp)
+                      else rspTmp
+
 
           liftIO $ debug "Server.httpSession: handled, skipping request body"
           srqEnum <- liftIO $ readIORef $ rqBody req'
@@ -262,10 +270,6 @@ httpSession writeEnd handler = do
           maybe (logAccess req rsp')
                 (\_ -> logAccess req $ setContentLength bytesSent rsp')
                 (rspContentLength rsp')
-
-          checkConnectionClose (rspHttpVersion rsp) (rspHeaders rsp)
-
-          cc <- gets _forceConnectionClose
 
           if cc
              then return ()
@@ -467,7 +471,7 @@ sendResponse rsp writeEnd = do
               -- HTTP/1.0 and no content-length? We'll have to close the
               -- socket.
               modify $! \s -> s { _forceConnectionClose = True }
-              return (stHdrs, id)
+              return (Map.insert "Connection" ["close"] stHdrs, id)
 
     hasCL :: Int -> ServerMonad (Headers, Enumerator IO a -> Enumerator IO a)
     hasCL cl = do

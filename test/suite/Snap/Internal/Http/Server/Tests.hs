@@ -12,7 +12,8 @@ import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as LC
 import           Data.ByteString (ByteString)
-import           Data.ByteString.Internal (c2w)
+import           Data.ByteString.Internal (c2w, w2c)
+import           Data.Char
 import           Data.IORef
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust)
@@ -20,6 +21,7 @@ import           Data.Time.Calendar
 import           Data.Time.Clock
 import qualified Network.HTTP as HTTP
 import           Prelude hiding (take)
+import qualified Prelude
 import           Test.Framework
 import           Test.Framework.Providers.HUnit
 import           Test.HUnit hiding (Test, path)
@@ -43,7 +45,8 @@ tests = [ testHttpRequest1
         , testHttp2
         , testPartialParse
         , testMethodParsing
-        , testServerStartupShutdown ]
+        , testServerStartupShutdown
+        , testChunkOn1_0 ]
 
 
 ------------------------------------------------------------------------------
@@ -54,6 +57,16 @@ tests = [ testHttpRequest1
 sampleRequest :: ByteString
 sampleRequest =
     S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
+             , "Host: www.zabble.com:7777\r\n"
+             , "Content-Length: 10\r\n"
+             , "X-Random-Other-Header: foo\r\n bar\r\n"
+             , "Set-Cookie: foo=\"bar\\\"\"\r\n"
+             , "\r\n"
+             , "0123456789" ]
+
+sampleRequest1_0 :: ByteString
+sampleRequest1_0 =
+    S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.0\r\n"
              , "Host: www.zabble.com:7777\r\n"
              , "Content-Length: 10\r\n"
              , "X-Random-Other-Header: foo\r\n bar\r\n"
@@ -259,21 +272,22 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
     b <- run $ rsm $
          sendResponse rsp1 stream2stream >>= return . fromWrap . snd
 
-    assertEqual "http response" b $ L.concat [
+    assertEqual "http response" (L.concat [
                       "HTTP/1.0 600 Test\r\n"
                     , "Content-Length: 10\r\n"
                     , "Foo: Bar\r\n\r\n"
                     , "0123456789"
-                    ]
+                    ]) b
 
     b2 <- run $ rsm $
           sendResponse rsp2 stream2stream >>= return . fromWrap . snd
 
-    assertEqual "http response" b2 $ L.concat [
+    assertEqual "http response" (L.concat [
                       "HTTP/1.0 600 Test\r\n"
+                    , "Connection: close\r\n"
                     , "Foo: Bar\r\n\r\n"
                     , "0123456789"
-                    ]
+                    ]) b2
 
     b3 <- run $ rsm $
           sendResponse rsp3 stream2stream >>= return . fromWrap . snd
@@ -364,11 +378,37 @@ testHttp1 = testCase "http session" $ do
     assertBool "pipelined responses" ok
 
 
+mkIter :: IORef L.ByteString -> Iteratee IO ()
+mkIter ref = do
+    x <- stream2stream
+    liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
+
+
+testChunkOn1_0 :: Test
+testChunkOn1_0 = testCase "transfer-encoding chunked" $ do
+    let enumBody = enumBS sampleRequest1_0
+
+    ref <- newIORef ""
+    let iter = mkIter ref
+
+    runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
+            Nothing Nothing enumBody iter f
+
+    -- this is a pretty lame way of checking whether the output was chunked,
+    -- but "whatever"
+    output <- liftM lower $ readIORef ref
+
+    assertBool "chunked output" $ not $ S.isInfixOf "chunked" output
+    assertBool "connection close" $ S.isInfixOf "connection: close" output
+
   where
-    mkIter :: IORef L.ByteString -> Iteratee IO ()
-    mkIter ref = do
-        x <- stream2stream
-        liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
+    lower = S.map (c2w . toLower . w2c) . S.concat . L.toChunks
+
+    f :: Request -> Iteratee IO (Request, Response)
+    f req = do
+        let s = L.fromChunks $ Prelude.take 500 $ repeat "fldkjlfksdjlfd"
+        let out = enumLBS s
+        return (req, emptyResponse { rspBody = out })
 
 
 sampleRequest4 :: ByteString
@@ -381,6 +421,7 @@ sampleRequest4 =
              , "Set-Cookie: foo=\"bar\\\"\"\r\n"
              , "\r\n"
              , "0123456789" ]
+
 
 testHttp2 :: Test
 testHttp2 = testCase "connection: close" $ do
@@ -399,6 +440,7 @@ testHttp2 = testCase "connection: close" $ do
 
     let ok = case lns of
                ([ "HTTP/1.1 200 OK\r"
+                , "Connection: close\r"
                 , "Content-Length: 10\r"
                 , d1
                 , s1
@@ -445,3 +487,4 @@ testServerStartupShutdown = testCase "startup/shutdown" $ do
   where
     waitabit = threadDelay $ ((10::Int)^(6::Int))
     port = 8123
+
