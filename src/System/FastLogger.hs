@@ -14,22 +14,23 @@ module System.FastLogger
 import           Control.Concurrent
 import           Control.Exception
 import           Control.Monad
-import           Data.Array
-import           Data.Binary.Put
 import           Data.ByteString.Char8 (ByteString)
-import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.ByteString.Internal (c2w)
 import           Data.DList (DList)
 import qualified Data.DList as D
 import           Data.IORef
 import           Data.Maybe
-import           Data.Time.Calendar
+import           Data.Serialize.Put
 import           Data.Time.Clock
-import           Data.Time.LocalTime
-import           Prelude hiding (catch)
+import           Prelude hiding (catch, show)
+import qualified Prelude
 import           System.IO
-import           Text.Show.ByteString hiding (show)
+import           Text.Show.ByteString hiding (runPut)
+
+import           Snap.Internal.Http.Server.Date
+
 
 -- | Holds the state for a logger.
 data Logger = Logger
@@ -59,43 +60,14 @@ newLogger fp = do
 -- | Prepares a log message with the time prepended.
 timestampedLogEntry :: ByteString -> IO ByteString
 timestampedLogEntry msg = do
-    -- FIXME: replace haskell time functions with something quicker if
-    -- available (e.g. @ev\_now()@ from libev which doesn't involve a context
-    -- switch)
-    zt <- getZonedTime
+    timeStr <- getLogDateString
 
-    let t = zonedTimeToLocalTime zt
-    let (yr,mon,day) = toGregorian $ localDay t
-    let tod = localTimeOfDay t
-
-    let h = todHour tod
-    let m = todMin  tod
-    let s = (round $ todSec tod) :: Int
-
-    let p = do
-        showp yr
-        putCh '-'
-        when (mon < 10) $ putCh '0'
-        showp mon
-        putCh '-'
-        when (day < 10) $ putCh '0'
-        showp day
-        putCh ' '
-        when (h < 10) $ putCh '0'
-        showp h
-        putCh ':'
-        when (m < 10) $ putCh '0'
-        showp m
-        putCh ':'
-        when (s < 10) $ putCh '0'
-        showp s
-        putByteString ": "
+    return $ runPut $ do
+        putWord8 $ c2w '['
+        putByteString timeStr
+        putByteString "] "
         putByteString msg
 
-    return $ B.concat $ L.toChunks (runPut p)
-
-  where
-    putCh = putWord8 . c2w
 
 -- | Prepares a log message in \"combined\" format.
 combinedLogEntry :: ByteString        -- ^ remote host
@@ -108,53 +80,24 @@ combinedLogEntry :: ByteString        -- ^ remote host
                                       --   there are no quotes in here)
                  -> ByteString        -- ^ user agent (up to you to ensure
                                       --   there are no quotes in here)
-                 -> IO L.ByteString
+                 -> IO ByteString
 combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
     let user = fromMaybe "-" mbUser
-    let numBytes = maybe "-" (\s -> B.pack $ show s) mbNumBytes
-    let referer = maybe "-" (\s -> B.concat ["\"", s, "\""]) mbReferer
+    let numBytes = maybe "-" (\s -> strict $ show s) mbNumBytes
+    let referer = maybe "-" (\s -> S.concat ["\"", s, "\""]) mbReferer
 
-    -- FIXME: replace haskell time functions with something quicker if
-    -- available (e.g. @ev\_now()@ from libev which doesn't involve a context
-    -- switch)
-    zt <- getZonedTime
-
-    let t = zonedTimeToLocalTime zt
-    let zone = timeZoneOffsetString $ zonedTimeZone zt
-
-    let (yr,mon,day) = toGregorian $ localDay t
-    let tod = localTimeOfDay t
-
-    let h = todHour tod
-    let m = todMin  tod
-    let s = (round $ todSec tod) :: Int
+    timeStr <- getLogDateString
 
     let p = do
         putByteString host
         putByteString " - "
         putByteString user
         putByteString " ["
-        when (day < 10) $ putCh '0'
-        showp day
-        putCh '/'
-        putByteString $ month mon
-        putCh '/'
-        showp yr
-        putCh ':'
-        when (h < 10) $ putCh '0'
-        showp h
-        putCh ':'
-        when (m < 10) $ putCh '0'
-        showp m
-        putCh ':'
-        when (s < 10) $ putCh '0'
-        showp s
-        putCh ' '
-        putByteString $ B.pack zone
+        putByteString timeStr
         putByteString "] \""
         putByteString req
         putByteString "\" "
-        showp status
+        putLazyByteString $ show status
         putCh ' '
         putByteString numBytes
         putCh ' '
@@ -167,28 +110,16 @@ combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
 
 
   where
+    strict = S.concat . L.toChunks
     putCh = putWord8 . c2w
-    monthArray = array (1,12) [ (1, "Jan")
-                              , (2, "Feb")
-                              , (3, "Mar")
-                              , (4, "Apr")
-                              , (5, "May")
-                              , (6, "Jun")
-                              , (7, "Jul")
-                              , (8, "Aug")
-                              , (9, "Sep")
-                              , (10,"Oct")
-                              , (11,"Nov")
-                              , (12,"Dec") ]
 
-    month i = monthArray ! i
 
 -- | Sends out a log message verbatim with a newline appended. Note:
 -- if you want a fancy log message you'll have to format it yourself
 -- (or use 'combinedLogEntry').
 logMsg :: Logger -> ByteString -> IO ()
 logMsg lg s = do
-    let s' = B.snoc s '\n'
+    let s' = S.snoc s '\n'
     atomicModifyIORef (_queuedMessages lg) $ \d -> (D.snoc d s',())
     tryPutMVar (_dataWaiting lg) () >> return ()
 
@@ -213,7 +144,7 @@ loggingThread (Logger queue notifier filePath _) = do
           `catches`
           [ Handler $ \(_::AsyncException) -> killit (href, lastOpened)
           , Handler $ \(e::SomeException)  -> do
-                hPutStrLn stderr $ "logger got exception: " ++ show e
+                hPutStrLn stderr $ "logger got exception: " ++ Prelude.show e
                 threadDelay 20000000
                 go (href, lastOpened) ]
 

@@ -40,10 +40,10 @@ Library
     attoparsec >= 0.8 && < 0.9,
     attoparsec-iteratee >= 0.1 && <0.2,
     base >= 4 && < 5,
-    binary >= 0.5 && < 0.6,
     bytestring,
     bytestring-nums,
     bytestring-show >= 0.3.2 && < 0.4,
+    cereal >= 0.2 && < 0.3,
     containers,
     directory-tree,
     dlist >= 0.5 && < 0.6,
@@ -63,6 +63,8 @@ Library
   else
     build-depends: network-bytestring >= 0.1.2 && < 0.2
     other-modules: Snap.Internal.Http.Server.SimpleBackend
+
+  ghc-prof-options: -prof -auto-all
 
   if impl(ghc >= 6.12.0)
     ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fno-warn-unused-do-bind

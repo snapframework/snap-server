@@ -2,6 +2,7 @@
 
 module Snap.Internal.Http.Server.Date
 ( getDateString
+, getLogDateString
 , getCurrentDateTime) where
 
 import           Control.Concurrent
@@ -12,6 +13,7 @@ import           Data.ByteString.Internal (c2w)
 import qualified Data.ByteString as B
 import           Data.IORef
 import           Data.Time.Clock
+import           Data.Time.LocalTime
 import           Data.Time.Format
 import           System.IO.Unsafe
 import           System.Locale
@@ -28,6 +30,7 @@ import           System.Locale
 
 data DateState = DateState {
       _cachedDateString :: !(IORef ByteString)
+    , _cachedLogString  :: !(IORef ByteString)
     , _cachedDate       :: !(IORef UTCTime)
     , _valueIsOld       :: !(IORef Bool)
     , _morePlease       :: !(MVar ())
@@ -37,15 +40,16 @@ data DateState = DateState {
 
 dateState :: DateState
 dateState = unsafePerformIO $ do
-    (s,date) <- fetchTime
-    bs <- newIORef s
-    dt <- newIORef date
-    ov <- newIORef False
-    th <- newEmptyMVar
-    mp <- newMVar ()
-    da <- newMVar ()
+    (s1,s2,date) <- fetchTime
+    bs1 <- newIORef s1
+    bs2 <- newIORef s2
+    dt  <- newIORef date
+    ov  <- newIORef False
+    th  <- newEmptyMVar
+    mp  <- newMVar ()
+    da  <- newMVar ()
 
-    let d = DateState bs dt ov mp da th
+    let d = DateState bs1 bs2 dt ov mp da th
 
     t  <- forkIO $ dateThread d
     putMVar th t
@@ -53,23 +57,27 @@ dateState = unsafePerformIO $ do
     return d
 
 
-fetchTime :: IO (ByteString,UTCTime)
+fetchTime :: IO (ByteString,ByteString,UTCTime)
 fetchTime = do
      now <- getCurrentTime
-     return (B.pack $ map c2w $
-             formatTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S GMT" now,
-             now)
-
+     zt  <- liftM zonedTimeToLocalTime getZonedTime
+     return (t1 now, t2 zt, now)
+  where
+    t1 now = B.pack $ map c2w $
+             formatTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S GMT" now
+    t2 now = B.pack $ map c2w $
+             formatTime defaultTimeLocale "%d/%b/%Y:%H:%M:%S %z" now
 
 dateThread :: DateState -> IO ()
-dateThread (DateState dateString time valueIsOld morePlease dataAvailable _) =
+dateThread (DateState dateString logString time valueIsOld morePlease dataAvailable _) =
     forever $ do
         -- a lot of effort to make sure we don't deadlock
 
         takeMVar morePlease
 
-        (s,now) <- fetchTime
-        atomicModifyIORef dateString $ const (s,())
+        (s1,s2,now) <- fetchTime
+        atomicModifyIORef dateString $ const (s1,())
+        atomicModifyIORef logString $ const (s2,())
         atomicModifyIORef time $ const (now,())
 
         writeIORef valueIsOld False
@@ -92,6 +100,12 @@ getDateString :: IO ByteString
 getDateString = block $ do
     ensureFreshDate
     readIORef $ _cachedDateString dateState
+
+
+getLogDateString :: IO ByteString
+getLogDateString = block $ do
+    ensureFreshDate
+    readIORef $ _cachedLogString dateState
 
 
 getCurrentDateTime :: IO UTCTime

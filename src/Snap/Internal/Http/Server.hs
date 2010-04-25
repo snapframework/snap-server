@@ -103,8 +103,9 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
     spawnAll alog elog =
         bracket (spawn numCapabilities)
                 (\xs -> do
-                     debug "Server.httpServe: SHUTDOWN"
-                     mapM_ (Backend.stop . fst) xs)
+                     logE elog "Server.httpServe: SHUTDOWN"
+                     mapM_ (Backend.stop . fst) xs
+                     logE elog "Server.httpServe: BACKEND STOPPED")
                 (runAll alog elog)
 
 
@@ -159,27 +160,52 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
     go alog elog backend cpu = runOne alog elog backend cpu
         `catches`
         [ Handler $ \(e :: AsyncException) -> do
-              debug $
-                "Server.httpServe.go: got async exception, " ++
-                  "terminating:\n" ++ show e
+              logE elog $
+                   S.concat [ "Server.httpServe.go: got async exception, "
+                            , "terminating:\n", bshow e ]
               throwIO e
 
         , Handler $ \(e :: Backend.BackendTerminatedException) -> do
-              debug $ "Server.httpServe.go: got backend terminated, waiting for cleanup"
+              logE elog $ "Server.httpServe.go: got backend terminated, waiting for cleanup"
               throwIO e
 
         , Handler $ \(e :: IOException) -> do
-              debug $
-                "Server.httpServe.go: got io exception: " ++ show e
+              logE elog $ S.concat [ "Server.httpServe.go: got io exception: "
+                                   , bshow e ]
 
               let et = ioeGetErrorType e
 
               when (et == Interrupted) $ throwIO e
 
         , Handler $ \(e :: SomeException) -> do
-              debug $
-                "Server.httpServe.go: got exception: " ++ show e
+              logE elog $ S.concat [
+                        "Server.httpServe.go: got someexception: "
+                       , bshow e ]
               return () ]
+
+debugE s = debug $ "Server: " ++ (map w2c $ S.unpack s)
+
+logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
+logE' logger s = (timestampedLogEntry s) >>= logMsg logger
+
+logA alog = maybe (\_ _ -> return ()) logA' alog
+logA' logger req rsp = do
+    let hdrs      = rqHeaders req
+    let host      = rqRemoteAddr req
+    let user      = Nothing -- FIXME we don't do authentication yet
+    let (v, v')   = rqVersion req
+    let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
+    let method    = bshow (rqMethod req)
+    let reql      = S.intercalate " " [ method, rqURI req, ver ]
+    let status    = rspStatus rsp
+    let cl        = rspContentLength rsp
+    let referer   = maybe Nothing (Just . head) $ Map.lookup "referer" hdrs
+    let userAgent = maybe "-" head $ Map.lookup "user-agent" hdrs
+
+    msg <- combinedLogEntry host user reql status cl referer userAgent
+    logMsg logger msg
+
+
 
 
 runHTTP :: ByteString         -- ^ local host name
@@ -194,33 +220,15 @@ runHTTP :: ByteString         -- ^ local host name
         -> ServerHandler      -- ^ handler procedure
         -> IO ()
 runHTTP lh lip lp rip rp alog elog readEnd writeEnd handler =
-    go `catch` (\(e :: SomeException) -> logE $ bshow e)
+    go `catches` [ Handler $ \(e :: AsyncException) -> do
+                       logE elog "runHTTP: caught async exception:"
+                       logE elog $ bshow e
+                       throwIO e
+                 , Handler $ \(e :: SomeException) -> logE elog $ bshow e ]
 
   where
-    debugE s = debug $ "Server.runHTTP: " ++ (map w2c $ S.unpack s)
-
-    logE = maybe debugE (\l s -> debugE s >> logE' l s) elog
-    logE' logger s = (timestampedLogEntry s) >>= logMsg logger
-
-    logA = maybe (\_ _ -> return ()) logA' alog
-    logA' logger req rsp = do
-        let hdrs      = rqHeaders req
-        let host      = rqRemoteAddr req
-        let user      = Nothing -- FIXME we don't do authentication yet
-        let (v, v')   = rqVersion req
-        let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
-        let method    = bshow (rqMethod req)
-        let reql      = S.intercalate " " [ method, rqURI req, ver ]
-        let status    = rspStatus rsp
-        let cl        = rspContentLength rsp
-        let referer   = maybe Nothing (Just . head) $ Map.lookup "referer" hdrs
-        let userAgent = maybe "-" head $ Map.lookup "user-agent" hdrs
-
-        msg <- combinedLogEntry host user reql status cl referer userAgent
-        logMsg logger (S.concat $ L.toChunks msg)
-
     go = do
-        let iter = runServerMonad lh lip lp rip rp logA logE $
+        let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
                                   httpSession writeEnd handler
         readEnd iter >>= run
 

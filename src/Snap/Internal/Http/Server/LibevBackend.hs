@@ -188,12 +188,12 @@ new (sock,sockFd) cpu = do
 loopThread :: Backend -> IO ()
 loopThread backend = do
     debug $ "starting loop"
-    go `finally` cleanup
+    (ignoreException go) `finally` cleanup
     debug $ "loop finished"
   where
     cleanup = do
         debug $ "loopThread: cleaning up"
-        freeBackend backend
+        ignoreException $ freeBackend backend
     lock    = _loopLock backend
     loop    = _evLoop backend
     go      = takeMVar lock >> block (evLoop loop 0)
@@ -228,7 +228,7 @@ seconds n = n * ((10::Int)^(6::Int))
 
 
 stop :: Backend -> IO ()
-stop b = do
+stop b = ignoreException $ do
     debug $ "Backend.stop"
 
     -- FIXME: what are we gonna do here?
@@ -302,7 +302,7 @@ timerCallback tmv _ _ _ = do
 
 
 freeConnection :: Connection -> IO ()
-freeConnection conn = do
+freeConnection conn = ignoreException $ do
     withMVar loopLock $ \_ -> block $ do
         -- close socket (twice to get proper linger behaviour)
         c_close fd
@@ -340,8 +340,12 @@ freeConnection conn = do
     timerCb    = _timerCallback conn
 
 
+ignoreException :: IO () -> IO ()
+ignoreException = handle (\(e::SomeException) -> return ())
+
+
 freeBackend :: Backend -> IO ()
-freeBackend backend = block $ do
+freeBackend backend = ignoreException $ block $ do
     -- note: we only get here after an unloop
 
     withMVar tsetMVar $ \set -> do
@@ -389,9 +393,7 @@ freeBackend backend = block $ do
 withConnection :: Backend -> Int -> (Connection -> IO ()) -> IO ()
 withConnection backend cpu proc = go
   where
-    threadProc conn = p `finally` freeConnection conn
-      where
-        p = proc conn `catch` \(_::SomeException) -> return ()
+    threadProc conn = ignoreException (proc conn) `finally` freeConnection conn
 
     go = do
         fd   <- readChan $ _connectionQueue backend
