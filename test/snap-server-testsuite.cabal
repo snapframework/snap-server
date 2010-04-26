@@ -85,12 +85,14 @@ Executable pongserver
      iteratee >= 0.3.1 && < 0.4,
      network == 2.2.1.*,
      network-bytestring >= 0.1.2 && < 0.2,
+     sendfile >= 0.6.1 && < 0.7,
      snap-core == 0.1.1,
      test-framework < 0.3,
      test-framework-hunit < 0.3,
      test-framework-quickcheck2 < 0.3,
      time,
-     transformers
+     transformers,
+     unix
 
    if flag(libev)
      build-depends: hlibev >= 0.2.1

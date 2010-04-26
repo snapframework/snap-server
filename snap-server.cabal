@@ -52,9 +52,11 @@ Library
     monads-fd,
     network == 2.2.1.*,
     old-locale,
+    sendfile >= 0.6.1 && < 0.7,
     snap-core == 0.1.1,
     time,
-    transformers
+    transformers,
+    unix
 
   if flag(libev)
     build-depends: hlibev >= 0.2.1

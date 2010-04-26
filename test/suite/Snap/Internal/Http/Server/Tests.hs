@@ -267,10 +267,13 @@ rsm = runServerMonad "localhost" "127.0.0.1" 80 "127.0.0.1" 58382 alog elog
     alog = const . const . return $ ()
     elog = const $ return ()
 
+
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "HttpResponse1" $ do
+    let onSendFile = \f -> enumFile f stream2stream >>= run
+
     b <- run $ rsm $
-         sendResponse rsp1 stream2stream >>= return . fromWrap . snd
+         sendResponse rsp1 stream2stream onSendFile >>= return . fromWrap . snd
 
     assertEqual "http response" (L.concat [
                       "HTTP/1.0 600 Test\r\n"
@@ -280,7 +283,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     ]) b
 
     b2 <- run $ rsm $
-          sendResponse rsp2 stream2stream >>= return . fromWrap . snd
+          sendResponse rsp2 stream2stream onSendFile >>= return . fromWrap . snd
 
     assertEqual "http response" (L.concat [
                       "HTTP/1.0 600 Test\r\n"
@@ -290,7 +293,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     ]) b2
 
     b3 <- run $ rsm $
-          sendResponse rsp3 stream2stream >>= return . fromWrap . snd
+          sendResponse rsp3 stream2stream onSendFile >>= return . fromWrap . snd
 
     assertEqual "http response" b3 $ L.concat [
                       "HTTP/1.1 600 Test\r\n"
@@ -329,7 +332,7 @@ echoServer req = do
     liftIO $ writeIORef (rqBody req) (SomeEnumerator $ return . joinI . take 0)
     return (req, rsp b cl)
   where
-    rsp s cl = emptyResponse { rspBody = enumLBS s
+    rsp s cl = emptyResponse { rspBody = Enum $ enumLBS s
                              , rspContentLength = Just $ fromIntegral cl }
 
 
@@ -348,10 +351,10 @@ testHttp1 = testCase "http session" $ do
 
     ref <- newIORef ""
 
-    let iter = mkIter ref
+    let (iter,onSendFile) = mkIter ref
 
     runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            Nothing Nothing enumBody iter echoServer
+            Nothing Nothing enumBody iter onSendFile echoServer
 
     s <- readIORef ref
 
@@ -378,10 +381,14 @@ testHttp1 = testCase "http session" $ do
     assertBool "pipelined responses" ok
 
 
-mkIter :: IORef L.ByteString -> Iteratee IO ()
-mkIter ref = do
-    x <- stream2stream
-    liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
+mkIter :: IORef L.ByteString -> (Iteratee IO (), FilePath -> IO ())
+mkIter ref = (iter, \f -> onF f iter)
+  where
+    iter = do
+        x <- stream2stream
+        liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
+
+    onF f iter = enumFile f iter >>= run
 
 
 testChunkOn1_0 :: Test
@@ -389,10 +396,10 @@ testChunkOn1_0 = testCase "transfer-encoding chunked" $ do
     let enumBody = enumBS sampleRequest1_0
 
     ref <- newIORef ""
-    let iter = mkIter ref
+    let (iter,onSendFile) = mkIter ref
 
     runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            Nothing Nothing enumBody iter f
+            Nothing Nothing enumBody iter onSendFile f
 
     -- this is a pretty lame way of checking whether the output was chunked,
     -- but "whatever"
@@ -408,7 +415,7 @@ testChunkOn1_0 = testCase "transfer-encoding chunked" $ do
     f req = do
         let s = L.fromChunks $ Prelude.take 500 $ repeat "fldkjlfksdjlfd"
         let out = enumLBS s
-        return (req, emptyResponse { rspBody = out })
+        return (req, emptyResponse { rspBody = Enum out })
 
 
 sampleRequest4 :: ByteString
@@ -429,10 +436,10 @@ testHttp2 = testCase "connection: close" $ do
 
     ref <- newIORef ""
 
-    let iter = mkIter ref
+    let (iter,onSendFile) = mkIter ref
 
     runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            Nothing Nothing enumBody iter echoServer2
+            Nothing Nothing enumBody iter onSendFile echoServer2
 
     s <- readIORef ref
 
@@ -452,13 +459,6 @@ testHttp2 = testCase "connection: close" $ do
                _ -> False
 
     assertBool "connection: close" ok
-
-
-  where
-    mkIter :: IORef L.ByteString -> Iteratee IO ()
-    mkIter ref = do
-        x <- stream2stream
-        liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
 
 
 

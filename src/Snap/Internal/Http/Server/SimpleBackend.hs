@@ -14,6 +14,7 @@ module Snap.Internal.Http.Server.SimpleBackend
 , new
 , stop
 , withConnection
+, sendFile
 , getReadEnd
 , getWriteEnd
 , getRemoteAddr
@@ -35,6 +36,7 @@ import           Foreign.C.Types
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
 import qualified Network.Socket.ByteString as SB
+import qualified Network.Socket.SendFile as SF
 import           Prelude hiding (catch)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
@@ -68,6 +70,11 @@ data Connection = Connection
     , _localPort   :: Int }
 
 
+sendFile :: Connection -> FilePath -> IO ()
+sendFile c fp = do
+    let s = _socket c
+    SF.sendFile s fp
+
 
 bindIt :: ByteString         -- ^ bind address, or \"*\" for all
        -> Int                -- ^ port to bind to
@@ -75,6 +82,7 @@ bindIt :: ByteString         -- ^ bind address, or \"*\" for all
 bindIt bindAddress bindPort = do
     sock <- socket AF_INET Stream 0
     addr <- getHostAddr bindPort bindAddress
+    setSocketOption sock ReuseAddr 1
     bindSocket sock addr
     listen sock bindPort
     return sock

@@ -88,25 +88,24 @@ combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
 
     timeStr <- getLogDateString
 
-    let p = do
-        putByteString host
-        putByteString " - "
-        putByteString user
-        putByteString " ["
-        putByteString timeStr
-        putByteString "] \""
-        putByteString req
-        putByteString "\" "
-        putLazyByteString $ show status
-        putCh ' '
-        putByteString numBytes
-        putCh ' '
-        putByteString referer
-        putByteString " \""
-        putByteString userAgent
-        putCh '\"'
+    let p = [ host
+            , " - "
+            , user
+            , " ["
+            , timeStr
+            , "] \""
+            , req
+            , "\" "
+            , strict $ show status
+            , " "
+            , numBytes
+            , " "
+            , referer
+            , " \""
+            , userAgent
+            , "\"" ]
 
-    return $ runPut p
+    return $ S.concat p
 
 
   where

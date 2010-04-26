@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,6 +8,7 @@ module Snap.Internal.Http.Server where
 ------------------------------------------------------------------------------
 import           Control.Arrow (first, second)
 import           Control.Monad.State.Strict
+import           Control.Concurrent.MVar
 import           Control.Exception
 import           Data.Char
 import           Data.CIByteString
@@ -18,16 +20,17 @@ import qualified Data.ByteString.Nums.Careless.Int as Cvt
 import           Data.IORef
 import           Data.List (foldl')
 import qualified Data.Map as Map
-import           Data.Maybe (catMaybes, fromMaybe)
+import           Data.Maybe (fromJust, catMaybes, fromMaybe)
 import           Data.Monoid
-import           Prelude hiding (catch)
-
 import           GHC.Conc
-import           Control.Concurrent.MVar
-import           System.IO.Error hiding (try,catch)
-import           System.FastLogger
 import           GHC.IOBase (IOErrorType(..))
+import           Prelude hiding (catch, show, Show)
+import qualified Prelude
+import           System.IO.Error hiding (try,catch)
+import           System.Posix.Files
+import           Text.Show.ByteString hiding (runPut)
 ------------------------------------------------------------------------------
+import           System.FastLogger
 import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
 import           Snap.Iteratee hiding (foldl', head, take)
@@ -44,6 +47,7 @@ import           Snap.Internal.Http.Server.SimpleBackend (debug)
 
 import           Snap.Internal.Http.Server.Date
 
+------------------------------------------------------------------------------
 -- | The handler has to return the request object because we have to clear the
 -- HTTP request body before we send the response. If the handler consumes the
 -- request body, it is responsible for setting @rqBody=return@ in the returned
@@ -67,6 +71,7 @@ data ServerState = ServerState
     }
 
 
+------------------------------------------------------------------------------
 runServerMonad :: ByteString                     -- ^ local host name
                -> ByteString                     -- ^ local ip address
                -> Int                            -- ^ local port
@@ -86,8 +91,8 @@ runServerMonad lh lip lp rip rp logA logE m = evalStateT m st
 -- input/output
 
 
+------------------------------------------------------------------------------
 -- FIXME: exception handling
-
 httpServe :: ByteString         -- ^ bind address, or \"*\" for all
           -> Int                -- ^ port to bind to
           -> ByteString         -- ^ local hostname (server name)
@@ -115,7 +120,8 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
       where
         f ((backend,mvar),cpu) =
             forkOnIO cpu $ do
-                labelMe $ "accThread " ++ show cpu
+                labelMe $ map w2c $ S.unpack $
+                          S.concat ["accThread ", l2s $ show cpu]
                 (try $ (forever $ go alog elog backend cpu)) :: IO (Either SomeException ())
                 putMVar mvar ()
 
@@ -153,7 +159,9 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         let lport = Backend.getLocalPort conn
 
         runHTTP localHostname laddr lport raddr rport
-                alog elog readEnd writeEnd handler
+                alog elog readEnd writeEnd (Backend.sendFile conn)
+                handler
+
         debug "Server.httpServe.runHTTP: finished"
 
 
@@ -183,11 +191,19 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                        , bshow e ]
               return () ]
 
+------------------------------------------------------------------------------
 debugE s = debug $ "Server: " ++ (map w2c $ S.unpack s)
 
+
+------------------------------------------------------------------------------
 logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
 logE' logger s = (timestampedLogEntry s) >>= logMsg logger
 
+
+bshow :: (Prelude.Show a) => a -> ByteString
+bshow = toBS . Prelude.show
+
+------------------------------------------------------------------------------
 logA alog = maybe (\_ _ -> return ()) logA' alog
 logA' logger req rsp = do
     let hdrs      = rqHeaders req
@@ -195,7 +211,7 @@ logA' logger req rsp = do
     let user      = Nothing -- FIXME we don't do authentication yet
     let (v, v')   = rqVersion req
     let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
-    let method    = bshow (rqMethod req)
+    let method    = toBS $ Prelude.show (rqMethod req)
     let reql      = S.intercalate " " [ method, rqURI req, ver ]
     let status    = rspStatus rsp
     let cl        = rspContentLength rsp
@@ -206,48 +222,54 @@ logA' logger req rsp = do
     logMsg logger msg
 
 
-
-
-runHTTP :: ByteString         -- ^ local host name
-        -> ByteString         -- ^ local ip address
-        -> Int                -- ^ local port
-        -> ByteString         -- ^ remote ip address
-        -> Int                -- ^ remote port
-        -> Maybe Logger       -- ^ access logger
-        -> Maybe Logger       -- ^ error logger
-        -> Enumerator IO ()   -- ^ read end of socket
-        -> Iteratee IO ()     -- ^ write end of socket
-        -> ServerHandler      -- ^ handler procedure
+------------------------------------------------------------------------------
+runHTTP :: ByteString           -- ^ local host name
+        -> ByteString           -- ^ local ip address
+        -> Int                  -- ^ local port
+        -> ByteString           -- ^ remote ip address
+        -> Int                  -- ^ remote port
+        -> Maybe Logger         -- ^ access logger
+        -> Maybe Logger         -- ^ error logger
+        -> Enumerator IO ()     -- ^ read end of socket
+        -> Iteratee IO ()       -- ^ write end of socket
+        -> (FilePath -> IO ())  -- ^ sendfile end
+        -> ServerHandler        -- ^ handler procedure
         -> IO ()
-runHTTP lh lip lp rip rp alog elog readEnd writeEnd handler =
+runHTTP lh lip lp rip rp alog elog readEnd writeEnd onSendFile handler =
     go `catches` [ Handler $ \(e :: AsyncException) -> do
                        logE elog "runHTTP: caught async exception:"
-                       logE elog $ bshow e
+                       logE elog $ toBS $ Prelude.show e
                        throwIO e
-                 , Handler $ \(e :: SomeException) -> logE elog $ bshow e ]
+                 , Handler $ \(e :: SomeException) ->
+                             logE elog $ toBS $ Prelude.show e ]
 
   where
     go = do
         let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
-                                  httpSession writeEnd handler
+                                  httpSession writeEnd onSendFile handler
         readEnd iter >>= run
 
 
+------------------------------------------------------------------------------
 sERVER_HEADER :: [ByteString]
 sERVER_HEADER = ["Snap/0.pre-1"]
 
 
+------------------------------------------------------------------------------
 logAccess :: Request -> Response -> ServerMonad ()
 logAccess req rsp = gets _logAccess >>= (\l -> liftIO $ l req rsp)
 
+------------------------------------------------------------------------------
 logError :: ByteString -> ServerMonad ()
 logError s = gets _logError >>= (\l -> liftIO $ l s)
 
+------------------------------------------------------------------------------
 -- | Runs an HTTP session.
-httpSession :: Iteratee IO ()      -- ^ write end of socket
-            -> ServerHandler       -- ^ handler procedure
+httpSession :: Iteratee IO ()       -- ^ write end of socket
+            -> (FilePath -> IO ())  -- ^ sendfile continuation
+            -> ServerHandler        -- ^ handler procedure
             -> ServerMonad ()
-httpSession writeEnd handler = do
+httpSession writeEnd onSendFile handler = do
     liftIO $ debug "Server.httpSession: entered"
     mreq       <- receiveRequest
 
@@ -273,7 +295,7 @@ httpSession writeEnd handler = do
           date <- liftIO getDateString
           let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
           let rsp' = updateHeaders ins rsp
-          (bytesSent,_) <- sendResponse rsp' writeEnd
+          (bytesSent,_) <- sendResponse rsp' writeEnd onSendFile
 
           maybe (logAccess req rsp')
                 (\_ -> logAccess req $ setContentLength bytesSent rsp')
@@ -281,11 +303,11 @@ httpSession writeEnd handler = do
 
           if cc
              then return ()
-             else httpSession writeEnd handler
+             else httpSession writeEnd onSendFile handler
 
       Nothing -> return ()
 
-
+------------------------------------------------------------------------------
 receiveRequest :: ServerMonad (Maybe Request)
 receiveRequest = do
     mreq <- lift parseRequest
@@ -426,38 +448,44 @@ receiveRequest = do
                                   S.break (== (c2w '?')) uri
 
 
+------------------------------------------------------------------------------
+-- Response must be well-formed here
 sendResponse :: Response
              -> Iteratee IO a
+             -> (FilePath -> IO a)
              -> ServerMonad (Int,a)
-sendResponse rsp writeEnd = do
-    (hdrs, bodyEnum) <- maybe noCL hasCL (rspContentLength rsp)
+sendResponse rsp' writeEnd onSendFile = do
+    rsp <- fixupResponse rsp'
+    let !headerString = mkHeaderString rsp
 
-    let headerline = S.concat [ "HTTP/"
-                              , bshow major
-                              , "."
-                              , bshow minor
-                              , " "
-                              , bshow $ rspStatus rsp
-                              , " "
-                              , rspStatusReason rsp
-                              , "\r\n" ]
+    (!x,!bs) <- case (rspBody rsp) of
+                  (Enum e)     -> liftIO $ whenEnum headerString e
+                  (SendFile f) -> liftIO $ whenSendFile headerString rsp f
 
-    let headerString = L.fromChunks $ concat [ [headerline]
-                                             , fmtHdrs hdrs
-                                             , ["\r\n"] ]
-
-    let enum = enumLBS headerString >.
-               bodyEnum (rspBody rsp)
-
-    -- send the data out. run throws an exception on error that we will catch
-    -- in the toplevel handler.
-    (x, bs) <- liftIO $ enum (countBytes writeEnd) >>= run
-    let hdrsLength = fromEnum $ L.length headerString
-    return $! (bs - hdrsLength, x)
+    return $! (bs,x)
 
   where
-    (major,minor) = rspHttpVersion rsp
-    fmtHdrs hdrs = concat xs
+    whenEnum hs e = do
+        let enum = enumBS hs >. e
+        let hl = S.length hs
+        (x,bs) <- liftIO $ enum (countBytes writeEnd) >>= run
+
+        return (x, bs-hl)
+
+    whenSendFile hs r f = do
+        -- guaranteed to have a content length here.
+        enumBS hs writeEnd >>= run
+
+        let !cl = fromJust $ rspContentLength r
+        x <- onSendFile f
+        return (x, cl)
+
+    (major,minor) = rspHttpVersion rsp'
+
+
+    fmtHdrs hdrs =
+        {-# SCC "fmtHdrs" #-}
+        concat xs
       where
         xs = map f $ Map.toList hdrs
 
@@ -465,29 +493,85 @@ sendResponse rsp writeEnd = do
 
         g k y = S.concat [ unCI k, ": ", y, "\r\n" ]
 
-    stHdrs = Map.delete "Content-Length" $ rspHeaders rsp
 
-    noCL :: ServerMonad (Headers, Enumerator IO a -> Enumerator IO a)
-    noCL = do
-        -- are we in HTTP/1.1?
-        let sendChunked = (rspHttpVersion rsp) == (1,1)
-        if sendChunked
-          then do
-              return ( Map.insert "Transfer-Encoding" ["chunked"] stHdrs
-                     , writeChunkedTransferEncoding )
-          else do
-              -- HTTP/1.0 and no content-length? We'll have to close the
-              -- socket.
-              modify $! \s -> s { _forceConnectionClose = True }
-              return (Map.insert "Connection" ["close"] stHdrs, id)
+    noCL :: Response -> ServerMonad Response
+    noCL r =
+        {-# SCC "noCL" #-}
+        do
+            -- are we in HTTP/1.1?
+            let sendChunked = (rspHttpVersion r) == (1,1)
+            if sendChunked
+              then do
+                  let r' = setHeader "Transfer-Encoding" "chunked" r
+                  let e  = writeChunkedTransferEncoding $ rspBodyToEnum $ rspBody r
+                  return $ r' { rspBody = Enum e }
 
-    hasCL :: Int -> ServerMonad (Headers, Enumerator IO a -> Enumerator IO a)
-    hasCL cl = do
-        -- set the content-length header
-        return (Map.insert "Content-Length" [fromStr $ show cl] stHdrs, i)
+              else do
+                  -- HTTP/1.0 and no content-length? We'll have to close the
+                  -- socket.
+                  modify $! \s -> s { _forceConnectionClose = True }
+                  return $ setHeader "Connection" "close" r
+
+
+    hasCL :: Int -> Response -> ServerMonad Response
+    hasCL cl r =
+        {-# SCC "hasCL" #-}
+        do
+            -- set the content-length header
+            let r' = setHeader "Content-Length" (l2s $ show cl) r
+            let b = case (rspBody r') of
+                      (Enum e)     -> Enum (i e)
+                      (SendFile f) -> SendFile f
+
+            return $ r' { rspBody = b }
+
       where
         i :: Enumerator IO a -> Enumerator IO a
         i enum iter = enum (joinI $ takeExactly cl iter)
+
+
+    setFileSize :: FilePath -> Response -> ServerMonad Response
+    setFileSize fp r =
+        {-# SCC "setFileSize" #-}
+        do
+            fs <- liftM fromEnum $ liftIO $ getFileSize fp
+            return $ r { rspContentLength = Just fs }
+
+
+    fixupResponse :: Response -> ServerMonad Response
+    fixupResponse r =
+        {-# SCC "fixupResponse" #-}
+        do
+            let r' = updateHeaders (Map.delete "Content-Length") r
+            r'' <- case (rspBody r') of
+                     (Enum e)     -> return r'
+                     (SendFile f) -> setFileSize f r'
+            case (rspContentLength r'') of
+              Nothing   -> noCL r''
+              (Just sz) -> hasCL sz r''
+
+
+    bsshow = l2s . show
+
+
+    mkHeaderString :: Response -> ByteString
+    mkHeaderString r =
+        {-# SCC "mkHeaderString" #-}
+        S.concat $ concat [hl, hdr, eol]
+      where
+        hl = [ "HTTP/"
+             , bsshow major
+             , "."
+             , bsshow minor
+             , " "
+             , bsshow $ rspStatus r
+             , " "
+             , rspStatusReason r
+             , "\r\n" ]
+
+        hdr = fmtHdrs $ headers r
+
+        eol = ["\r\n"]
 
 
 ------------------------------------------------------------------------------
@@ -505,9 +589,8 @@ checkConnectionClose ver hdrs =
     l  = liftM (map tl) $ Map.lookup "Connection" hdrs
     tl = S.map (c2w . toLower . w2c)
 
-bshow :: (Show a) => a -> ByteString
-bshow = S.pack . map c2w . show
 
+------------------------------------------------------------------------------
 -- FIXME: whitespace-trim the values here.
 toHeaders :: [(ByteString,ByteString)] -> Headers
 toHeaders kvps = foldl' f Map.empty kvps'
@@ -515,3 +598,15 @@ toHeaders kvps = foldl' f Map.empty kvps'
     kvps'     = map (first toCI . second (:[])) kvps
     f m (k,v) = Map.insertWith' (flip (++)) k v m
 
+
+------------------------------------------------------------------------------
+getFileSize :: FilePath -> IO FileOffset
+getFileSize fp = liftM fileSize $ getFileStatus fp
+
+
+l2s :: L.ByteString -> S.ByteString
+l2s = S.concat . L.toChunks
+
+
+toBS :: String -> ByteString
+toBS = S.pack . map c2w
