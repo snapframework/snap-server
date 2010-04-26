@@ -33,6 +33,8 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Time.Format (parseTime)
+import qualified Data.Vector.Unboxed as Vec
+import           Data.Vector.Unboxed (Vector)
 import           Data.Word (Word8)
 import           Prelude hiding (take, takeWhile)
 import           System.Locale (defaultTimeLocale)
@@ -168,7 +170,9 @@ digit    = satisfy (isDigit . w2c)
 letter   = satisfy (isAlpha . w2c)
 
 untilEOL :: Parser ByteString
-untilEOL = option "" $ takeWhile1 (not . flip elem "\r\n" . w2c)
+untilEOL = takeWhile notend
+  where
+    notend d = let c = w2c d in not $ c == '\r' || c == '\n'
 
 crlf :: Parser ByteString
 crlf = string "\r\n"
@@ -178,7 +182,7 @@ spaces :: Parser [Word8]
 spaces = many sp
 
 pSpaces :: Parser ByteString
-pSpaces = option "" $ takeWhile1 (isSpace . w2c)
+pSpaces = takeWhile (isSpace . w2c)
 
 -- | Parser for the internal request data type.
 pRequest :: Parser (Maybe IRequest)
@@ -208,7 +212,7 @@ pMethod =     (OPTIONS <$ string "OPTIONS")
 
 -- | Parser for the request URI.
 pUri :: Parser ByteString
-pUri = option "" $ takeWhile1 (not . isSpace . w2c)
+pUri = takeWhile (not . isSpace . w2c)
 
 -- | Parser for the request's HTTP protocol version.
 pVersion :: Parser (Int, Int)
@@ -218,37 +222,50 @@ pVersion = string "HTTP/" *>
       digit' = fmap (digitToInt . w2c) digit
 
 fieldChars :: Parser ByteString
-fieldChars = option "" $ takeWhile1 (isFieldChar . w2c)
+fieldChars = takeWhile isFieldChar
   where
-    isFieldChar c = (isDigit c) || (isAlpha c) || c == '-' || c == '_'
+    isFieldChar c = (Vec.!) fieldCharTable (fromEnum c)
+
+fieldCharTable :: Vector Bool
+fieldCharTable = Vec.generate 256 f
+  where
+    f d = let c=toEnum d in (isDigit c) || (isAlpha c) || c == '-' || c == '_'
 
 
 -- | Parser for request headers.
 pHeaders :: Parser [(ByteString, ByteString)]
 pHeaders = many header
   where
-    header            = liftA2 (,)
-                               fieldName
-                               (word8 (c2w ':') *> spaces *> contents)
+    header = {-# SCC "pHeaders/header" #-}
+             liftA2 (,)
+                 fieldName
+                 (word8 (c2w ':') *> spaces *> contents)
 
-    fieldName         = liftA2 S.cons letter fieldChars
+    fieldName = {-# SCC "pHeaders/fieldName" #-}
+                liftA2 S.cons letter fieldChars
 
-    contents          = liftA2 S.append
-                               (untilEOL <* crlf)
-                               (continuation <|> pure S.empty)
+    contents = {-# SCC "pHeaders/contents" #-}
+               liftA2 S.append
+                   (untilEOL <* crlf)
+                   (continuation <|> pure S.empty)
 
-    isLeadingWS w     = let c = w2c w in c == ' ' || c == '\t'
-    leadingWhiteSpace = satisfy isLeadingWS
-                          *> (option "" $ takeWhile1 isLeadingWS)
+    isLeadingWS w = {-# SCC "pHeaders/isLeadingWS" #-}
+                    elem w wstab
 
-    continuation      = liftA2 S.cons
-                               (c2w ' ' <$ leadingWhiteSpace)
-                               contents
+    wstab = map c2w " \t"
+
+    leadingWhiteSpace = {-# SCC "pHeaders/leadingWhiteSpace" #-}
+                        takeWhile1 isLeadingWS
+
+    continuation = {-# SCC "pHeaders/continuation" #-}
+                   liftA2 S.cons
+                          (leadingWhiteSpace *> pure (c2w ' '))
+                          contents
 
 
 pGetTransferChunk :: Parser (Maybe ByteString)
 pGetTransferChunk = do
-    hex <- liftM fromHex $ (option "" $ takeWhile1 (isHexDigit . w2c))
+    hex <- liftM fromHex $ (takeWhile (isHexDigit . w2c))
     takeTill ((== '\r') . w2c)
     crlf
     if hex <= 0
@@ -275,20 +292,25 @@ matchAll x c = and $ map ($ c) x
 
 {-# INLINE isToken #-}
 isToken :: Char -> Bool
-isToken = matchAll [ isAscii
-                   , not . isControl
-                   , not . isSpace 
-                   , not . flip elem [ '(', ')', '<', '>', '@', ',', ';'
-                                           , ':', '\\', '\"', '/', '[', ']'
-                                           , '?', '=', '{', '}' ]
-                   ]
+isToken c = (Vec.!) tokenTable (fromEnum c)
+  where
+    tokenTable :: Vector Bool
+    tokenTable = Vec.generate 256 (f . toEnum)
+
+    f = matchAll [ isAscii
+                 , not . isControl
+                 , not . isSpace 
+                 , not . flip elem [ '(', ')', '<', '>', '@', ',', ';'
+                                   , ':', '\\', '\"', '/', '[', ']'
+                                   , '?', '=', '{', '}' ]
+                 ]
 
 {-# INLINE isRFCText #-}
 isRFCText :: Char -> Bool
 isRFCText = not . isControl
 
 pToken :: Parser ByteString
-pToken = option "" $ takeWhile1 (isToken . w2c)
+pToken = takeWhile (isToken . w2c)
 
 
 pQuotedString :: Parser ByteString
@@ -297,7 +319,7 @@ pQuotedString = q *> quotedText <* q
     quotedText = (S.concat . reverse) <$> f []
 
     f soFar = do
-        t <- option "" $ takeWhile1 qdtext
+        t <- takeWhile qdtext
 
         let soFar' = t:soFar
 
@@ -346,7 +368,7 @@ pCookie = do
 -- unhelpfully, the spec mentions "old-style" cookies that don't have quotes
 -- around the value. wonderful.
 pWord :: Parser ByteString
-pWord = pQuotedString <|> (option "" $ takeWhile1 ((/= ';') . w2c))
+pWord = pQuotedString <|> (takeWhile ((/= ';') . w2c))
 
 pAvPairs :: Parser [(ByteString, ByteString)]
 pAvPairs = do
