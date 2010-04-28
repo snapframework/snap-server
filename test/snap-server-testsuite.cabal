@@ -42,7 +42,8 @@ Executable testsuite
      test-framework-hunit < 0.3,
      test-framework-quickcheck2 < 0.3,
      time,
-     transformers
+     transformers,
+     vector >= 0.6.0.1 && < 0.7
      
    if flag(libev)
      build-depends: hlibev >= 0.2.1
@@ -92,7 +93,8 @@ Executable pongserver
      test-framework-quickcheck2 < 0.3,
      time,
      transformers,
-     unix
+     unix,
+     vector >= 0.6.0.1 && < 0.7
 
    if flag(libev)
      build-depends: hlibev >= 0.2.1
