@@ -368,11 +368,15 @@ receiveRequest = do
         doIt = mbCT == Just "application/x-www-form-urlencoded"
         mbCT = liftM head $ Map.lookup "content-type" (rqHeaders req)
 
+        maximumPOSTBodySize :: Int
+        maximumPOSTBodySize = 10*1024*1024
+
         getIt :: ServerMonad Request
         getIt = do
             senum <- liftIO $ readIORef $ rqBody req
             let (SomeEnumerator enum) = senum
-            iter <- liftIO $ enum stream2stream
+            let i = joinI $ takeNoMoreThan maximumPOSTBodySize stream2stream
+            iter <- liftIO $ enum i
             body <- lift iter
             let newParams = parseUrlEncoded $ strictize $ fromWrap body
             liftIO $ writeIORef (rqBody req)
