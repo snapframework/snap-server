@@ -226,7 +226,7 @@ enumerate :: (MonadIO m) => Connection -> Enumerator m a
 enumerate = loop
   where
     loop conn f = do
-        s <- liftIO timeoutRecv conn bLOCKSIZE
+        s <- liftIO $ timeoutRecv conn bLOCKSIZE
         sendOne conn f s
 
     sendOne conn f s = do
