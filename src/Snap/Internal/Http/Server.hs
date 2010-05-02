@@ -26,6 +26,8 @@ import           GHC.Conc
 import           GHC.IOBase (IOErrorType(..))
 import           Prelude hiding (catch, show, Show)
 import qualified Prelude
+import           System.Environment
+import           System.IO
 import           System.IO.Error hiding (try,catch)
 import           System.Posix.Files
 import           Text.Show.ByteString hiding (runPut)
@@ -108,6 +110,8 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
     spawnAll alog elog =
         bracket (spawn numCapabilities)
                 (\xs -> do
+                     pn <- getProgName
+                     hPutStrLn stderr $ pn ++ ": shutting down, please wait"
                      logE elog "Server.httpServe: SHUTDOWN"
                      mapM_ (Backend.stop . fst) xs
                      logE elog "Server.httpServe: BACKEND STOPPED")
@@ -167,7 +171,9 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
     go alog elog backend cpu = runOne alog elog backend cpu
         `catches`
-        [ Handler $ \(e :: AsyncException) -> do
+        [ Handler $ \(e :: Backend.TimeoutException) -> return ()
+
+        , Handler $ \(e :: AsyncException) -> do
               logE elog $
                    S.concat [ "Server.httpServe.go: got async exception, "
                             , "terminating:\n", bshow e ]
@@ -237,9 +243,10 @@ runHTTP :: ByteString           -- ^ local host name
         -> IO ()
 runHTTP lh lip lp rip rp alog elog readEnd writeEnd onSendFile handler =
     go `catches` [ Handler $ \(e :: AsyncException) -> do
-                       logE elog "runHTTP: caught async exception:"
-                       logE elog $ toBS $ Prelude.show e
                        throwIO e
+
+                 , Handler $ \(e :: Backend.TimeoutException) -> return ()
+
                  , Handler $ \(e :: SomeException) ->
                              logE elog $ toBS $ Prelude.show e ]
 

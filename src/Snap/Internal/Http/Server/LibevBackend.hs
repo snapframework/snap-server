@@ -596,11 +596,8 @@ enumerate :: (MonadIO m) => Connection -> Enumerator m a
 enumerate = loop
   where
     loop conn f = do
-        es <- liftIO ((try $ recvData conn bLOCKSIZE)
-                          :: IO (Either SomeException ByteString))
-
-        case es of Left  e -> enumErr (show e) f
-                   Right s -> sendOne conn f s
+        s <- liftIO $ recvData conn bLOCKSIZE
+        sendOne conn f s
 
     sendOne conn f s = do
         v <- runIter f (if B.null s
