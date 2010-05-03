@@ -13,6 +13,8 @@ import qualified Snap.Internal.Http.Server as Int
 
 
 -- | Starts serving HTTP requests on the given port using the given handler.
+-- This function never returns; to shut down the HTTP server, kill the
+-- controlling thread.
 httpServe :: ByteString      -- ^ bind address, or \"*\" for all
           -> Int             -- ^ port to bind to
           -> ByteString      -- ^ local hostname (server name)
