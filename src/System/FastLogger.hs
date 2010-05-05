@@ -110,7 +110,6 @@ combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
 
   where
     strict = S.concat . L.toChunks
-    putCh = putWord8 . c2w
 
 
 -- | Sends out a log message verbatim with a newline appended. Note:

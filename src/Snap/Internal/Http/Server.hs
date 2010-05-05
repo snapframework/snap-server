@@ -23,13 +23,9 @@ import qualified Data.Map as Map
 import           Data.Maybe (fromJust, catMaybes, fromMaybe)
 import           Data.Monoid
 import           GHC.Conc
-import           GHC.IOBase (IOErrorType(..))
 import           Prelude hiding (catch, show, Show)
 import qualified Prelude
-import           System.Environment
-import           System.IO
-import           System.IO.Error hiding (try,catch)
-import           System.Posix.Files
+import           System.Posix.Files hiding (setFileSize)
 import           Text.Show.ByteString hiding (runPut)
 ------------------------------------------------------------------------------
 import           System.FastLogger
@@ -83,9 +79,9 @@ runServerMonad :: ByteString                     -- ^ local host name
                -> (ByteString -> IO ())          -- ^ error log function
                -> ServerMonad a                  -- ^ monadic action to run
                -> Iteratee IO a
-runServerMonad lh lip lp rip rp logA logE m = evalStateT m st
+runServerMonad lh lip lp rip rp la le m = evalStateT m st
   where
-    st = ServerState False lh lip lp rip rp logA logE
+    st = ServerState False lh lip lp rip rp la le
 
 
 
@@ -110,7 +106,6 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
     spawnAll alog elog =
         bracket (spawn numCapabilities)
                 (\xs -> do
-                     pn <- getProgName
                      logE elog "Server.httpServe: SHUTDOWN"
                      mapM_ (Backend.stop . fst) xs
                      logE elog "Server.httpServe: BACKEND STOPPED")
@@ -170,7 +165,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
     go alog elog backend cpu = runOne alog elog backend cpu
         `catches`
-        [ Handler $ \(e :: Backend.TimeoutException) -> return ()
+        [ Handler $ \(_ :: Backend.TimeoutException) -> return ()
 
         , Handler $ \(e :: AsyncException) -> do
               logE elog $
@@ -186,10 +181,6 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
               logE elog $ S.concat [ "Server.httpServe.go: got io exception: "
                                    , bshow e ]
 
-              let et = ioeGetErrorType e
-
-              when (et == Interrupted) $ throwIO e
-
         , Handler $ \(e :: SomeException) -> do
               logE elog $ S.concat [
                         "Server.httpServe.go: got someexception: "
@@ -197,11 +188,15 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
               return () ]
 
 ------------------------------------------------------------------------------
+debugE :: (MonadIO m) => ByteString -> m ()
 debugE s = debug $ "Server: " ++ (map w2c $ S.unpack s)
 
 
 ------------------------------------------------------------------------------
+logE :: Maybe Logger -> ByteString -> IO ()
 logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
+
+logE' :: Logger -> ByteString -> IO ()
 logE' logger s = (timestampedLogEntry s) >>= logMsg logger
 
 
@@ -209,7 +204,10 @@ bshow :: (Prelude.Show a) => a -> ByteString
 bshow = toBS . Prelude.show
 
 ------------------------------------------------------------------------------
+logA ::Maybe Logger -> Request -> Response -> IO ()
 logA alog = maybe (\_ _ -> return ()) logA' alog
+
+logA' :: Logger -> Request -> Response -> IO ()
 logA' logger req rsp = do
     let hdrs      = rqHeaders req
     let host      = rqRemoteAddr req
@@ -244,7 +242,7 @@ runHTTP lh lip lp rip rp alog elog readEnd writeEnd onSendFile handler =
     go `catches` [ Handler $ \(e :: AsyncException) -> do
                        throwIO e
 
-                 , Handler $ \(e :: Backend.TimeoutException) -> return ()
+                 , Handler $ \(_ :: Backend.TimeoutException) -> return ()
 
                  , Handler $ \(e :: SomeException) ->
                              logE elog $ toBS $ Prelude.show e ]
@@ -554,7 +552,7 @@ sendResponse rsp' writeEnd onSendFile = do
         do
             let r' = updateHeaders (Map.delete "Content-Length") r
             r'' <- case (rspBody r') of
-                     (Enum e)     -> return r'
+                     (Enum _)     -> return r'
                      (SendFile f) -> setFileSize f r'
             case (rspContentLength r'') of
               Nothing   -> noCL r''

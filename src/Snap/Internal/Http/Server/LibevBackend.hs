@@ -45,8 +45,6 @@ import           Data.Typeable
 import           Foreign hiding (new)
 import           Foreign.C.Error
 import           Foreign.C.Types
-import           Foreign.Marshal.Alloc
-import           Foreign.Ptr
 import           GHC.Conc (forkOnIO)
 import           Network.Libev
 import           Network.Socket
@@ -57,10 +55,6 @@ import           System.Timeout
 import           Snap.Iteratee
 import           Snap.Internal.Debug
 
-
-
-foreign import ccall unsafe "set_linger"
-  set_linger :: CInt -> IO ()
 
 
 data Backend = Backend
@@ -350,7 +344,7 @@ freeConnection conn = ignoreException $ do
 
 
 ignoreException :: IO () -> IO ()
-ignoreException = handle (\(e::SomeException) -> return ())
+ignoreException = handle (\(_::SomeException) -> return ())
 
 
 freeBackend :: Backend -> IO ()
@@ -395,7 +389,6 @@ freeBackend backend = ignoreException $ block $ do
     killCb      = _killCb backend
     (mcb1,mcb2) = _mutexCallbacks backend
     loop        = _evLoop backend
-    lock        = _loopLock backend
 
 
 -- | Note: proc gets run in the background
