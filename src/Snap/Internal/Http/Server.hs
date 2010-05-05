@@ -111,7 +111,6 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         bracket (spawn numCapabilities)
                 (\xs -> do
                      pn <- getProgName
-                     hPutStrLn stderr $ pn ++ ": shutting down, please wait"
                      logE elog "Server.httpServe: SHUTDOWN"
                      mapM_ (Backend.stop . fst) xs
                      logE elog "Server.httpServe: BACKEND STOPPED")

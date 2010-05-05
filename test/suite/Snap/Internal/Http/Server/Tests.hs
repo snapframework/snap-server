@@ -46,7 +46,8 @@ tests = [ testHttpRequest1
         , testPartialParse
         , testMethodParsing
         , testServerStartupShutdown
-        , testChunkOn1_0 ]
+        , testChunkOn1_0
+        , testSendFile ]
 
 
 ------------------------------------------------------------------------------
@@ -388,7 +389,7 @@ mkIter ref = (iter, \f -> onF f iter)
         x <- stream2stream
         liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
 
-    onF f iter = enumFile f iter >>= run
+    onF f i = enumFile f i >>= run
 
 
 testChunkOn1_0 :: Test
@@ -467,6 +468,30 @@ pongServer = modifyResponse $ setResponseBody (enumBS "PONG") .
                               setContentType "text/plain" .
                               setContentLength 4
 
+sendFileFoo :: Snap ()
+sendFileFoo = sendFile "data/fileServe/foo.html"
+
+
+testSendFile :: Test
+testSendFile = testCase "sendFile" $ do
+    tid <- forkIO $ httpServe "*" port "localhost"
+           Nothing Nothing $
+           runSnap sendFileFoo
+    waitabit
+
+    rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
+    doc <- HTTP.getResponseBody rsp
+
+    killThread tid
+    waitabit
+
+    assertEqual "sendFile" "FOO\n" doc
+
+  where
+    waitabit = threadDelay $ ((10::Int)^(6::Int))
+    port     = 8123
+    
+
 testServerStartupShutdown :: Test
 testServerStartupShutdown = testCase "startup/shutdown" $ do
     tid <- forkIO $ httpServe "*" port "localhost"
@@ -474,7 +499,7 @@ testServerStartupShutdown = testCase "startup/shutdown" $ do
            runSnap pongServer
     waitabit
 
-    rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
+    rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")
     doc <- HTTP.getResponseBody rsp
     assertEqual "server" "PONG" doc
 
@@ -486,5 +511,5 @@ testServerStartupShutdown = testCase "startup/shutdown" $ do
     return ()
   where
     waitabit = threadDelay $ ((10::Int)^(6::Int))
-    port = 8123
+    port = 8145
 
