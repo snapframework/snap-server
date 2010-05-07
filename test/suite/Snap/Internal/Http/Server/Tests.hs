@@ -506,7 +506,7 @@ testServerStartupShutdown = testCase "startup/shutdown" $ do
     killThread tid
     waitabit
 
-    expectException $ HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
+    expectException $ HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")
 
     return ()
   where
