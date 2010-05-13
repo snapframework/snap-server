@@ -69,25 +69,25 @@ fetchTime = do
              formatTime defaultTimeLocale "%d/%b/%Y:%H:%M:%S %z" now
 
 dateThread :: DateState -> IO ()
-dateThread (DateState dateString logString time valueIsOld morePlease dataAvailable _) =
-    forever $ do
-        -- a lot of effort to make sure we don't deadlock
+dateThread ds@(DateState dateString logString time valueIsOld morePlease
+                         dataAvailable _) = do
+    -- a lot of effort to make sure we don't deadlock
+    takeMVar morePlease
 
-        takeMVar morePlease
+    (s1,s2,now) <- fetchTime
+    atomicModifyIORef dateString $ const (s1,())
+    atomicModifyIORef logString $ const (s2,())
+    atomicModifyIORef time $ const (now,())
 
-        (s1,s2,now) <- fetchTime
-        atomicModifyIORef dateString $ const (s1,())
-        atomicModifyIORef logString $ const (s2,())
-        atomicModifyIORef time $ const (now,())
+    writeIORef valueIsOld False
+    tryPutMVar dataAvailable ()
 
-        writeIORef valueIsOld False
-        tryPutMVar dataAvailable ()
+    threadDelay 2000000
 
-        threadDelay 2000000
+    takeMVar dataAvailable
+    writeIORef valueIsOld True
 
-        takeMVar dataAvailable
-        writeIORef valueIsOld True
-
+    dateThread ds
 
 ensureFreshDate :: IO ()
 ensureFreshDate = block $ do

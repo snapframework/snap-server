@@ -103,8 +103,9 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                 (\(alog, elog) -> spawnAll alog elog)
 
   where
-    spawnAll alog elog =
-        bracket (spawn numCapabilities)
+    spawnAll alog elog = do
+        let n = max 1 $ numCapabilities `div` 2
+        bracket (spawn n)
                 (\xs -> do
                      logE elog "Server.httpServe: SHUTDOWN"
                      mapM_ (Backend.stop . fst) xs
@@ -120,8 +121,12 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
             forkOnIO cpu $ do
                 labelMe $ map w2c $ S.unpack $
                           S.concat ["accThread ", l2s $ show cpu]
-                (try $ (forever $ go alog elog backend cpu)) :: IO (Either SomeException ())
+                (try $ (goooo alog elog backend cpu)) :: IO (Either SomeException ())
                 putMVar mvar ()
+
+    goooo alog elog backend cpu =
+        let loop = go alog elog backend cpu >> loop
+        in loop
 
     maybeSpawnLogger = maybe (return Nothing) $ (liftM Just) . newLogger
 
@@ -130,6 +135,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                     elog <- maybeSpawnLogger efp
                     return (alog, elog))
                 (\(alog, elog) -> do
+                    threadDelay 1000000
                     maybe (return ()) stopLogger alog
                     maybe (return ()) stopLogger elog)
 

@@ -100,8 +100,21 @@ data Connection = Connection
 
 sendFile :: Connection -> FilePath -> IO ()
 sendFile c fp = do
-    let s = _socket c
+    withMVar lock $ \_ -> evIoStop loop io
     SF.sendFile s fp
+    withMVar lock $ \_ -> do
+      tryPutMVar (_readAvailable c) ()
+      tryPutMVar (_writeAvailable c) ()
+      evIoStart loop io
+      evAsyncSend loop asy
+
+  where
+    s    = _socket c
+    io   = _connIOObj c
+    b    = _backend c
+    loop = _evLoop b
+    lock = _loopLock b
+    asy  = _asyncObj b
 
 
 bindIt :: ByteString         -- ^ bind address, or \"*\" for all

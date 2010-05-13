@@ -419,3 +419,8 @@ parseUrlEncoded s = foldl' (\m (k,v) -> Map.insertWith' (++) k [v] m)
 
 strictize :: L.ByteString -> ByteString
 strictize         = S.concat . L.toChunks
+
+------------------------------------------------------------------------------
+char :: Char -> Parser Word8
+char = word8 . c2w
+
