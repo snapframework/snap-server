@@ -35,7 +35,7 @@ import qualified Data.ByteString as B
 import           Data.Iteratee.WrappedByteString
 import           Data.Typeable
 #ifdef LINUX
-import           Foreign
+import           Foreign hiding (new)
 #endif
 import           Foreign.C.Types
 import           GHC.Conc (labelThread, forkOnIO)
