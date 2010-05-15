@@ -101,6 +101,12 @@ Executable pongserver
      build-depends: network-bytestring >= 0.1.2 && < 0.2
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
+   if os(linux)
+     cpp-options: -DLINUX
+
+   if os(darwin)
+     cpp-options: -DOSX
+
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
    ghc-prof-options: -prof -auto-all
