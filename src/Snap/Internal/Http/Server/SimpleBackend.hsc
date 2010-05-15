@@ -34,6 +34,9 @@ import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
 import           Data.Iteratee.WrappedByteString
 import           Data.Typeable
+#ifdef LINUX
+import           Foreign
+#endif
 import           Foreign.C.Types
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
