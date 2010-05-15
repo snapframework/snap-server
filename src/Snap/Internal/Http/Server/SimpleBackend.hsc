@@ -21,6 +21,8 @@ module Snap.Internal.Http.Server.SimpleBackend
 , getRemotePort
 , getLocalAddr
 , getLocalPort
+, cork
+, uncork
 ) where
 
 ------------------------------------------------------------------------------
@@ -57,6 +59,41 @@ instance Exception BackendTerminatedException
 
 foreign import ccall unsafe "set_fd_timeout"
   set_fd_timeout :: CInt -> IO ()
+
+
+#if defined(LINUX)
+
+#  include <netinet/tcp.h>
+
+solTCP, tcpCork :: CInt
+
+tcpCork = #const TCP_CORK
+solTCP = #const SOL_TCP
+
+foreign import ccall unsafe "setsockopt"
+  setsockopt :: CInt -> CInt -> CInt -> Ptr CInt -> CInt -> IO ()
+
+cork :: Connection -> IO ()
+cork conn = do
+    let fd = _socketFd conn
+    alloca $ \ptr -> do
+      poke ptr 1
+      setsockopt fd solTCP tcpCork ptr $ toEnum $ sizeOf (0::CInt)
+
+uncork :: Connection -> IO ()
+uncork conn = do
+    let fd = _socketFd conn
+    alloca $ \ptr -> do
+      poke ptr 0
+      setsockopt fd solTCP tcpCork ptr $ toEnum $ sizeOf (0::CInt)
+
+#else
+uncork :: Connection -> IO ()
+uncork = const $ return ()
+
+cork :: Connection -> IO ()
+cork = const $ return ()
+#endif
 
 
 data Backend = Backend

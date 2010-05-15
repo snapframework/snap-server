@@ -161,10 +161,13 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         let rport = Backend.getRemotePort conn
         let laddr = Backend.getLocalAddr conn
         let lport = Backend.getLocalPort conn
+        Backend.cork conn
 
         runHTTP localHostname laddr lport raddr rport
                 alog elog readEnd writeEnd (Backend.sendFile conn)
                 handler
+
+        Backend.uncork conn
 
         debug "Server.httpServe.runHTTP: finished"
 
