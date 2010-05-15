@@ -78,14 +78,14 @@ foreign import ccall unsafe "setsockopt"
 
 cork :: Connection -> IO ()
 cork conn = do
-    let fd = _socketFd conn
+    let fd = fdSocket $ _socket conn
     alloca $ \ptr -> do
       poke ptr 1
       setsockopt fd solTCP tcpCork ptr $ toEnum $ sizeOf (0::CInt)
 
 uncork :: Connection -> IO ()
 uncork conn = do
-    let fd = _socketFd conn
+    let fd = fdSocket $ _socket conn
     alloca $ \ptr -> do
       poke ptr 0
       setsockopt fd solTCP tcpCork ptr $ toEnum $ sizeOf (0::CInt)
