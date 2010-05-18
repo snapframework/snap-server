@@ -22,8 +22,6 @@ module Snap.Internal.Http.Server.LibevBackend
 , getRemotePort
 , getLocalAddr
 , getLocalPort
-, cork
-, uncork
 ) where
 
 ---------------------------
@@ -56,46 +54,6 @@ import           System.Timeout
 ------------------------------------------------------------------------------
 import           Snap.Iteratee
 import           Snap.Internal.Debug
-
-
-#if defined(LINUX)
-
-#  include <netinet/tcp.h>
-
-solTCP, tcpCork, tcpNoDelay :: CInt
-
-tcpCork = #const TCP_CORK
-solTCP = #const SOL_TCP
-tcpNoDelay = #const TCP_NODELAY
-
-foreign import ccall unsafe "setsockopt"
-  setsockopt :: CInt -> CInt -> CInt -> Ptr CInt -> CInt -> IO ()
-
-cork :: Connection -> IO ()
-cork conn = do
-    let fd = _socketFd conn
-    alloca $ \ptr -> do
-      poke ptr 0
-      setsockopt fd solTCP tcpNoDelay ptr $ toEnum $ sizeOf (0::CInt)
-      poke ptr 1
-      setsockopt fd solTCP tcpCork ptr $ toEnum $ sizeOf (0::CInt)
-
-uncork :: Connection -> IO ()
-uncork conn = do
-    let fd = _socketFd conn
-    alloca $ \ptr -> do
-      poke ptr 0
-      setsockopt fd solTCP tcpCork ptr $ toEnum $ sizeOf (0::CInt)
-      poke ptr 1
-      setsockopt fd solTCP tcpNoDelay ptr $ toEnum $ sizeOf (0::CInt)
-
-#else
-uncork :: Connection -> IO ()
-uncork = const $ return ()
-
-cork :: Connection -> IO ()
-cork = const $ return ()
-#endif
 
 
 data Backend = Backend
