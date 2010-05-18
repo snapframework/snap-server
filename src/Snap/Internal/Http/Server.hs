@@ -104,7 +104,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
   where
     spawnAll alog elog = do
-        let n = max 1 $ numCapabilities `div` 2
+        let n = numCapabilities
         bracket (spawn n)
                 (\xs -> do
                      logE elog "Server.httpServe: SHUTDOWN"
