@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
@@ -20,6 +21,7 @@ import           Control.Monad (liftM)
 import           Control.Monad.Trans
 import           Data.Attoparsec hiding (many, Result(..))
 import           Data.Attoparsec.Iteratee
+import           Data.Bits
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import           Data.ByteString.Internal (c2w, w2c)
@@ -35,10 +37,9 @@ import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Time.Format (parseTime)
 import qualified Data.Vector.Unboxed as Vec
 import           Data.Vector.Unboxed (Vector)
-import           Data.Word (Word8)
+import           Data.Word (Word8, Word64)
 import           Prelude hiding (take, takeWhile)
 import           System.Locale (defaultTimeLocale)
-import           Text.Printf
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Iteratee hiding (take, foldl')
@@ -77,9 +78,24 @@ readChunkedTransferEncoding iter = do
       return i 
 
 
--- fixme: replace with something faster later
 toHex :: Int64 -> ByteString
-toHex = S.pack . map c2w . printf "%x"
+toHex !i' = S.reverse s
+  where
+    !i     = abs i'
+    (!s,_) = S.unfoldrN 16 f (fromIntegral i)
+
+    f :: Word64 -> Maybe (Word8, Word64)
+    f d = if d == 0
+            then Nothing
+            else Just (ch, theRest)
+
+      where
+        low4    = fromIntegral $ d .&. 0xf
+        ch      = if low4 >= 10
+                    then c2w 'a' + low4 - 10
+                    else c2w '0' + low4
+        theRest = (d .&. (complement 0xf)) `shiftR` 4
+
 
 -- | Given an iteratee, produces a new one that wraps chunks sent to it with a
 -- chunked transfer-encoding. Example usage:
@@ -265,7 +281,7 @@ pHeaders = many header
 
 pGetTransferChunk :: Parser (Maybe ByteString)
 pGetTransferChunk = do
-    hex <- liftM fromHex $ (takeWhile (isHexDigit . w2c))
+    !hex <- liftM fromHex $ (takeWhile (isHexDigit . w2c))
     takeTill ((== '\r') . w2c)
     crlf
     if hex <= 0
