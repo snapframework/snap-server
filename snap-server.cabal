@@ -30,6 +30,43 @@ cabal-version:  >= 1.6
 homepage:       http://snapframework.com/
 category:       Web
 
+extra-source-files:
+  CONTRIBUTORS,
+  extra/fonts/DroidSerif-Bold.eot,
+  extra/fonts/DroidSerif-Bold.svg,
+  extra/fonts/DroidSerif-Bold.ttf,
+  extra/fonts/DroidSerif-Bold.woff,
+  extra/fonts/DroidSerif-BoldItalic.eot,
+  extra/fonts/DroidSerif-BoldItalic.svg,
+  extra/fonts/DroidSerif-BoldItalic.ttf,
+  extra/fonts/DroidSerif-BoldItalic.woff,
+  extra/fonts/DroidSerif-Italic.eot,
+  extra/fonts/DroidSerif-Italic.svg,
+  extra/fonts/DroidSerif-Italic.ttf,
+  extra/fonts/DroidSerif-Italic.woff,
+  extra/fonts/DroidSerif-Regular.eot,
+  extra/fonts/DroidSerif-Regular.svg,
+  extra/fonts/DroidSerif-Regular.ttf,
+  extra/fonts/DroidSerif-Regular.woff,
+  extra/haddock.css,
+  extra/hscolour.css,
+  extra/logo.gif,
+  haddock.sh,
+  LICENSE,
+  README.md,
+  README.SNAP.md,
+  test/data/fileServe/foo.bin,
+  test/data/fileServe/foo.bin.bin.bin,
+  test/data/fileServe/foo.html,
+  test/data/fileServe/foo.txt,
+  test/pongserver/Main.hs,
+  test/runTestsAndCoverage.sh,
+  test/snap-server-testsuite.cabal,
+  test/suite/Snap/Internal/Http/Parser/Tests.hs,
+  test/suite/Snap/Internal/Http/Server/Tests.hs,
+  test/suite/Snap/Test/Common.hs,
+  test/suite/TestSuite.hs
+
 
 Flag libev
     Description: Use libev?
@@ -51,7 +88,6 @@ Library
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,
     Snap.Internal.Http.Server.Date
-
 
   build-depends:
     array >= 0.2 && <0.4,
