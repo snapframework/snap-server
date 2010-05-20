@@ -34,7 +34,6 @@ import           Snap.Internal.Http.Parser
 import           Snap.Iteratee hiding (foldl', head, take)
 import qualified Snap.Iteratee as I
 
--- TODO guard this by an ifdef later
 #ifdef LIBEV
 import qualified Snap.Internal.Http.Server.LibevBackend as Backend
 import           Snap.Internal.Http.Server.LibevBackend (debug)
@@ -90,7 +89,6 @@ runServerMonad lh lip lp rip rp la le m = evalStateT m st
 
 
 ------------------------------------------------------------------------------
--- FIXME: exception handling
 httpServe :: ByteString         -- ^ bind address, or \"*\" for all
           -> Int                -- ^ port to bind to
           -> ByteString         -- ^ local hostname (server name)
@@ -217,7 +215,7 @@ logA' :: Logger -> Request -> Response -> IO ()
 logA' logger req rsp = do
     let hdrs      = rqHeaders req
     let host      = rqRemoteAddr req
-    let user      = Nothing -- FIXME we don't do authentication yet
+    let user      = Nothing -- TODO we don't do authentication yet
     let (v, v')   = rqVersion req
     let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
     let method    = toBS $ Prelude.show (rqMethod req)
@@ -285,7 +283,6 @@ httpSession writeEnd onSendFile handler = do
 
     case mreq of
       (Just req) -> do
-          -- FIXME: catch exception
           (req',rspOrig) <- lift $ handler req
           let rspTmp = rspOrig { rspHttpVersion = rqVersion req }
           checkConnectionClose (rspHttpVersion rspTmp) (rspHeaders rspTmp)

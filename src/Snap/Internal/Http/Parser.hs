@@ -406,8 +406,6 @@ parseCookie = parseToCompletion pCookie
 ------------------------------------------------------------------------------
 -- MULTIPART/FORMDATA
 ------------------------------------------------------------------------------
--- TODO
-
 
 parseUrlEncoded :: ByteString -> Map ByteString [ByteString]
 parseUrlEncoded s = foldl' (\m (k,v) -> Map.insertWith' (++) k [v] m)
