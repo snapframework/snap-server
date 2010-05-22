@@ -16,7 +16,7 @@ module Snap.Internal.Http.Parser
 
 ------------------------------------------------------------------------------
 import           Control.Applicative
-import           Control.Arrow (first, second)
+import           Control.Arrow (second)
 import           Control.Monad (liftM)
 import           Control.Monad.Trans
 import           Data.Attoparsec hiding (many, Result(..))
@@ -28,21 +28,18 @@ import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Nums.Careless.Hex as Cvt
 import           Data.Char
-import           Data.CIByteString
 import           Data.List (foldl')
 import           Data.Int
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (catMaybes, fromMaybe)
-import           Data.Time.Format (parseTime)
+import           Data.Maybe (catMaybes)
 import qualified Data.Vector.Unboxed as Vec
 import           Data.Vector.Unboxed (Vector)
 import           Data.Word (Word8, Word64)
 import           Prelude hiding (take, takeWhile)
-import           System.Locale (defaultTimeLocale)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types hiding (Enumerator)
-import           Snap.Iteratee hiding (take, foldl')
+import           Snap.Iteratee hiding (take, foldl', filter)
 
 
 
@@ -349,36 +346,15 @@ pQuotedString = q *> quotedText <* q
     qdtext = matchAll [ isRFCText, (/= '\"'), (/= '\\') ] . w2c
     
 
-pCookie :: Parser Cookie
-pCookie = do
+pCookies :: Parser [Cookie]
+pCookies = do
     -- grab kvps and turn to strict bytestrings
     kvps <- pAvPairs
 
-    -- kvps guaranteed non-null due to grammar. First avpair specifies
-    -- name=value mapping.
-    let ((nm,val):attrs') = kvps
-    let attrs             = map (first toCI) attrs'
-
-    -- and we'll gather the rest of the fields with helper functions.
-    return $ foldl' field (nullCookie nm val) attrs
-
+    return $ map toCookie $ filter (not . S.isPrefixOf "$" . fst) kvps
 
   where
-    nullCookie nm val = Cookie nm val Nothing Nothing Nothing
-
-    fieldFuncs :: [ (CIByteString, Cookie -> ByteString -> Cookie) ]
-    fieldFuncs = [ ("domain", domain)
-                 , ("expires", expires)
-                 , ("path", path) ]
-
-    domain c d     = c { cookieDomain  = Just d }
-    path c p       = c { cookiePath    = Just p }
-    expires c e    = c { cookieExpires = parseExpires e }
-    parseExpires e = parseTime defaultTimeLocale
-                               "%a, %d-%b-%Y %H:%M:%S GMT"
-                               (map w2c $ S.unpack e)
-
-    field c (k,v) = fromMaybe c (flip ($ c) v <$> lookup k fieldFuncs)
+    toCookie (nm,val) = Cookie nm val Nothing Nothing Nothing
 
 
 -- unhelpfully, the spec mentions "old-style" cookies that don't have quotes
@@ -400,8 +376,8 @@ pAvPair = do
 
     return (key,val)
 
-parseCookie :: ByteString -> Maybe Cookie
-parseCookie = parseToCompletion pCookie
+parseCookie :: ByteString -> Maybe [Cookie]
+parseCookie = parseToCompletion pCookies
 
 ------------------------------------------------------------------------------
 -- MULTIPART/FORMDATA

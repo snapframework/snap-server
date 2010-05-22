@@ -10,17 +10,12 @@ import           Control.Exception hiding (try)
 import           Control.Monad
 import           Control.Monad.Identity
 import           Control.Parallel.Strategies
-import qualified Data.Attoparsec as Atto
 import           Data.Attoparsec hiding (Result(..))
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
-import           Data.ByteString.Internal (c2w, w2c)
+import           Data.ByteString.Internal (c2w)
 import qualified Data.Map as Map
-import           Data.Maybe (fromJust)
-import           Data.Time.Clock
-import           Data.Time.Format
-import           System.Locale
 import           Test.Framework 
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
@@ -163,31 +158,18 @@ testBothChunked = testProperty "chunk . unchunk == id" prop
 testCookie :: Test
 testCookie =
     testCase "parseCookie" $ do
-        assertEqual "cookie parsing" (Just cv) cv2
+        assertEqual "cookie parsing" (Just [cv]) cv2
 
   where
-    cv  = Cookie nm v (Just d) (Just domain) (Just path)
+    cv  = Cookie nm v Nothing Nothing Nothing
     cv2 = parseCookie ct
 
-
-    d = (fromJust $
-         parseTime defaultTimeLocale "%a, %d-%b-%Y %H:%M:%S %Z" dts) :: UTCTime
-
-    dt     = "Fri, 22-Jan-2010 12:34:56 GMT"
-    dts    = map w2c $ S.unpack dt
     nm     = "foo"
     v      = "bar"
-    domain = ".foo.com"
-    path   = "/zzz"
 
     ct = S.concat [ nm
                   , "="
-                  , v
-                  , "; expires="
-                  , dt
-                  , "; domain="
-                  , domain
-                  , "; path=/zzz; freeform=unparsed" ]
+                  , v ]
 
 
 testFormEncoded :: Test

@@ -61,7 +61,7 @@ sampleRequest =
              , "Host: www.zabble.com:7777\r\n"
              , "Content-Length: 10\r\n"
              , "X-Random-Other-Header: foo\r\n bar\r\n"
-             , "Set-Cookie: foo=\"bar\\\"\"\r\n"
+             , "Cookie: foo=\"bar\\\"\"\r\n"
              , "\r\n"
              , "0123456789" ]
 
@@ -71,7 +71,7 @@ sampleRequest1_0 =
              , "Host: www.zabble.com:7777\r\n"
              , "Content-Length: 10\r\n"
              , "X-Random-Other-Header: foo\r\n bar\r\n"
-             , "Set-Cookie: foo=\"bar\\\"\"\r\n"
+             , "Cookie: foo=\"bar\\\"\"\r\n"
              , "\r\n"
              , "0123456789" ]
 
@@ -426,7 +426,7 @@ sampleRequest4 =
              , "Content-Length: 10\r\n"
              , "Connection: close\r\n"
              , "X-Random-Other-Header: foo\r\n bar\r\n"
-             , "Set-Cookie: foo=\"bar\\\"\"\r\n"
+             , "Cookie: foo=\"bar\\\"\"\r\n"
              , "\r\n"
              , "0123456789" ]
 

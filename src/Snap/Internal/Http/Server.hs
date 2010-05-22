@@ -443,7 +443,8 @@ receiveRequest = do
         mbContentLength = liftM (Cvt.int . head) $
                           Map.lookup "content-length" hdrs
 
-        cookies         = maybe []
+        cookies         = concat $
+                          maybe []
                                 (catMaybes . map parseCookie)
                                 (Map.lookup "cookie" hdrs)
 
