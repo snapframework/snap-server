@@ -445,7 +445,7 @@ receiveRequest = do
 
         cookies         = maybe []
                                 (catMaybes . map parseCookie)
-                                (Map.lookup "set-cookie" hdrs)
+                                (Map.lookup "cookie" hdrs)
 
         contextPath     = "/"
 
