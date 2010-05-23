@@ -320,7 +320,7 @@ httpSession writeEnd onSendFile handler = do
 ------------------------------------------------------------------------------
 receiveRequest :: ServerMonad (Maybe Request)
 receiveRequest = do
-    mreq <- lift parseRequest
+    mreq <- {-# SCC "receiveRequest/parseRequest" #-} lift parseRequest
 
     case mreq of
       (Just ireq) -> do
@@ -344,6 +344,7 @@ receiveRequest = do
     -- socket and close afterwards
     setEnumerator :: Request -> ServerMonad ()
     setEnumerator req =
+        {-# SCC "receiveRequest/setEnumerator" #-}
         if isChunked
           then liftIO $ writeIORef (rqBody req)
                                    (SomeEnumerator readChunkedTransferEncoding)
@@ -373,7 +374,8 @@ receiveRequest = do
 
 
     parseForm :: Request -> ServerMonad Request
-    parseForm req = if doIt then getIt else return req
+    parseForm req =
+        {-# SCC "receiveRequest/parseForm" #-} if doIt then getIt else return req
       where
         doIt = mbCT == Just "application/x-www-form-urlencoded"
         mbCT = liftM head $ Map.lookup "content-type" (rqHeaders req)
@@ -382,7 +384,7 @@ receiveRequest = do
         maximumPOSTBodySize = 10*1024*1024
 
         getIt :: ServerMonad Request
-        getIt = do
+        getIt = {-# SCC "receiveRequest/parseForm/getIt" #-} do
             senum <- liftIO $ readIORef $ rqBody req
             let (SomeEnumerator enum) = senum
             let i = joinI $ takeNoMoreThan maximumPOSTBodySize stream2stream
@@ -394,42 +396,43 @@ receiveRequest = do
             return $ req { rqParams = rqParams req `mappend` newParams }
 
 
-    toRequest (IRequest method uri version kvps) = do
-        localAddr     <- gets _localAddress
-        localPort     <- gets _localPort
-        remoteAddr    <- gets _remoteAddr
-        remotePort    <- gets _remotePort
-        localHostname <- gets _localHostname
+    toRequest (IRequest method uri version kvps) =
+        {-# SCC "receiveRequest/toRequest" #-} do
+            localAddr     <- gets _localAddress
+            localPort     <- gets _localPort
+            remoteAddr    <- gets _remoteAddr
+            remotePort    <- gets _remotePort
+            localHostname <- gets _localHostname
 
-        let (serverName, serverPort) = fromMaybe
-                                         (localHostname, localPort)
-                                         (liftM (parseHost . head)
-                                                (Map.lookup "host" hdrs))
+            let (serverName, serverPort) = fromMaybe
+                                             (localHostname, localPort)
+                                             (liftM (parseHost . head)
+                                                    (Map.lookup "host" hdrs))
 
-        -- will override in "setEnumerator"
-        enum <- liftIO $ newIORef $ SomeEnumerator return
+            -- will override in "setEnumerator"
+            enum <- liftIO $ newIORef $ SomeEnumerator return
 
 
-        return $ Request serverName
-                         serverPort
-                         remoteAddr
-                         remotePort
-                         localAddr
-                         localPort
-                         localHostname
-                         isSecure
-                         hdrs
-                         enum
-                         mbContentLength
-                         method
-                         version
-                         cookies
-                         snapletPath
-                         pathInfo
-                         contextPath
-                         uri
-                         queryString
-                         params
+            return $ Request serverName
+                             serverPort
+                             remoteAddr
+                             remotePort
+                             localAddr
+                             localPort
+                             localHostname
+                             isSecure
+                             hdrs
+                             enum
+                             mbContentLength
+                             method
+                             version
+                             cookies
+                             snapletPath
+                             pathInfo
+                             contextPath
+                             uri
+                             queryString
+                             params
 
       where
         snapletPath = ""        -- TODO: snaplets in v0.2
