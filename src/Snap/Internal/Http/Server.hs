@@ -101,7 +101,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                 (\(alog, elog) -> spawnAll alog elog)
 
   where
-    spawnAll alog elog = do
+    spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
         let n = numCapabilities
         bracket (spawn n)
                 (\xs -> do
@@ -111,7 +111,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                 (runAll alog elog)
 
 
-    runAll alog elog xs = do
+    runAll alog elog xs = {-# SCC "httpServe/runAll" #-} do
         mapM_ f $ xs `zip` [0..]
         mapM_ (takeMVar . snd) xs
       where
@@ -123,6 +123,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                 putMVar mvar ()
 
     goooo alog elog backend cpu =
+        {-# SCC "httpServe/goooo" #-}
         let loop = go alog elog backend cpu >> loop
         in loop
 
@@ -150,21 +151,23 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         return (backends `zip` mvars)
 
 
-    runOne alog elog backend cpu = Backend.withConnection backend cpu $ \conn -> do
-        debug "Server.httpServe.runOne: entered"
-        let readEnd = Backend.getReadEnd conn
-        writeEnd <- I.bufferIteratee $ Backend.getWriteEnd conn
+    runOne alog elog backend cpu =
+        Backend.withConnection backend cpu $ \conn ->
+          {-# SCC "httpServe/runOne" #-} do
+            debug "Server.httpServe.runOne: entered"
+            let readEnd = Backend.getReadEnd conn
+            writeEnd <- I.bufferIteratee $ Backend.getWriteEnd conn
 
-        let raddr = Backend.getRemoteAddr conn
-        let rport = Backend.getRemotePort conn
-        let laddr = Backend.getLocalAddr conn
-        let lport = Backend.getLocalPort conn
+            let raddr = Backend.getRemoteAddr conn
+            let rport = Backend.getRemotePort conn
+            let laddr = Backend.getLocalAddr conn
+            let lport = Backend.getLocalPort conn
 
-        runHTTP localHostname laddr lport raddr rport
-                alog elog readEnd writeEnd (Backend.sendFile conn)
-                handler
+            runHTTP localHostname laddr lport raddr rport
+                    alog elog readEnd writeEnd (Backend.sendFile conn)
+                    handler
 
-        debug "Server.httpServe.runHTTP: finished"
+            debug "Server.httpServe.runHTTP: finished"
 
 
     go alog elog backend cpu = runOne alog elog backend cpu
