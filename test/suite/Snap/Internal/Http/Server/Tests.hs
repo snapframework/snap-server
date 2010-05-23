@@ -323,8 +323,10 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
 
 
 
-echoServer :: Request -> Iteratee IO (Request,Response)
-echoServer req = do
+echoServer :: (ByteString -> IO ())
+           -> Request
+           -> Iteratee IO (Request,Response)
+echoServer _ req = do
     se <- liftIO $ readIORef (rqBody req)
     let (SomeEnumerator enum) = se
     let i = joinIM $ enum stream2stream
@@ -337,9 +339,9 @@ echoServer req = do
                              , rspContentLength = Just $ fromIntegral cl }
 
 
-echoServer2 :: Request -> Iteratee IO (Request,Response)
-echoServer2 req = do
-    (rq,rsp) <- echoServer req
+echoServer2 :: ServerHandler
+echoServer2 _ req = do
+    (rq,rsp) <- echoServer (const $ return ()) req
     return (rq, addCookie cook rsp)
   where
     cook = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
@@ -412,8 +414,8 @@ testChunkOn1_0 = testCase "transfer-encoding chunked" $ do
   where
     lower = S.map (c2w . toLower . w2c) . S.concat . L.toChunks
 
-    f :: Request -> Iteratee IO (Request, Response)
-    f req = do
+    f :: ServerHandler
+    f _ req = do
         let s = L.fromChunks $ Prelude.take 500 $ repeat "fldkjlfksdjlfd"
         let out = enumLBS s
         return (req, emptyResponse { rspBody = Enum out })
@@ -439,8 +441,17 @@ testHttp2 = testCase "connection: close" $ do
 
     let (iter,onSendFile) = mkIter ref
 
-    runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            Nothing Nothing enumBody iter onSendFile echoServer2
+    runHTTP "localhost"
+            "127.0.0.1"
+            80
+            "127.0.0.1"
+            58384
+            Nothing
+            Nothing
+            enumBody
+            iter
+            onSendFile
+            echoServer2
 
     s <- readIORef ref
 
@@ -494,9 +505,13 @@ testSendFile = testCase "sendFile" $ do
 
 testServerStartupShutdown :: Test
 testServerStartupShutdown = testCase "startup/shutdown" $ do
-    tid <- forkIO $ httpServe "*" port "localhost"
-           (Just "test-access.log") (Just "test-error.log") $
-           runSnap pongServer
+    tid <- forkIO $
+           httpServe "*"
+                     port
+                     "localhost"
+                     (Just "test-access.log")
+                     (Just "test-error.log")
+                     (runSnap pongServer)
     waitabit
 
     rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")

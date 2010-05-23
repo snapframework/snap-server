@@ -52,8 +52,8 @@ import           Snap.Internal.Http.Server.Date
 --
 -- Note that we won't be bothering end users with this -- the details will be
 -- hidden inside the Snap monad
-type ServerHandler = Request
-                   -> (ByteString -> IO ())
+type ServerHandler = (ByteString -> IO ())
+                   -> Request
                    -> Iteratee IO (Request,Response)
 
 type ServerMonad = StateT ServerState (Iteratee IO)
@@ -288,7 +288,7 @@ httpSession writeEnd onSendFile handler = do
     case mreq of
       (Just req) -> do
           logerr <- gets _logError
-          (req',rspOrig) <- lift $ handler req logerr
+          (req',rspOrig) <- lift $ handler logerr req
           let rspTmp = rspOrig { rspHttpVersion = rqVersion req }
           checkConnectionClose (rspHttpVersion rspTmp) (rspHeaders rspTmp)
 

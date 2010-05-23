@@ -1,5 +1,5 @@
-Snap Framework HTTP Server Library 0.1.1
-----------------------------------------
+Snap Framework HTTP Server Library
+----------------------------------
 
 This is the first developer prerelease of the Snap Framework HTTP Server
 library.  For more information about Snap, read the `README.SNAP.md` or visit
