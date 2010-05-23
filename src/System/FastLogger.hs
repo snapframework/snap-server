@@ -62,7 +62,7 @@ timestampedLogEntry :: ByteString -> IO ByteString
 timestampedLogEntry msg = do
     timeStr <- getLogDateString
 
-    return $ runPut $ do
+    return $! runPut $! do
         putWord8 $ c2w '['
         putByteString timeStr
         putByteString "] "
@@ -81,14 +81,14 @@ combinedLogEntry :: ByteString        -- ^ remote host
                  -> ByteString        -- ^ user agent (up to you to ensure
                                       --   there are no quotes in here)
                  -> IO ByteString
-combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
+combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !userAgent = do
     let user = fromMaybe "-" mbUser
     let numBytes = maybe "-" (\s -> strict $ show s) mbNumBytes
     let referer = maybe "-" (\s -> S.concat ["\"", s, "\""]) mbReferer
 
     timeStr <- getLogDateString
 
-    let p = [ host
+    let !p = [ host
             , " - "
             , user
             , " ["
@@ -105,7 +105,9 @@ combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
             , userAgent
             , "\"" ]
 
-    return $ S.concat p
+    let !output = S.concat p
+
+    return $! output
 
 
   where
@@ -116,8 +118,8 @@ combinedLogEntry host mbUser req status mbNumBytes mbReferer userAgent = do
 -- if you want a fancy log message you'll have to format it yourself
 -- (or use 'combinedLogEntry').
 logMsg :: Logger -> ByteString -> IO ()
-logMsg lg s = do
-    let s' = S.snoc s '\n'
+logMsg !lg !s = do
+    let !s' = S.snoc s '\n'
     atomicModifyIORef (_queuedMessages lg) $ \d -> (D.snoc d s',())
     tryPutMVar (_dataWaiting lg) () >> return ()
 
@@ -150,7 +152,7 @@ loggingThread (Logger queue notifier filePath _) = do
     initialize = do
         lh   <- openIt
         href <- newIORef lh
-        t    <- getCurrentTime
+        t    <- getCurrentDateTime
         tref <- newIORef t
         return (href, tref)
 
@@ -161,17 +163,17 @@ loggingThread (Logger queue notifier filePath _) = do
         closeIt h
 
 
-    flushIt (href, lastOpened) = do
+    flushIt (!href, !lastOpened) = do
         dl <- atomicModifyIORef queue $ \x -> (D.empty,x)
 
-        let msgs = D.toList dl
-        let s = L.fromChunks msgs
+        let !msgs = D.toList dl
+        let !s = L.fromChunks msgs
         h <- readIORef href
         L.hPut h s
         hFlush h
 
         -- close the file every 15 minutes (for log rotation)
-        t <- getCurrentTime
+        t <- getCurrentDateTime
         old <- readIORef lastOpened
 
         if diffUTCTime t old > 900
@@ -182,17 +184,16 @@ loggingThread (Logger queue notifier filePath _) = do
           else return ()
 
 
-    loop (href, lastOpened) = do
+    loop !d = do
         -- wait on the notification mvar
         _ <- takeMVar notifier
 
         -- grab the queued messages and write them out
-        flushIt (href, lastOpened)
+        flushIt d
 
         -- at least five seconds between log dumps
         threadDelay 5000000
-
-        loop (href, lastOpened)
+        loop d
 
 
 -- | Kills a logger thread, causing any unwritten contents to be
