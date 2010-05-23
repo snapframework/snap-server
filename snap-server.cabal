@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.1.4
+version:        0.1.5
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   This is the first developer prerelease of the Snap framework.  Snap is a
@@ -137,4 +137,4 @@ Library
 
 source-repository head
   type:     git
-  location: http://git.snapframework.com/snap-server
+  location: http://git.snapframework.com/snap-server.git
