@@ -52,7 +52,9 @@ import           Snap.Internal.Http.Server.Date
 --
 -- Note that we won't be bothering end users with this -- the details will be
 -- hidden inside the Snap monad
-type ServerHandler = Request -> Iteratee IO (Request,Response)
+type ServerHandler = Request
+                   -> (ByteString -> IO ())
+                   -> Iteratee IO (Request,Response)
 
 type ServerMonad = StateT ServerState (Iteratee IO)
 
@@ -189,10 +191,8 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                                    , bshow e ]
 
         , Handler $ \(e :: SomeException) -> do
-              logE elog $ S.concat [
-                        "Server.httpServe.go: got someexception: "
-                       , bshow e ]
-              return () ]
+              logE elog $ S.concat [ "Server.httpServe.go: got someexception: "
+                                   , bshow e ] ]
 
 ------------------------------------------------------------------------------
 debugE :: (MonadIO m) => ByteString -> m ()
@@ -252,7 +252,8 @@ runHTTP lh lip lp rip rp alog elog readEnd writeEnd onSendFile handler =
                  , Handler $ \(_ :: Backend.TimeoutException) -> return ()
 
                  , Handler $ \(e :: SomeException) ->
-                             logE elog $ toBS $ Prelude.show e ]
+                       logE elog $ S.concat [ "Server.runHTTP.go: got someexception: "
+                                            , bshow e ] ]
 
   where
     go = do
@@ -286,7 +287,8 @@ httpSession writeEnd onSendFile handler = do
 
     case mreq of
       (Just req) -> do
-          (req',rspOrig) <- lift $ handler req
+          logerr <- gets _logError
+          (req',rspOrig) <- lift $ handler req logerr
           let rspTmp = rspOrig { rspHttpVersion = rqVersion req }
           checkConnectionClose (rspHttpVersion rspTmp) (rspHeaders rspTmp)
 
