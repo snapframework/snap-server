@@ -30,6 +30,7 @@ import qualified Data.ByteString.Nums.Careless.Hex as Cvt
 import           Data.Char
 import           Data.List (foldl')
 import           Data.Int
+import           Data.Iteratee.WrappedByteString
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes)
@@ -97,6 +98,8 @@ toHex !i' = S.reverse s
 -- | Given an iteratee, produces a new one that wraps chunks sent to it with a
 -- chunked transfer-encoding. Example usage:
 --
+-- FIXME: sample output no longer looks like this, we buffer now
+--
 -- > > (writeChunkedTransferEncoding
 -- >     (enumLBS (L.fromChunks ["foo","bar","quux"]))
 -- >     stream2stream) >>=
@@ -107,7 +110,8 @@ toHex !i' = S.reverse s
 --
 writeChunkedTransferEncoding :: (Monad m) => Enumerator m a -> Enumerator m a
 writeChunkedTransferEncoding enum it = do
-    i <- wrap it
+    i' <- wrap it
+    i  <- bufferIteratee i'
     enum i
 
   where
@@ -121,13 +125,18 @@ writeChunkedTransferEncoding enum it = do
           (Chunk x') -> do
               let x = S.concat $ L.toChunks $ fromWrap x'
               let n = S.length x
-              let o = L.fromChunks [ toHex (toEnum n)
+              if n == 0
+                then do
+                    i' <- wrap iter
+                    return $ Cont i' Nothing
+                else do
+                  let o = S.concat [ toHex (toEnum n)
                                    , "\r\n"
                                    , x
                                    , "\r\n" ]
-              v <- runIter iter (Chunk $ toWrap o)
-              i <- checkIfDone wrap v
-              return $ Cont i Nothing
+                  v <- runIter iter (Chunk $ WrapBS o)
+                  i <- checkIfDone wrap v
+                  return $ Cont i Nothing
 
 
 chunkParserToEnumerator :: (Monad m) =>
