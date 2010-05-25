@@ -78,38 +78,47 @@ data Backend = Backend
 
 
 data Connection = Connection
-    { _backend        :: Backend
-    , _socket         :: Socket
-    , _socketFd       :: CInt
-    , _remoteAddr     :: ByteString
-    , _remotePort     :: Int
-    , _localAddr      :: ByteString
-    , _localPort      :: Int
-    , _readAvailable  :: MVar ()
-    , _writeAvailable :: MVar ()
-    , _timerObj       :: EvTimerPtr
-    , _timerCallback  :: FunPtr TimerCallback
-    , _openingTime    :: CDouble
-    , _lastActivity   :: IORef CDouble
-    , _connIOObj      :: EvIoPtr
-    , _connIOCallback :: FunPtr IoCallback
-    , _connThread     :: MVar ThreadId
+    { _backend             :: Backend
+    , _socket              :: Socket
+    , _socketFd            :: CInt
+    , _remoteAddr          :: ByteString
+    , _remotePort          :: Int
+    , _localAddr           :: ByteString
+    , _localPort           :: Int
+    , _readAvailable       :: MVar ()
+    , _writeAvailable      :: MVar ()
+    , _timerObj            :: EvTimerPtr
+    , _timerCallback       :: FunPtr TimerCallback
+    , _openingTime         :: CDouble
+    , _lastActivity        :: IORef CDouble
+    , _readActive          :: IORef Bool
+    , _writeActive         :: IORef Bool
+    , _connReadIOObj       :: EvIoPtr
+    , _connReadIOCallback  :: FunPtr IoCallback
+    , _connWriteIOObj      :: EvIoPtr
+    , _connWriteIOCallback :: FunPtr IoCallback
+    , _connThread          :: MVar ThreadId
     }
 
 
 sendFile :: Connection -> FilePath -> IO ()
 sendFile c fp = do
-    withMVar lock $ \_ -> evIoStop loop io
+    withMVar lock $ \_ -> do
+      act <- readIORef $ _writeActive c
+      when act $ evIoStop loop io
+
     SF.sendFile s fp
+
     withMVar lock $ \_ -> do
       tryPutMVar (_readAvailable c) ()
       tryPutMVar (_writeAvailable c) ()
       evIoStart loop io
+      writeIORef (_writeActive c) True
       evAsyncSend loop asy
 
   where
     s    = _socket c
-    io   = _connIOObj c
+    io   = _connWriteIOObj c
     b    = _backend c
     loop = _evLoop b
     lock = _loopLock b
@@ -216,6 +225,7 @@ loopThread backend = do
 
 acceptCallback :: CInt -> Chan CInt -> IoCallback
 acceptCallback accFd chan _loopPtr _ioPtr _ = do
+    debug "inside acceptCallback"  
     r <- c_accept accFd
 
     case r of
@@ -224,18 +234,29 @@ acceptCallback accFd chan _loopPtr _ioPtr _ = do
       -- just bail out
       -2 -> return ()
       -1 -> debugErrno "Backend.acceptCallback:c_accept()"
-      fd -> writeChan chan fd
+      fd -> do
+          debug $ "acceptCallback: accept()ed fd, writing to chan " ++ show fd
+          writeChan chan fd
 
 
-ioCallback :: MVar () -> MVar () -> IoCallback
-ioCallback ra wa _loopPtr _ioPtr event = do
+ioReadCallback :: CInt -> IORef Bool -> MVar () -> IoCallback
+ioReadCallback fd active ra _loopPtr _ioPtr _ = do
     -- send notifications to the worker thread
-    when isRead  $ tryPutMVar ra () >> return ()
-    when isWrite $ tryPutMVar wa () >> return ()
+    debug $ "ioReadCallback: notification (" ++ show fd ++ ")"
+    tryPutMVar ra ()
+    debug $ "stopping ioReadCallback (" ++ show fd ++ ")"
+    evIoStop _loopPtr _ioPtr
+    writeIORef active False
 
-  where
-    isRead  = (event .&. ev_read) /= 0
-    isWrite = (event .&. ev_write) /= 0
+
+ioWriteCallback :: CInt -> IORef Bool -> MVar () -> IoCallback
+ioWriteCallback fd active wa _loopPtr _ioPtr _ = do
+    -- send notifications to the worker thread
+    debug $ "ioWriteCallback: notification (" ++ show fd ++ ")"
+    tryPutMVar wa ()
+    debug $ "stopping ioWriteCallback (" ++ show fd ++ ")"
+    evIoStop _loopPtr _ioPtr
+    writeIORef active False
 
 
 seconds :: Int -> Int
@@ -320,6 +341,7 @@ freeConnection :: Connection -> IO ()
 freeConnection conn = ignoreException $ do
     withMVar loopLock $ \_ -> block $ do
         -- close socket (twice to get proper linger behaviour)
+        debug $ "freeConnection (" ++ show fd ++ ")"
         c_close fd
         c_close fd
 
@@ -328,10 +350,14 @@ freeConnection conn = ignoreException $ do
         freeEvTimer timerObj
         freeTimerCallback timerCb
 
-        -- stop and free i/o object
-        evIoStop loop ioObj
-        freeEvIo ioObj
-        freeIoCallback ioCb
+        -- stop and free i/o objects
+        evIoStop loop ioWrObj
+        freeEvIo ioWrObj
+        freeIoCallback ioWrCb
+
+        evIoStop loop ioRdObj
+        freeEvIo ioRdObj
+        freeIoCallback ioRdCb
 
         -- remove the thread id from the backend set
         tid <- readMVar threadMVar
@@ -349,8 +375,10 @@ freeConnection conn = ignoreException $ do
 
     fd         = _socketFd conn
     threadMVar = _connThread conn
-    ioObj      = _connIOObj conn
-    ioCb       = _connIOCallback conn
+    ioWrObj    = _connWriteIOObj conn
+    ioWrCb     = _connWriteIOCallback conn
+    ioRdObj    = _connReadIOObj conn
+    ioRdCb     = _connReadIOCallback conn
     timerObj   = _timerObj conn
     timerCb    = _timerCallback conn
 
@@ -410,7 +438,9 @@ withConnection backend cpu proc = go
     threadProc conn = ignoreException (proc conn) `finally` freeConnection conn
 
     go = do
+        debug $ "withConnection: reading from chan"
         fd   <- readChan $ _connectionQueue backend
+        debug $ "withConnection: got fd " ++ show fd
 
         -- if fd < 0 throw an exception here (because this only happens if stop
         -- is called)
@@ -441,14 +471,23 @@ withConnection backend cpu proc = go
         tcb   <- mkTimerCallback $ timerCallback thrmv
         evTimerInit tmr tcb 20 0
 
-        evio <- mkEvIo
-        iocb <- mkIoCallback $ ioCallback ra wa
-        evIoInit evio iocb fd (ev_read .|. ev_write)
+        readActive  <- newIORef True
+        writeActive <- newIORef True
+
+        evioRead <- mkEvIo
+        ioReadCb <- mkIoCallback $ ioReadCallback fd readActive ra
+
+        evioWrite <- mkEvIo
+        ioWriteCb <- mkIoCallback $ ioWriteCallback fd writeActive wa
+
+        evIoInit evioRead ioReadCb fd ev_read
+        evIoInit evioWrite ioWriteCb fd ev_write
 
         -- take ev_loop lock, start timer and io watchers
         withMVar (_loopLock backend) $ \_ -> do
              evTimerStart lp tmr
-             evIoStart lp evio
+             evIoStart lp evioRead
+             evIoStart lp evioWrite
 
              -- wakeup the loop thread so that these new watchers get
              -- registered next time through the loop
@@ -467,8 +506,12 @@ withConnection backend cpu proc = go
                               tcb
                               now
                               lastActRef
-                              evio
-                              iocb
+                              readActive
+                              writeActive
+                              evioRead
+                              ioReadCb
+                              evioWrite
+                              ioWriteCb
                               thrmv
 
 
@@ -556,13 +599,33 @@ recvData conn n = do
       else B.packCStringLen ((castPtr cstr),(fromEnum sz))
 
   where
+    io       = _connReadIOObj conn
+    bk       = _backend conn
+    active   = _readActive conn
+    lp       = _evLoop bk
+    looplock = _loopLock bk
+    async    = _asyncObj bk
+    
     dbg s = debug $ "Backend.recvData(" ++ show (_socketFd conn) ++ "): " ++ s
 
     fd          = _socketFd conn
     lock        = _readAvailable conn
     waitForLock = do
-        dbg "waitForLock"
+        dbg "start waitForLock"
+
+        withMVar looplock $ \_ -> do
+            act <- readIORef active
+            if act
+              then dbg "read watcher already active, skipping"
+              else do
+                dbg "starting watcher, sending async"
+                evIoStart lp io
+                writeIORef active True
+                evAsyncSend lp async
+
+        dbg "waitForLock: waiting for mvar"
         takeMVar lock
+        dbg "waitForLock: took mvar"
 
 
 sendData :: Connection -> ByteString -> IO ()
@@ -583,10 +646,31 @@ sendData conn bs = do
        else return ()
 
   where
+    io       = _connWriteIOObj conn
+    bk       = _backend conn
+    lp       = _evLoop bk
+    active   = _writeActive conn
+    looplock = _loopLock bk
+    async    = _asyncObj bk
+
     dbg s = debug $ "Backend.sendData(" ++ show (_socketFd conn) ++ "): " ++ s
     fd          = _socketFd conn
     lock        = _writeAvailable conn
-    waitForLock = takeMVar lock
+    waitForLock = do
+        dbg "waitForLock: starting"
+        withMVar looplock $ \_ -> do
+            act <- readIORef active
+            if act
+              then dbg "write watcher already running, skipping"
+              else do
+                dbg "starting watcher, sending async event"
+                evIoStart lp io
+                writeIORef active True
+                evAsyncSend lp async
+
+        dbg "waitForLock: taking mvar"
+        takeMVar lock
+        dbg "waitForLock: took mvar"
 
 
 getReadEnd :: Connection -> Enumerator IO a
