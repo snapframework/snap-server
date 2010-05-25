@@ -735,6 +735,6 @@ writeOut conn = IterateeG out
 
         case ee of
           -- XXX Should we really be returning Done () here?
-          (Left e)  -> error (show e) -- return $ Done () (EOF $ Just $ Err $ show e)
+          (Left e)  -> return $ Done () (EOF $ Just $ Err $ show e)
           (Right _) -> return $ Cont (writeOut conn) Nothing
 
