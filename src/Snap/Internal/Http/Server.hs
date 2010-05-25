@@ -104,6 +104,8 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
   where
     spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
+        logE elog $ S.concat [ "Server.httpServe: START ("
+                             , Backend.name, ")"]
         let n = numCapabilities
         bracket (spawn n)
                 (\xs -> do

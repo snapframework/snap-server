@@ -10,6 +10,7 @@ module Snap.Internal.Http.Server.LibevBackend
 , BackendTerminatedException
 , Connection
 , TimeoutException
+, name
 , debug
 , bindIt
 , new
@@ -99,6 +100,10 @@ data Connection = Connection
     , _connWriteIOCallback :: FunPtr IoCallback
     , _connThread          :: MVar ThreadId
     }
+
+{-# INLINE name #-}
+name :: ByteString
+name = "libev"
 
 
 sendFile :: Connection -> FilePath -> IO ()

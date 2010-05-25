@@ -9,6 +9,7 @@ module Snap.Internal.Http.Server.SimpleBackend
 , BackendTerminatedException
 , Connection
 , TimeoutException
+, name
 , debug
 , bindIt
 , new
@@ -71,6 +72,10 @@ data Connection = Connection
     , _remotePort  :: Int
     , _localAddr   :: ByteString
     , _localPort   :: Int }
+
+{-# INLINE name #-}
+name :: ByteString
+name = "simple"
 
 
 sendFile :: Connection -> FilePath -> IO ()
