@@ -37,6 +37,7 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Unsafe as B
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as BC
 import           Data.IORef
 import           Data.Iteratee.WrappedByteString
 import           Data.Set (Set)
@@ -343,7 +344,6 @@ freeConnection conn = ignoreException $ do
         -- close socket (twice to get proper linger behaviour)
         debug $ "freeConnection (" ++ show fd ++ ")"
         c_close fd
-        c_close fd
 
         -- stop and free timer object
         evTimerStop loop timerObj
@@ -638,11 +638,15 @@ sendData conn bs = do
                    (c_write fd cstr (toEnum len))
                    waitForLock
 
-    dbg $ "wrote " ++ show written ++ " bytes"
-
     let n = fromEnum written
+    let last10 = B.drop (n-10) $ B.take n bs
+
+    dbg $ "wrote " ++ show written ++ " bytes, last 10='" ++ show last10 ++ "'"
+
     if n < len
-       then sendData conn $ B.drop n bs
+       then do
+         dbg $ "short write, need to write " ++ show (len-n) ++ " more bytes"
+         sendData conn $ B.drop n bs
        else return ()
 
   where

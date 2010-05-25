@@ -152,7 +152,6 @@ withConnection (Backend asock) cpu proc = do
                      debug "sClose sock"
                      eatException $ shutdown sock ShutdownBoth
                      eatException $ sClose sock
-                     eatException $ sClose sock
                 )
                 proc
 
