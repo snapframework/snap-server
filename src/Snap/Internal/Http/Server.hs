@@ -309,6 +309,9 @@ httpSession writeEnd onSendFile handler = do
           let rsp' = updateHeaders ins rsp
           (bytesSent,_) <- sendResponse rsp' writeEnd onSendFile
 
+          liftIO . debug $ "Server.httpSession: sent " ++
+                           (Prelude.show bytesSent) ++ " bytes"
+
           maybe (logAccess req rsp')
                 (\_ -> logAccess req $ setContentLength bytesSent rsp')
                 (rspContentLength rsp')

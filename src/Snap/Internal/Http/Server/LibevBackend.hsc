@@ -37,7 +37,6 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Unsafe as B
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as BC
 import           Data.IORef
 import           Data.Iteratee.WrappedByteString
 import           Data.Set (Set)
@@ -55,6 +54,8 @@ import           System.Timeout
 ------------------------------------------------------------------------------
 import           Snap.Iteratee
 import           Snap.Internal.Debug
+
+#include <ev.h>
 
 
 data Backend = Backend
@@ -334,6 +335,7 @@ getAddr addr =
 -- everything
 timerCallback :: MVar ThreadId -> TimerCallback
 timerCallback tmv _ _ _ = do
+    debug "timer callback"
     tid <- readMVar tmv
     throwTo tid TimeoutException
 
@@ -469,7 +471,7 @@ withConnection backend cpu proc = go
         tmr   <- mkEvTimer
         thrmv <- newEmptyMVar
         tcb   <- mkTimerCallback $ timerCallback thrmv
-        evTimerInit tmr tcb 20 0
+        evTimerInit tmr tcb 0 20.0
 
         readActive  <- newIORef True
         writeActive <- newIORef True
@@ -485,7 +487,7 @@ withConnection backend cpu proc = go
 
         -- take ev_loop lock, start timer and io watchers
         withMVar (_loopLock backend) $ \_ -> do
-             evTimerStart lp tmr
+             evTimerAgain lp tmr
              evIoStart lp evioRead
              evIoStart lp evioWrite
 
@@ -583,6 +585,14 @@ instance Show TimeoutException where
 instance Exception TimeoutException
 
 
+-- FIXME We need Aycan to give us a binding for ev_timer_again.
+--
+-- Note that it's not good enough to call this from io(Read|Write)Callback,
+-- because those seem to be edge-triggered. I've definitely had where after
+-- 20 seconds they still weren't being re-awakened.
+foreign import ccall unsafe "ev_timer_again" evTimerAgain :: EvLoopPtr -> EvTimerPtr -> IO ()
+
+
 recvData :: Connection -> Int -> IO ByteString
 recvData conn n = do
     dbg "entered"
@@ -591,6 +601,10 @@ recvData conn n = do
               "recvData"
               (c_read fd cstr (toEnum n))
               waitForLock
+
+    -- we got activity, so restart timer
+    debug "restarting timer"
+    evTimerAgain lp tmr
 
     dbg $ "sz returned " ++ show sz
 
@@ -602,10 +616,11 @@ recvData conn n = do
     io       = _connReadIOObj conn
     bk       = _backend conn
     active   = _readActive conn
+    tmr      = _timerObj conn
     lp       = _evLoop bk
     looplock = _loopLock bk
     async    = _asyncObj bk
-    
+
     dbg s = debug $ "Backend.recvData(" ++ show (_socketFd conn) ++ "): " ++ s
 
     fd          = _socketFd conn
@@ -638,6 +653,10 @@ sendData conn bs = do
                    (c_write fd cstr (toEnum len))
                    waitForLock
 
+    -- we got activity, so restart timer
+    debug "restarting timer"
+    evTimerAgain lp tmr
+
     let n = fromEnum written
     let last10 = B.drop (n-10) $ B.take n bs
 
@@ -652,8 +671,9 @@ sendData conn bs = do
   where
     io       = _connWriteIOObj conn
     bk       = _backend conn
-    lp       = _evLoop bk
     active   = _writeActive conn
+    tmr      = _timerObj conn
+    lp       = _evLoop bk
     looplock = _loopLock bk
     async    = _asyncObj bk
 
@@ -714,6 +734,7 @@ writeOut conn = IterateeG out
                             :: IO (Either SomeException ()))
 
         case ee of
-          (Left e)  -> return $ Done () (EOF $ Just $ Err $ show e)
+          -- XXX Should we really be returning Done () here?
+          (Left e)  -> error (show e) -- return $ Done () (EOF $ Just $ Err $ show e)
           (Right _) -> return $ Cont (writeOut conn) Nothing
 
