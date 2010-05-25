@@ -158,7 +158,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
           {-# SCC "httpServe/runOne" #-} do
             debug "Server.httpServe.runOne: entered"
             let readEnd = Backend.getReadEnd conn
-            writeEnd <- I.bufferIteratee $ Backend.getWriteEnd conn
+            writeEnd <- I.unsafeBufferIteratee $ Backend.getWriteEnd conn
 
             let raddr = Backend.getRemoteAddr conn
             let rport = Backend.getRemotePort conn

@@ -108,10 +108,10 @@ toHex !i' = S.reverse s
 -- >
 -- > Chunk "3\r\nfoo\r\n3\r\nbar\r\n4\r\nquux\r\n0\r\n\r\n" Empty
 --
-writeChunkedTransferEncoding :: (Monad m) => Enumerator m a -> Enumerator m a
+writeChunkedTransferEncoding :: Enumerator IO a -> Enumerator IO a
 writeChunkedTransferEncoding enum it = do
     i' <- wrap it
-    i  <- bufferIteratee i'
+    i  <- unsafeBufferIteratee i'
     enum i
 
   where
