@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.2.3
+version:        0.2.4
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   This is the first developer prerelease of the Snap framework.  Snap is a
@@ -114,7 +114,7 @@ Library
     vector >= 0.6 && <0.7
 
   if flag(libev)
-    build-depends: hlibev >= 0.2.2
+    build-depends: hlibev >= 0.2.3
     other-modules: Snap.Internal.Http.Server.LibevBackend
     cpp-options: -DLIBEV
   else

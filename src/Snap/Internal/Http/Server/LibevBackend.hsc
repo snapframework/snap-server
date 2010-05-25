@@ -55,8 +55,6 @@ import           System.Timeout
 import           Snap.Iteratee
 import           Snap.Internal.Debug
 
-#include <ev.h>
-
 
 data Backend = Backend
     { _acceptSocket      :: Socket
@@ -575,6 +573,13 @@ getHostAddr p s = do
 bLOCKSIZE :: Int
 bLOCKSIZE = 8192
 
+--
+-- About timeouts
+--
+-- It's not good enough to restart the timer from io(Read|Write)Callback,
+-- because those seem to be edge-triggered. I've definitely had where after
+-- 20 seconds they still weren't being re-awakened.
+--
 
 data TimeoutException = TimeoutException
    deriving (Typeable)
@@ -583,14 +588,6 @@ instance Show TimeoutException where
     show _ = "timeout"
 
 instance Exception TimeoutException
-
-
--- FIXME We need Aycan to give us a binding for ev_timer_again.
---
--- Note that it's not good enough to call this from io(Read|Write)Callback,
--- because those seem to be edge-triggered. I've definitely had where after
--- 20 seconds they still weren't being re-awakened.
-foreign import ccall unsafe "ev_timer_again" evTimerAgain :: EvLoopPtr -> EvTimerPtr -> IO ()
 
 
 recvData :: Connection -> Int -> IO ByteString
@@ -734,7 +731,7 @@ writeOut conn = IterateeG out
                             :: IO (Either SomeException ()))
 
         case ee of
-          -- XXX Should we really be returning Done () here?
+          -- XXX How do we signal to Server that an exception has occurred?
           (Left e)  -> return $ Done () (EOF $ Just $ Err $ show e)
           (Right _) -> return $ Cont (writeOut conn) Nothing
 
