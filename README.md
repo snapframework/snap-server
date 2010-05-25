@@ -33,17 +33,6 @@ The snap-server library can optionally use the
 [libev](http://software.schmorp.de/pkg/libev.html) for high-speed, O(1)
 scalable socket event processing.
 
-If you decide to use the libev backend, you will also need to download and
-install the darcs head version of the
-[hlibev](http://hackage.haskell.org/package/hlibev) library:
-
-    $ darcs get --lazy http://code.haskell.org/hlibev/
-    $ cd hlibev
-    $ cabal install -O2    (or "cabal install -O2 -p" for profiling support)
-
-It has some new patches that we rely upon.
-
-
 ## Building snap-server
 
 The snap-server library is built using [Cabal](http://www.haskell.org/cabal/)
