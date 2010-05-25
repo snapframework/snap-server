@@ -6,7 +6,7 @@ module Snap.Internal.Http.Parser.Tests
   ( tests ) where
 
 import qualified Control.Exception as E
-import           Control.Exception hiding (try)
+import           Control.Exception hiding (try, assert)
 import           Control.Monad
 import           Control.Monad.Identity
 import           Control.Parallel.Strategies
@@ -19,6 +19,9 @@ import qualified Data.Map as Map
 import           Test.Framework 
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
+import           Test.QuickCheck
+import qualified Test.QuickCheck.Monadic as QC
+import           Test.QuickCheck.Monadic hiding (run, assert)
 import           Test.HUnit hiding (Test, path)
 import           Text.Printf
 
@@ -136,22 +139,22 @@ testChunked = testProperty "chunked transfer encoding" prop_chunked
                    return $ liftM fromWrap i
 
 testBothChunked :: Test
-testBothChunked = testProperty "chunk . unchunk == id" prop
+testBothChunked = testProperty "chunk . unchunk == id" $
+                  monadicIO $ forAllM arbitrary prop
   where
-    prop :: L.ByteString -> Bool
-    prop s = runIdentity (run iter) == s
-      where
-        bs = runIdentity $
-                 (writeChunkedTransferEncoding
-                    (enumLBS s) stream2stream) >>=
-                 run >>=
-                 return . fromWrap
+    prop s = do
+        bs <- QC.run $
+              writeChunkedTransferEncoding (enumLBS s) stream2stream
+                >>= run >>= return . fromWrap
 
-        enum = enumLBS bs
+        let enum = enumLBS bs
 
-        iter = runIdentity $ do
-                   i <- (readChunkedTransferEncoding stream2stream) >>= enum 
-                   return $ liftM fromWrap i
+        iter <- do
+            i <- (readChunkedTransferEncoding stream2stream) >>= enum 
+            return $ liftM fromWrap i
+
+        x <- run iter
+        QC.assert $ s == x
 
 
 
