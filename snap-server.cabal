@@ -74,7 +74,7 @@ Flag libev
 
 
 Library
-  hs-source-dirs: src
+  hs-source-dirs: dist/build/autogen, src
 
   exposed-modules:
     Snap.Http.Server,
@@ -82,8 +82,9 @@ Library
     System.FastLogger
 
   other-modules:
+    Paths_snap_server,
     Snap.Internal.Http.Parser,
-    Snap.Internal.Http.Server,
+    Snap.Internal.Http.Server,  
     Snap.Internal.Http.Server.Date
 
   build-depends:

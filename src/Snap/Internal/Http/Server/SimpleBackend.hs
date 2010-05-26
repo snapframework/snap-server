@@ -28,11 +28,13 @@ module Snap.Internal.Http.Server.SimpleBackend
 ------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Exception
+import           Control.Monad (when)
 import           Control.Monad.Trans
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
 import           Data.Iteratee.WrappedByteString
+import           Data.Maybe (isNothing)
 import           Data.Typeable
 import           Foreign hiding (new)
 import           GHC.Conc (labelThread, forkOnIO)
@@ -40,6 +42,7 @@ import           Network.Socket
 import qualified Network.Socket.ByteString as SB
 import qualified Network.Socket.SendFile as SF
 import           Prelude hiding (catch)
+import           System.Timeout (timeout)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
 import           Snap.Iteratee
@@ -200,20 +203,30 @@ instance Show TimeoutException where
 
 instance Exception TimeoutException
 
--- FIXME placeholder
+
 tickleTimeout :: Connection -> IO ()
 tickleTimeout = const $ return ()
+
+-- FIXME: fixed 30 seconds
+dEFAULT_TIMEOUT :: Int
+dEFAULT_TIMEOUT = 30000000
 
 
 timeoutRecv :: Connection -> Int -> IO ByteString
 timeoutRecv conn n = do
     let sock = _socket conn
-    SB.recv sock n
+    m <- timeout dEFAULT_TIMEOUT $ SB.recv sock n
+
+    maybe (throwIO TimeoutException)
+          return
+          m
+
 
 timeoutSend :: Connection -> ByteString -> IO ()
 timeoutSend conn s = do
     let sock = _socket conn
-    SB.sendAll sock s
+    m <- timeout dEFAULT_TIMEOUT $ SB.sendAll sock s
+    when (isNothing m) $ throwIO TimeoutException
 
 
 bLOCKSIZE :: Int

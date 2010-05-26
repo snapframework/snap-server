@@ -14,6 +14,7 @@ import           Data.Char
 import           Data.CIByteString
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
+import qualified Data.ByteString.Char8 as SC
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Nums.Careless.Int as Cvt
@@ -22,6 +23,7 @@ import           Data.List (foldl')
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust, catMaybes, fromMaybe)
 import           Data.Monoid
+import           Data.Version
 import           GHC.Conc
 import           Prelude hiding (catch, show, Show)
 import qualified Prelude
@@ -43,6 +45,8 @@ import           Snap.Internal.Http.Server.SimpleBackend (debug)
 #endif
 
 import           Snap.Internal.Http.Server.Date
+
+import qualified Paths_snap_server as V
 
 ------------------------------------------------------------------------------
 -- | The handler has to return the request object because we have to clear the
@@ -269,8 +273,10 @@ runHTTP lh lip lp rip rp alog elog
 
 ------------------------------------------------------------------------------
 sERVER_HEADER :: [ByteString]
-sERVER_HEADER = ["Snap/0.pre-1"]
+sERVER_HEADER = [S.concat ["Snap/", snapServerVersion]]
 
+snapServerVersion :: ByteString
+snapServerVersion = SC.pack $ showVersion $ V.version
 
 ------------------------------------------------------------------------------
 logAccess :: Request -> Response -> ServerMonad ()

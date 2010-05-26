@@ -5,6 +5,7 @@
 module Snap.Http.Server
 (
   httpServe
+, snapServerVersion
 ) where
 
 import           Data.ByteString (ByteString)
@@ -12,6 +13,12 @@ import           Snap.Types
 import qualified Snap.Internal.Http.Server as Int
 
 
+------------------------------------------------------------------------------
+snapServerVersion :: ByteString
+snapServerVersion = Int.snapServerVersion
+
+
+------------------------------------------------------------------------------
 -- | Starts serving HTTP requests on the given port using the given handler.
 -- This function never returns; to shut down the HTTP server, kill the
 -- controlling thread.
