@@ -76,9 +76,6 @@ Flag libev
 Library
   hs-source-dirs: src
 
-  c-sources: cbits/linger.c
-  include-dirs: cbits
-
   exposed-modules:
     Snap.Http.Server,
     Snap.Http.Server.Config,

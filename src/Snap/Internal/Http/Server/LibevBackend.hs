@@ -735,11 +735,7 @@ writeOut conn = IterateeG out
     out (Chunk s) = do
         let x = unWrap s
 
-        ee <- liftIO $ ((try $ sendData conn x)
-                            :: IO (Either SomeException ()))
+        liftIO $ sendData conn x
 
-        case ee of
-          -- XXX How do we signal to Server that an exception has occurred?
-          (Left e)  -> return $ Done () (EOF $ Just $ Err $ show e)
-          (Right _) -> return $ Cont (writeOut conn) Nothing
+        return $ Cont (writeOut conn) Nothing
 
