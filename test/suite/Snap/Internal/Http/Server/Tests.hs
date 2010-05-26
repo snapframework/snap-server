@@ -357,7 +357,7 @@ testHttp1 = testCase "http session" $ do
     let (iter,onSendFile) = mkIter ref
 
     runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            Nothing Nothing enumBody iter onSendFile echoServer
+            Nothing Nothing enumBody iter onSendFile (return ()) echoServer
 
     s <- readIORef ref
 
@@ -402,7 +402,7 @@ testChunkOn1_0 = testCase "transfer-encoding chunked" $ do
     let (iter,onSendFile) = mkIter ref
 
     runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            Nothing Nothing enumBody iter onSendFile f
+            Nothing Nothing enumBody iter onSendFile (return ()) f
 
     -- this is a pretty lame way of checking whether the output was chunked,
     -- but "whatever"
@@ -451,6 +451,7 @@ testHttp2 = testCase "connection: close" $ do
             enumBody
             iter
             onSendFile
+            (return ())
             echoServer2
 
     s <- readIORef ref

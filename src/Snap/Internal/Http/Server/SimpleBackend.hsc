@@ -5,24 +5,25 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server.SimpleBackend
-( Backend
-, BackendTerminatedException
-, Connection
-, TimeoutException
-, name
-, debug
-, bindIt
-, new
-, stop
-, withConnection
-, sendFile
-, getReadEnd
-, getWriteEnd
-, getRemoteAddr
-, getRemotePort
-, getLocalAddr
-, getLocalPort
-) where
+  ( Backend
+  , BackendTerminatedException
+  , Connection
+  , TimeoutException
+  , name
+  , debug
+  , bindIt
+  , new
+  , stop
+  , withConnection
+  , sendFile
+  , tickleTimeout
+  , getReadEnd
+  , getWriteEnd
+  , getRemoteAddr
+  , getRemotePort
+  , getLocalAddr
+  , getLocalPort
+  ) where
 
 ------------------------------------------------------------------------------
 import           Control.Concurrent
@@ -212,6 +213,10 @@ instance Show TimeoutException where
     show TimeoutException = "timeout"
 
 instance Exception TimeoutException
+
+-- FIXME placeholder
+tickleTimeout :: Connection -> IO ()
+tickleTimeout = const $ return ()
 
 
 timeoutRecv :: Connection -> Int -> IO ByteString

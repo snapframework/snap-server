@@ -169,7 +169,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
             runHTTP localHostname laddr lport raddr rport
                     alog elog readEnd writeEnd (Backend.sendFile conn)
-                    handler
+                    (Backend.tickleTimeout conn) handler
 
             debug "Server.httpServe.runHTTP: finished"
 
@@ -245,9 +245,11 @@ runHTTP :: ByteString           -- ^ local host name
         -> Enumerator IO ()     -- ^ read end of socket
         -> Iteratee IO ()       -- ^ write end of socket
         -> (FilePath -> IO ())  -- ^ sendfile end
+        -> IO ()                -- ^ timeout tickler
         -> ServerHandler        -- ^ handler procedure
         -> IO ()
-runHTTP lh lip lp rip rp alog elog readEnd writeEnd onSendFile handler =
+runHTTP lh lip lp rip rp alog elog
+        readEnd writeEnd onSendFile tickle handler =
     go `catches` [ Handler $ \(e :: AsyncException) -> do
                        throwIO e
 
@@ -260,7 +262,8 @@ runHTTP lh lip lp rip rp alog elog readEnd writeEnd onSendFile handler =
   where
     go = do
         let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
-                                  httpSession writeEnd onSendFile handler
+                                  httpSession writeEnd onSendFile tickle
+                                  handler
         readEnd iter >>= run
 
 
@@ -281,11 +284,14 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 -- | Runs an HTTP session.
 httpSession :: Iteratee IO ()       -- ^ write end of socket
             -> (FilePath -> IO ())  -- ^ sendfile continuation
+            -> IO ()                -- ^ timeout tickler
             -> ServerHandler        -- ^ handler procedure
             -> ServerMonad ()
-httpSession writeEnd onSendFile handler = do
+httpSession writeEnd onSendFile tickle handler = do
     liftIO $ debug "Server.httpSession: entered"
-    mreq       <- receiveRequest
+    mreq  <- receiveRequest
+    -- successfully got a request, so restart timer
+    liftIO tickle
 
     case mreq of
       (Just req) -> do
@@ -320,7 +326,7 @@ httpSession writeEnd onSendFile handler = do
 
           if cc
              then return ()
-             else httpSession writeEnd onSendFile handler
+             else httpSession writeEnd onSendFile tickle handler
 
       Nothing -> return ()
 

@@ -6,24 +6,25 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server.LibevBackend
-( Backend
-, BackendTerminatedException
-, Connection
-, TimeoutException
-, name
-, debug
-, bindIt
-, new
-, stop
-, withConnection
-, sendFile
-, getReadEnd
-, getWriteEnd
-, getRemoteAddr
-, getRemotePort
-, getLocalAddr
-, getLocalPort
-) where
+  ( Backend
+  , BackendTerminatedException
+  , Connection
+  , TimeoutException
+  , name
+  , debug
+  , bindIt
+  , new
+  , stop
+  , withConnection
+  , sendFile
+  , tickleTimeout
+  , getReadEnd
+  , getWriteEnd
+  , getRemoteAddr
+  , getRemotePort
+  , getLocalAddr
+  , getLocalPort
+  ) where
 
 ---------------------------
 -- TODO: document module --
@@ -594,6 +595,12 @@ instance Show TimeoutException where
 
 instance Exception TimeoutException
 
+tickleTimeout :: Connection -> IO ()
+tickleTimeout conn = debug "Backend.tickleTimeout" >> evTimerAgain lp tmr
+  where
+    bk  = _backend conn
+    lp  = _evLoop bk
+    tmr = _timerObj conn
 
 recvData :: Connection -> Int -> IO ByteString
 recvData conn n = do
@@ -604,9 +611,7 @@ recvData conn n = do
               (c_read fd cstr (toEnum n))
               waitForLock
 
-    -- we got activity, so restart timer
-    debug "restarting timer"
-    evTimerAgain lp tmr
+    -- we got activity, but don't do restart timer due to the
 
     dbg $ "sz returned " ++ show sz
 
@@ -618,7 +623,6 @@ recvData conn n = do
     io       = _connReadIOObj conn
     bk       = _backend conn
     active   = _readActive conn
-    tmr      = _timerObj conn
     lp       = _evLoop bk
     looplock = _loopLock bk
     async    = _asyncObj bk
@@ -656,8 +660,7 @@ sendData conn bs = do
                    waitForLock
 
     -- we got activity, so restart timer
-    debug "restarting timer"
-    evTimerAgain lp tmr
+    tickleTimeout conn
 
     let n = fromEnum written
     let last10 = B.drop (n-10) $ B.take n bs
