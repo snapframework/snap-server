@@ -678,7 +678,6 @@ sendData conn bs = do
     io       = _connWriteIOObj conn
     bk       = _backend conn
     active   = _writeActive conn
-    tmr      = _timerObj conn
     lp       = _evLoop bk
     looplock = _loopLock bk
     async    = _asyncObj bk
