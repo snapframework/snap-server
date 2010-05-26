@@ -612,6 +612,7 @@ recvData conn n = do
               waitForLock
 
     -- we got activity, but don't do restart timer due to the
+    -- slowloris attack
 
     dbg $ "sz returned " ++ show sz
 
