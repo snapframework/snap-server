@@ -11,9 +11,6 @@ Executable testsuite
    hs-source-dirs:  ../src suite
    main-is:         TestSuite.hs
 
-   c-sources: ../cbits/linger.c
-   include-dirs: ../cbits
-
    build-depends:
      QuickCheck >= 2,
      array >= 0.3 && <0.4,
@@ -60,9 +57,6 @@ Executable testsuite
 Executable pongserver
    hs-source-dirs:  ../src pongserver
    main-is:         Main.hs
-
-   c-sources: ../cbits/linger.c
-   include-dirs: ../cbits
 
    build-depends:
      QuickCheck >= 2,

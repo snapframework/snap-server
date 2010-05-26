@@ -33,10 +33,7 @@ import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
 import           Data.Iteratee.WrappedByteString
 import           Data.Typeable
-#ifdef LINUX
 import           Foreign hiding (new)
-#endif
-import           Foreign.C.Types
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
 import qualified Network.Socket.ByteString as SB
@@ -54,14 +51,6 @@ instance Show BackendTerminatedException where
     show (BackendTerminatedException) = "Backend terminated"
 
 instance Exception BackendTerminatedException
-
-
--- foreign import ccall unsafe "set_linger"
---   set_linger :: CInt -> IO ()
-
-foreign import ccall unsafe "set_fd_timeout"
-  set_fd_timeout :: CInt -> IO ()
-
 
 data Backend = Backend
     { _acceptSocket :: Socket }
@@ -125,9 +114,6 @@ withConnection (Backend asock) cpu proc = do
     (sock,addr) <- accept asock
 
     let fd = fdSocket sock
-    -- set linger
-    --set_linger fd
-    set_fd_timeout fd
 
     debug $ "Backend.withConnection: accepted connection"
     debug $ "Backend.withConnection: remote: " ++ show addr
