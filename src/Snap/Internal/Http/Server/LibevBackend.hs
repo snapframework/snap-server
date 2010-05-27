@@ -137,7 +137,7 @@ bindIt bindAddress bindPort = do
     addr <- getHostAddr bindPort bindAddress
     setSocketOption sock ReuseAddr 1
     bindSocket sock addr
-    listen sock bindPort
+    listen sock 150
     let sockFd = fdSocket sock
     c_setnonblocking sockFd
     return (sock, sockFd)

@@ -82,7 +82,7 @@ bindIt bindAddress bindPort = do
     addr <- getHostAddr bindPort bindAddress
     setSocketOption sock ReuseAddr 1
     bindSocket sock addr
-    listen sock bindPort
+    listen sock 150
     return sock
 
 
