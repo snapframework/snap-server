@@ -110,8 +110,8 @@ toHex !i' = S.reverse s
 --
 writeChunkedTransferEncoding :: Enumerator IO a -> Enumerator IO a
 writeChunkedTransferEncoding enum it = do
-    i' <- wrap it
-    i  <- unsafeBufferIteratee i'
+    i'    <- wrap it
+    (i,_) <- unsafeBufferIteratee i'
     enum i
 
   where
@@ -122,8 +122,7 @@ writeChunkedTransferEncoding enum it = do
               i <- checkIfDone return v
               runIter i (EOF Nothing)
           (EOF e) -> return $ Cont undefined e
-          (Chunk x') -> do
-              let x = S.concat $ L.toChunks $ fromWrap x'
+          (Chunk (WrapBS x)) -> do
               let n = S.length x
               if n == 0
                 then do

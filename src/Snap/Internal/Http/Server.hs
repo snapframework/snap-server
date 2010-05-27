@@ -165,7 +165,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
           {-# SCC "httpServe/runOne" #-} do
             debug "Server.httpServe.runOne: entered"
             let readEnd = Backend.getReadEnd conn
-            writeEnd <- I.unsafeBufferIteratee $ Backend.getWriteEnd conn
+            let writeEnd = Backend.getWriteEnd conn
 
             let raddr = Backend.getRemoteAddr conn
             let rport = Backend.getRemotePort conn
@@ -173,7 +173,8 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
             let lport = Backend.getLocalPort conn
 
             runHTTP localHostname laddr lport raddr rport
-                    alog elog readEnd writeEnd (Backend.sendFile conn)
+                    alog elog readEnd writeEnd
+                    (Backend.sendFile conn)
                     (Backend.tickleTimeout conn) handler
 
             debug "Server.httpServe.runHTTP: finished"
@@ -294,7 +295,11 @@ httpSession :: Iteratee IO ()       -- ^ write end of socket
             -> IO ()                -- ^ timeout tickler
             -> ServerHandler        -- ^ handler procedure
             -> ServerMonad ()
-httpSession writeEnd onSendFile tickle handler = do
+httpSession writeEnd' onSendFile tickle handler = do
+
+    (writeEnd, cancelBuffering) <- liftIO $ I.unsafeBufferIteratee writeEnd'
+    let killBuffer = writeIORef cancelBuffering True
+
     liftIO $ debug "Server.httpSession: entered"
     mreq  <- receiveRequest
     -- successfully got a request, so restart timer
@@ -322,7 +327,7 @@ httpSession writeEnd onSendFile tickle handler = do
           date <- liftIO getDateString
           let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
           let rsp' = updateHeaders ins rsp
-          (bytesSent,_) <- sendResponse rsp' writeEnd onSendFile
+          (bytesSent,_) <- sendResponse rsp' writeEnd killBuffer onSendFile
 
           liftIO . debug $ "Server.httpSession: sent " ++
                            (Prelude.show bytesSent) ++ " bytes"
@@ -490,9 +495,10 @@ receiveRequest = do
 -- Response must be well-formed here
 sendResponse :: Response
              -> Iteratee IO a
+             -> IO ()
              -> (FilePath -> IO a)
              -> ServerMonad (Int,a)
-sendResponse rsp' writeEnd onSendFile = do
+sendResponse rsp' writeEnd killBuffering onSendFile = do
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
 
@@ -540,6 +546,7 @@ sendResponse rsp' writeEnd onSendFile = do
             let sendChunked = (rspHttpVersion r) == (1,1)
             if sendChunked
               then do
+                  liftIO $ killBuffering
                   let r' = setHeader "Transfer-Encoding" "chunked" r
                   let e  = writeChunkedTransferEncoding $ rspBodyToEnum $ rspBody r
                   return $ r' { rspBody = Enum e }
