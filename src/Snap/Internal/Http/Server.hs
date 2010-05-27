@@ -27,13 +27,14 @@ import           Data.Version
 import           GHC.Conc
 import           Prelude hiding (catch, show, Show)
 import qualified Prelude
-import           System.Posix.Files hiding (setFileSize)
+import           System.PosixCompat.Files hiding (setFileSize)
+import           System.Posix.Types (FileOffset)
 import           Text.Show.ByteString hiding (runPut)
 ------------------------------------------------------------------------------
 import           System.FastLogger
 import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
-import           Snap.Iteratee hiding (foldl', head, take)
+import           Snap.Iteratee hiding (foldl', head, take, FileOffset)
 import qualified Snap.Iteratee as I
 
 #ifdef LIBEV
