@@ -72,34 +72,32 @@ data Backend = Backend
     , _loopLock          :: MVar ()
     , _asyncCb           :: FunPtr AsyncCallback
     , _asyncObj          :: EvAsyncPtr
-    , _killCb           :: FunPtr AsyncCallback
-    , _killObj          :: EvAsyncPtr
+    , _killCb            :: FunPtr AsyncCallback
+    , _killObj           :: EvAsyncPtr
     , _connectionThreads :: MVar (Set ThreadId)
     , _backendCPU        :: Int
     }
 
 
 data Connection = Connection
-    { _backend             :: Backend
-    , _socket              :: Socket
-    , _socketFd            :: CInt
-    , _remoteAddr          :: ByteString
-    , _remotePort          :: Int
-    , _localAddr           :: ByteString
-    , _localPort           :: Int
-    , _readAvailable       :: MVar ()
-    , _writeAvailable      :: MVar ()
-    , _timerObj            :: EvTimerPtr
-    , _timerCallback       :: FunPtr TimerCallback
-    , _openingTime         :: CDouble
-    , _lastActivity        :: IORef CDouble
-    , _readActive          :: IORef Bool
-    , _writeActive         :: IORef Bool
-    , _connReadIOObj       :: EvIoPtr
-    , _connReadIOCallback  :: FunPtr IoCallback
-    , _connWriteIOObj      :: EvIoPtr
-    , _connWriteIOCallback :: FunPtr IoCallback
-    , _connThread          :: MVar ThreadId
+    { _backend             :: !Backend
+    , _socket              :: !Socket
+    , _socketFd            :: !CInt
+    , _remoteAddr          :: !ByteString
+    , _remotePort          :: !Int
+    , _localAddr           :: !ByteString
+    , _localPort           :: !Int
+    , _readAvailable       :: !(MVar ())
+    , _writeAvailable      :: !(MVar ())
+    , _timerObj            :: !EvTimerPtr
+    , _timerCallback       :: !(FunPtr TimerCallback)
+    , _readActive          :: !(IORef Bool)
+    , _writeActive         :: !(IORef Bool)
+    , _connReadIOObj       :: !EvIoPtr
+    , _connReadIOCallback  :: !(FunPtr IoCallback)
+    , _connWriteIOObj      :: !EvIoPtr
+    , _connWriteIOCallback :: !(FunPtr IoCallback)
+    , _connThread          :: !(MVar ThreadId)
     }
 
 {-# INLINE name #-}
@@ -367,7 +365,9 @@ freeConnection conn = ignoreException $ do
 
         -- remove the thread id from the backend set
         tid <- readMVar threadMVar
-        modifyMVar_ tsetMVar $ return . Set.delete tid
+        modifyMVar_ tsetMVar $ \s -> do
+            let !s' = Set.delete tid s
+            return $! s'
 
         -- wake up the event loop so it can be apprised of the changes
         evAsyncSend loop asyncObj
@@ -464,9 +464,6 @@ withConnection backend cpu proc = go
 
         let lp = _evLoop backend
 
-        now        <- evNow lp
-        lastActRef <- newIORef now
-
         -- makes sense to assume the socket is read/write available when
         -- opened; worst-case is we get EWOULDBLOCK
         ra    <- newMVar ()
@@ -510,8 +507,6 @@ withConnection backend cpu proc = go
                               wa
                               tmr
                               tcb
-                              now
-                              lastActRef
                               readActive
                               writeActive
                               evioRead
