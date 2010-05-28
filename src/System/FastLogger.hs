@@ -23,7 +23,6 @@ import qualified Data.DList as D
 import           Data.IORef
 import           Data.Maybe
 import           Data.Serialize.Put
-import           Data.Time.Clock
 import           Prelude hiding (catch, show)
 import qualified Prelude
 import           System.IO
@@ -176,7 +175,7 @@ loggingThread (Logger queue notifier filePath _) = do
         t <- getCurrentDateTime
         old <- readIORef lastOpened
 
-        if diffUTCTime t old > 900
+        if t-old > 900
           then do
               closeIt h
               openIt >>= writeIORef href

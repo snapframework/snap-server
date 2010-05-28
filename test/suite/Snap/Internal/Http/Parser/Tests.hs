@@ -16,6 +16,7 @@ import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w)
 import qualified Data.Map as Map
+import           Data.Maybe (isNothing)
 import           Test.Framework 
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
@@ -62,17 +63,18 @@ testP2I = testCase "parserToIteratee" $ do
 
     assertEqual "should be foo" "foo" l
 
+
 forceErr :: SomeException -> IO ()
 forceErr e = f `seq` (return ())
   where
     !f = show e
 
+
 testNull :: Test
 testNull = testCase "short parse" $ do
-    f <- E.try $ run (parseRequest)
+    f <- run (parseRequest)
+    assertBool "should be Nothing" $ isNothing f
 
-    case f of (Left e)  -> forceErr e
-              (Right x) -> assertFailure $ "expected exception, got " ++ show x
 
 testPartial :: Test
 testPartial = testCase "partial parse" $ do

@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 
 module Snap.Internal.Http.Server.Date
 ( getDateString
@@ -9,15 +10,17 @@ import           Control.Concurrent
 import           Control.Exception
 import           Control.Monad
 import           Data.ByteString (ByteString)
-import           Data.ByteString.Internal (c2w)
-import qualified Data.ByteString as B
 import           Data.IORef
-import           Data.Time.Clock
-import           Data.Time.LocalTime
-import           Data.Time.Format
+import           Foreign.C.Types
 import           System.IO.Unsafe
-import           System.Locale
 
+#ifndef WIN32
+import           System.Posix.Time
+#else
+import           Data.Time.Clock.POSIX
+#endif
+
+import           Snap.Internal.Http.Types (formatHttpTime, formatLogTime)
 
 -- Here comes a dirty hack. We don't want to be wasting context switches
 -- building date strings, so we're only going to compute one every two
@@ -31,7 +34,7 @@ import           System.Locale
 data DateState = DateState {
       _cachedDateString :: !(IORef ByteString)
     , _cachedLogString  :: !(IORef ByteString)
-    , _cachedDate       :: !(IORef UTCTime)
+    , _cachedDate       :: !(IORef CTime)
     , _valueIsOld       :: !(IORef Bool)
     , _morePlease       :: !(MVar ())
     , _dataAvailable    :: !(MVar ())
@@ -57,16 +60,21 @@ dateState = unsafePerformIO $ do
     return d
 
 
-fetchTime :: IO (ByteString,ByteString,UTCTime)
+#ifdef WIN32
+epochTime :: IO CTime
+epochTime = do
+    t <- getPOSIXTime
+    return $ realToFrac t
+#endif
+
+
+fetchTime :: IO (ByteString,ByteString,CTime)
 fetchTime = do
-     now <- getCurrentTime
-     zt  <- liftM zonedTimeToLocalTime getZonedTime
-     return (t1 now, t2 zt, now)
-  where
-    t1 now = B.pack $ map c2w $
-             formatTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S GMT" now
-    t2 now = B.pack $ map c2w $
-             formatTime defaultTimeLocale "%d/%b/%Y:%H:%M:%S %z" now
+    now <- epochTime
+    t1  <- formatHttpTime now
+    t2  <- formatLogTime now
+    return (t1, t2, now)
+
 
 dateThread :: DateState -> IO ()
 dateThread ds@(DateState dateString logString time valueIsOld morePlease
@@ -108,7 +116,7 @@ getLogDateString = block $ do
     readIORef $ _cachedLogString dateState
 
 
-getCurrentDateTime :: IO UTCTime
+getCurrentDateTime :: IO CTime
 getCurrentDateTime = block $ do
     ensureFreshDate
     readIORef $ _cachedDate dateState

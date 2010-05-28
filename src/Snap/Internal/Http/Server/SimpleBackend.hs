@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -33,8 +34,11 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
 import           Data.Iteratee.WrappedByteString
+import qualified Data.PSQueue as PSQ
+import           Data.PSQueue (PSQ)
 import           Data.Typeable
 import           Foreign hiding (new)
+import           Foreign.C.Types (CTime)
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
 import qualified Network.Socket.ByteString as SB
@@ -42,6 +46,7 @@ import qualified Network.Socket.SendFile as SF
 import           Prelude hiding (catch)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
+import           Snap.Internal.Http.Server.Date
 import           Snap.Iteratee
 
 
@@ -54,14 +59,18 @@ instance Show BackendTerminatedException where
 instance Exception BackendTerminatedException
 
 data Backend = Backend
-    { _acceptSocket :: Socket }
+    { _acceptSocket  :: Socket
+    , _timeoutTable  :: MVar (PSQ ThreadId CTime)
+    , _timeoutThread :: MVar ThreadId }
 
 data Connection = Connection 
-    { _socket      :: Socket
+    { _backend     :: Backend
+    , _socket      :: Socket
     , _remoteAddr  :: ByteString
     , _remotePort  :: Int
     , _localAddr   :: ByteString
-    , _localPort   :: Int }
+    , _localPort   :: Int
+    , _connTid     :: MVar ThreadId }
 
 {-# INLINE name #-}
 name :: ByteString
@@ -91,13 +100,56 @@ new :: Socket   -- ^ value you got from bindIt
     -> IO Backend
 new sock _ = do
     debug $ "Backend.new: listening"
-    return $ Backend sock
+
+    mv  <- newMVar PSQ.empty
+    t   <- newEmptyMVar
+
+    let b = Backend sock mv t
+
+    tid <- forkIO $ timeoutThread b
+    putMVar t tid
+
+    return b
+
+
+timeoutThread :: Backend -> IO ()
+timeoutThread backend = loop
+  where
+    loop = do
+        killTooOld
+        threadDelay (5000000)
+        loop
+
+
+    killTooOld = modifyMVar_ tmvar $ \table -> do
+        now <- getCurrentDateTime
+        !t' <- killOlderThan now table
+        return t'
+
+
+    -- timeout = 60 seconds
+    tIMEOUT = 60
+
+    killOlderThan now !table = do
+        let mmin = PSQ.findMin table
+        maybe (return table)
+              (\m -> if now - PSQ.prio m > tIMEOUT
+                       then do
+                           killThread $ PSQ.key m
+                           killOlderThan now $ PSQ.deleteMin table
+                       else return table)
+              mmin
+
+    tmvar = _timeoutTable backend
 
 
 stop :: Backend -> IO ()
-stop (Backend s) = do
+stop (Backend s _ t) = do
     debug $ "Backend.stop"
     sClose s
+
+    -- kill timeout thread and current thread
+    readMVar t >>= killThread
     myThreadId >>= killThread
 
 
@@ -111,8 +163,9 @@ instance Exception AddressNotSupportedException
 
 
 withConnection :: Backend -> Int -> (Connection -> IO ()) -> IO ()
-withConnection (Backend asock) cpu proc = do
+withConnection backend cpu proc = do
     debug $ "Backend.withConnection: calling accept()"
+    let asock = _acceptSocket backend
     (sock,addr) <- accept asock
 
     let fd = fdSocket sock
@@ -136,18 +189,27 @@ withConnection (Backend asock) cpu proc = do
              return (fromIntegral p, B.pack $ map c2w h')
           x -> throwIO $ AddressNotSupportedException $ show x
 
-    let c = Connection sock host port lhost lport
+    tmvar <- newEmptyMVar
 
-    forkOnIO cpu $ do
+    let c = Connection backend sock host port lhost lport tmvar
+
+    tid <- forkOnIO cpu $ do
         labelMe $ "connHndl " ++ show fd
         bracket (return c)
-                (\_ -> do
+                (\_ -> block $ do
                      debug "sClose sock"
+                     thr <- readMVar tmvar
+
+                     -- remove thread from timeout table
+                     modifyMVar_ (_timeoutTable backend) $
+                                 return . PSQ.delete thr
                      eatException $ shutdown sock ShutdownBoth
                      eatException $ sClose sock
                 )
                 proc
 
+    putMVar tmvar tid
+    tickleTimeout c
     return ()
 
 
@@ -203,7 +265,14 @@ instance Exception TimeoutException
 
 
 tickleTimeout :: Connection -> IO ()
-tickleTimeout = const $ return ()
+tickleTimeout conn = modifyMVar_ ttmvar $ \t -> do
+    now <- getCurrentDateTime
+    tid <- readMVar $ _connTid conn
+    let !t' = PSQ.insert tid now t
+    return t'
+
+  where
+    ttmvar = _timeoutTable $ _backend conn
 
 
 timeoutRecv :: Connection -> Int -> IO ByteString
@@ -216,6 +285,7 @@ timeoutSend :: Connection -> ByteString -> IO ()
 timeoutSend conn s = do
     let sock = _socket conn
     SB.sendAll sock s
+    tickleTimeout conn
 
 
 bLOCKSIZE :: Int

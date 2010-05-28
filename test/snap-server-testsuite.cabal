@@ -15,7 +15,7 @@ Executable testsuite
      QuickCheck >= 2,
      array >= 0.3 && <0.4,
      attoparsec >= 0.8.0.2 && < 0.9,
-     attoparsec-iteratee >= 0.1 && <0.2,
+     attoparsec-iteratee >= 0.1.1 && <0.2,
      base >= 4 && < 5,
      binary >= 0.5 && < 0.6,
      bytestring,
@@ -41,13 +41,18 @@ Executable testsuite
      time,
      transformers,
      vector >= 0.6.0.1 && < 0.7
-     
+
+   if !os(windows)
+     build-depends: unix
+
    if flag(libev)
      build-depends: hlibev >= 0.2.1
      other-modules: Snap.Internal.Http.Server.LibevBackend
      cpp-options: -DLIBEV
    else
-     build-depends: network-bytestring >= 0.1.2 && < 0.2
+     build-depends: network-bytestring >= 0.1.2 && < 0.2,
+                    PSQueue >= 1.1 && <1.2
+
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
    ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
@@ -62,7 +67,7 @@ Executable pongserver
      QuickCheck >= 2,
      array >= 0.3 && <0.4,
      attoparsec >= 0.8.0.2 && < 0.9,
-     attoparsec-iteratee >= 0.1 && <0.2,
+     attoparsec-iteratee >= 0.1.1 && <0.2,
      base >= 4 && < 5,
      bytestring,
      bytestring-nums >= 0.3.1 && < 0.4,
@@ -87,12 +92,17 @@ Executable pongserver
      unix-compat,
      vector >= 0.6.0.1 && < 0.7
 
+   if !os(windows)
+     build-depends: unix
+
    if flag(libev)
      build-depends: hlibev >= 0.2.1
      other-modules: Snap.Internal.Http.Server.LibevBackend
      cpp-options: -DLIBEV
    else
-     build-depends: network-bytestring >= 0.1.2 && < 0.2
+     build-depends: network-bytestring >= 0.1.2 && < 0.2,
+                    PSQueue >= 1.1 && <1.2
+
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
    if os(linux)
