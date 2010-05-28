@@ -55,6 +55,9 @@ Executable testsuite
 
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
+   if os(windows)
+     cpp-options: -DWIN32
+
    ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
 
@@ -110,6 +113,9 @@ Executable pongserver
 
    if os(darwin)
      cpp-options: -DOSX
+
+   if os(windows)
+     cpp-options: -DWIN32
 
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
