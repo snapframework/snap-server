@@ -64,7 +64,7 @@ dateState = unsafePerformIO $ do
 epochTime :: IO CTime
 epochTime = do
     t <- getPOSIXTime
-    return $ realToFrac t
+    return $ fromInteger $ truncate t
 #endif
 
 
