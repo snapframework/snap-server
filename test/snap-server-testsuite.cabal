@@ -7,6 +7,11 @@ Flag libev
     Description: Use libev?
     Default:     False
 
+Flag portable
+  Description: Compile in cross-platform mode. No platform-specific code or
+               optimizations such as C routines will be used.
+  Default: False
+
 Executable testsuite
    hs-source-dirs:  ../src suite
    main-is:         TestSuite.hs
@@ -55,8 +60,8 @@ Executable testsuite
 
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
-   if os(windows)
-     cpp-options: -DWIN32
+   if flag(portable) || os(windows)
+     cpp-options: -DPORTABLE
 
    ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
@@ -114,8 +119,8 @@ Executable pongserver
    if os(darwin)
      cpp-options: -DOSX
 
-   if os(windows)
-     cpp-options: -DWIN32
+   if flag(portable) || os(windows)
+     cpp-options: -DPORTABLE
 
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind

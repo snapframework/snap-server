@@ -72,6 +72,11 @@ Flag libev
     Description: Use libev?
     Default:     False
 
+Flag portable
+  Description: Compile in cross-platform mode. No platform-specific code or
+               optimizations such as C routines will be used.
+  Default: False
+
 
 Library
   hs-source-dirs: dist/build/autogen, src
@@ -111,7 +116,9 @@ Library
     unix-compat,
     vector >= 0.6 && <0.7
 
-  if !os(windows)
+  if flag(portable) || os(windows)
+    cpp-options: -DPORTABLE
+  else
     build-depends: unix
 
   if flag(libev)
@@ -129,9 +136,6 @@ Library
 
   if os(darwin)
     cpp-options: -DOSX
-
-  if os(windows)
-    cpp-options: -DWIN32
 
   ghc-prof-options: -prof -auto-all
 

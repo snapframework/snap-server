@@ -14,7 +14,7 @@ import           Data.IORef
 import           Foreign.C.Types
 import           System.IO.Unsafe
 
-#ifndef WIN32
+#ifndef PORTABLE
 import           System.Posix.Time
 #else
 import           Data.Time.Clock.POSIX
@@ -60,7 +60,7 @@ dateState = unsafePerformIO $ do
     return d
 
 
-#ifdef WIN32
+#ifdef PORTABLE
 epochTime :: IO CTime
 epochTime = do
     t <- getPOSIXTime
