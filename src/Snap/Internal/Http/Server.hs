@@ -262,10 +262,11 @@ runHTTP lh lip lp rip rp alog elog
                  , Handler $ \(_ :: Backend.TimeoutException) -> return ()
 
                  , Handler $ \(e :: SomeException) ->
-                       logE elog $ S.concat [ "Server.runHTTP.go: got someexception: "
-                                            , bshow e ] ]
+                       logE elog $ S.concat [ logPrefix , bshow e ] ]
 
   where
+    logPrefix = S.concat [ "[", rip, "]: error: " ]
+
     go = do
         let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
                                   httpSession writeEnd onSendFile tickle
