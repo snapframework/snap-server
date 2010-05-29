@@ -291,8 +291,10 @@ testHttpResponse1 :: Test
 testHttpResponse1 = testCase "HttpResponse1" $ do
     let onSendFile = \f -> enumFile f copyingStream2stream >>= run
 
+    buf <- mkIterateeBuffer
+
     b <- run $ rsm $
-         sendResponse rsp1 copyingStream2stream (return ()) onSendFile >>=
+         sendResponse rsp1 copyingStream2stream buf (return ()) onSendFile >>=
                       return . fromWrap . snd
 
     assertEqual "http response" (L.concat [
@@ -303,7 +305,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     ]) b
 
     b2 <- run $ rsm $
-          sendResponse rsp2 copyingStream2stream (return ()) onSendFile >>=
+          sendResponse rsp2 copyingStream2stream buf (return ()) onSendFile >>=
                        return . fromWrap . snd
 
     assertEqual "http response" (L.concat [
@@ -314,7 +316,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     ]) b2
 
     b3 <- run $ rsm $
-          sendResponse rsp3 copyingStream2stream (return ()) onSendFile >>=
+          sendResponse rsp3 copyingStream2stream buf (return ()) onSendFile >>=
                        return . fromWrap . snd
 
     assertEqual "http response" b3 $ L.concat [

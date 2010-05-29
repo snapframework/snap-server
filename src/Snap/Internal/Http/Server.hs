@@ -24,6 +24,8 @@ import qualified Data.Map as Map
 import           Data.Maybe (fromJust, catMaybes, fromMaybe)
 import           Data.Monoid
 import           Data.Version
+import           Foreign.C.Types
+import           Foreign.ForeignPtr
 import           GHC.Conc
 import           Prelude hiding (catch, show, Show)
 import qualified Prelude
@@ -268,8 +270,9 @@ runHTTP lh lip lp rip rp alog elog
     logPrefix = S.concat [ "[", rip, "]: error: " ]
 
     go = do
+        buf <- mkIterateeBuffer
         let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
-                                  httpSession writeEnd onSendFile tickle
+                                  httpSession writeEnd buf onSendFile tickle
                                   handler
         readEnd iter >>= run
 
@@ -292,13 +295,16 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 ------------------------------------------------------------------------------
 -- | Runs an HTTP session.
 httpSession :: Iteratee IO ()       -- ^ write end of socket
+            -> ForeignPtr CChar     -- ^ iteratee buffer
             -> (FilePath -> IO ())  -- ^ sendfile continuation
             -> IO ()                -- ^ timeout tickler
             -> ServerHandler        -- ^ handler procedure
             -> ServerMonad ()
-httpSession writeEnd' onSendFile tickle handler = do
+httpSession writeEnd' ibuf onSendFile tickle handler = do
 
-    (writeEnd, cancelBuffering) <- liftIO $ I.unsafeBufferIteratee writeEnd'
+    (writeEnd, cancelBuffering) <-
+        liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
+
     let killBuffer = writeIORef cancelBuffering True
 
     liftIO $ debug "Server.httpSession: entered"
@@ -328,7 +334,7 @@ httpSession writeEnd' onSendFile tickle handler = do
           date <- liftIO getDateString
           let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
           let rsp' = updateHeaders ins rsp
-          (bytesSent,_) <- sendResponse rsp' writeEnd killBuffer onSendFile
+          (bytesSent,_) <- sendResponse rsp' writeEnd ibuf killBuffer onSendFile
 
           liftIO . debug $ "Server.httpSession: sent " ++
                            (Prelude.show bytesSent) ++ " bytes"
@@ -339,7 +345,7 @@ httpSession writeEnd' onSendFile tickle handler = do
 
           if cc
              then return ()
-             else httpSession writeEnd onSendFile tickle handler
+             else httpSession writeEnd ibuf onSendFile tickle handler
 
       Nothing -> return ()
 
@@ -496,10 +502,11 @@ receiveRequest = do
 -- Response must be well-formed here
 sendResponse :: Response
              -> Iteratee IO a
+             -> ForeignPtr CChar
              -> IO ()
              -> (FilePath -> IO a)
              -> ServerMonad (Int,a)
-sendResponse rsp' writeEnd killBuffering onSendFile = do
+sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
 
@@ -549,7 +556,8 @@ sendResponse rsp' writeEnd killBuffering onSendFile = do
               then do
                   liftIO $ killBuffering
                   let r' = setHeader "Transfer-Encoding" "chunked" r
-                  let e  = writeChunkedTransferEncoding $ rspBodyToEnum $ rspBody r
+                  let e  = writeChunkedTransferEncoding ibuf $
+                           rspBodyToEnum $ rspBody r
                   return $ r' { rspBody = Enum e }
 
               else do

@@ -37,6 +37,8 @@ import           Data.Maybe (catMaybes)
 import qualified Data.Vector.Unboxed as Vec
 import           Data.Vector.Unboxed (Vector)
 import           Data.Word (Word8, Word64)
+import           Foreign.C.Types
+import           Foreign.ForeignPtr
 import           Prelude hiding (take, takeWhile)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types hiding (Enumerator)
@@ -108,10 +110,12 @@ toHex !i' = S.reverse s
 -- >
 -- > Chunk "3\r\nfoo\r\n3\r\nbar\r\n4\r\nquux\r\n0\r\n\r\n" Empty
 --
-writeChunkedTransferEncoding :: Enumerator IO a -> Enumerator IO a
-writeChunkedTransferEncoding enum it = do
+writeChunkedTransferEncoding :: ForeignPtr CChar
+                             -> Enumerator IO a
+                             -> Enumerator IO a
+writeChunkedTransferEncoding buf enum it = do
     i'    <- wrap it
-    (i,_) <- unsafeBufferIteratee i'
+    (i,_) <- unsafeBufferIterateeWithBuffer buf i'
     enum i
 
   where

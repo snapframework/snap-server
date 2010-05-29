@@ -145,8 +145,9 @@ testBothChunked = testProperty "chunk . unchunk == id" $
                   monadicIO $ forAllM arbitrary prop
   where
     prop s = do
+        buf <- QC.run mkIterateeBuffer
         bs <- QC.run $
-              writeChunkedTransferEncoding (enumLBS s) stream2stream
+              writeChunkedTransferEncoding buf (enumLBS s) stream2stream
                 >>= run >>= return . fromWrap
 
         let enum = enumLBS bs
