@@ -60,8 +60,10 @@ extra-source-files:
   test/data/fileServe/foo.html,
   test/data/fileServe/foo.txt,
   test/pongserver/Main.hs,
+  test/pongserver/Paths_snap_server.hs,
   test/runTestsAndCoverage.sh,
   test/snap-server-testsuite.cabal,
+  test/suite/Paths_snap_server.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
   test/suite/Snap/Test/Common.hs,
@@ -79,7 +81,7 @@ Flag portable
 
 
 Library
-  hs-source-dirs: dist/build/autogen, src
+  hs-source-dirs: src
 
   exposed-modules:
     Snap.Http.Server,

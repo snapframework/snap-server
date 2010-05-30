@@ -13,7 +13,7 @@ Flag portable
   Default: False
 
 Executable testsuite
-   hs-source-dirs:  ../src suite
+   hs-source-dirs:  suite ../src 
    main-is:         TestSuite.hs
 
    build-depends:
@@ -68,7 +68,7 @@ Executable testsuite
 
 
 Executable pongserver
-   hs-source-dirs:  ../src pongserver
+   hs-source-dirs:  pongserver ../src
    main-is:         Main.hs
 
    build-depends:
