@@ -113,9 +113,10 @@ toHex !i' = S.reverse s
 writeChunkedTransferEncoding :: ForeignPtr CChar
                              -> Enumerator IO a
                              -> Enumerator IO a
-writeChunkedTransferEncoding buf enum it = do
+writeChunkedTransferEncoding _buf enum it = do
     i'    <- wrap it
-    (i,_) <- unsafeBufferIterateeWithBuffer buf i'
+    --(i,_) <- unsafeBufferIterateeWithBuffer buf i'
+    i <- bufferIteratee i'
     enum i
 
   where

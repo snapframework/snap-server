@@ -26,6 +26,7 @@ import           Data.Monoid
 import           Data.Version
 import           Foreign.C.Types
 import           Foreign.ForeignPtr
+import           Foreign.Ptr (nullPtr)
 import           GHC.Conc
 import           Prelude hiding (catch, show, Show)
 import qualified Prelude
@@ -270,7 +271,8 @@ runHTTP lh lip lp rip rp alog elog
     logPrefix = S.concat [ "[", rip, "]: error: " ]
 
     go = do
-        buf <- mkIterateeBuffer
+        --buf <- mkIterateeBuffer
+        buf <- newForeignPtr_ nullPtr
         let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
                                   httpSession writeEnd buf onSendFile tickle
                                   handler
@@ -302,10 +304,12 @@ httpSession :: Iteratee IO ()       -- ^ write end of socket
             -> ServerMonad ()
 httpSession writeEnd' ibuf onSendFile tickle handler = do
 
-    (writeEnd, cancelBuffering) <-
-        liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
+    -- (writeEnd, cancelBuffering) <-
+    --     liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
+    -- let killBuffer = writeIORef cancelBuffering True
 
-    let killBuffer = writeIORef cancelBuffering True
+    writeEnd <- liftIO $ I.bufferIteratee writeEnd'
+    let killBuffer = return ()
 
     liftIO $ debug "Server.httpSession: entered"
     mreq  <- receiveRequest
@@ -314,6 +318,10 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
 
     case mreq of
       (Just req) -> do
+          liftIO $ debug $ "got request: " ++
+                           Prelude.show (rqMethod req) ++
+                           " " ++ SC.unpack (rqURI req) ++
+                           " " ++ Prelude.show (rqVersion req)
           logerr <- gets _logError
           (req',rspOrig) <- lift $ handler logerr req
           let rspTmp = rspOrig { rspHttpVersion = rqVersion req }

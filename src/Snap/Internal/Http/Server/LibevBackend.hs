@@ -110,14 +110,14 @@ sendFile c fp = do
     withMVar lock $ \_ -> do
       act <- readIORef $ _writeActive c
       when act $ evIoStop loop io
+      writeIORef (_writeActive c) False
+      evAsyncSend loop asy
 
     SF.sendFile s fp
 
     withMVar lock $ \_ -> do
-      tryPutMVar (_readAvailable c) ()
-      tryPutMVar (_writeAvailable c) ()
-      evIoStart loop io
-      writeIORef (_writeActive c) True
+      tryTakeMVar $ _readAvailable c
+      tryTakeMVar $ _writeAvailable c
       evAsyncSend loop asy
 
   where
@@ -590,7 +590,10 @@ instance Show TimeoutException where
 instance Exception TimeoutException
 
 tickleTimeout :: Connection -> IO ()
-tickleTimeout conn = debug "Backend.tickleTimeout" >> evTimerAgain lp tmr
+tickleTimeout conn = do
+    debug "Backend.tickleTimeout"
+    withMVar (_loopLock bk) $ \_ -> evTimerAgain lp tmr
+
   where
     bk  = _backend conn
     lp  = _evLoop bk
@@ -635,6 +638,7 @@ recvData conn n = do
               then dbg "read watcher already active, skipping"
               else do
                 dbg "starting watcher, sending async"
+                tryTakeMVar lock
                 evIoStart lp io
                 writeIORef active True
                 evAsyncSend lp async
@@ -687,6 +691,7 @@ sendData conn bs = do
               then dbg "write watcher already running, skipping"
               else do
                 dbg "starting watcher, sending async event"
+                tryTakeMVar lock
                 evIoStart lp io
                 writeIORef active True
                 evAsyncSend lp async
