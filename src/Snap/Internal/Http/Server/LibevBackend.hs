@@ -345,7 +345,6 @@ timerCallback tmv _ _ _ = do
 freeConnection :: Connection -> IO ()
 freeConnection conn = ignoreException $ do
     withMVar loopLock $ \_ -> block $ do
-        -- close socket (twice to get proper linger behaviour)
         debug $ "freeConnection (" ++ show fd ++ ")"
         c_close fd
 
