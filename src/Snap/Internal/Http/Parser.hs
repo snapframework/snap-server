@@ -116,7 +116,7 @@ writeChunkedTransferEncoding :: ForeignPtr CChar
 writeChunkedTransferEncoding _buf enum it = do
     i'    <- wrap it
     --(i,_) <- unsafeBufferIterateeWithBuffer buf i'
-    i <- bufferIteratee i'
+    (i,_) <- bufferIteratee i'
     enum i
 
   where

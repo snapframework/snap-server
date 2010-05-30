@@ -306,10 +306,10 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
 
     -- (writeEnd, cancelBuffering) <-
     --     liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
-    -- let killBuffer = writeIORef cancelBuffering True
 
-    writeEnd <- liftIO $ I.bufferIteratee writeEnd'
-    let killBuffer = return ()
+    (writeEnd, cancelBuffering) <- liftIO $ I.bufferIteratee writeEnd'
+    let killBuffer = writeIORef cancelBuffering True
+
 
     liftIO $ debug "Server.httpSession: entered"
     mreq  <- receiveRequest
