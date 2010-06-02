@@ -34,7 +34,7 @@ Executable testsuite
      HTTP >= 4000.0.9 && < 4001,
      HUnit >= 1.2 && < 2,
      monads-fd,
-     network == 2.2.1.*,
+     network == 2.2.1.7,
      network-bytestring >= 0.1.2 && < 0.2,
      old-locale,
      parallel > 2,
@@ -91,7 +91,7 @@ Executable pongserver
      old-locale,
      parallel > 2,
      iteratee >= 0.3.1 && < 0.4,
-     network == 2.2.1.*,
+     network == 2.2.1.7,
      network-bytestring >= 0.1.2 && < 0.2,
      sendfile >= 0.6.1 && < 0.7,
      snap-core >= 0.2.1 && <0.3,
@@ -125,3 +125,13 @@ Executable pongserver
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
    ghc-prof-options: -prof -auto-all
+
+Executable benchmark
+   hs-source-dirs:  benchmark ../src
+   main-is:         Benchmark.hs
+   build-depends:
+     base >= 4 && < 5,
+     network == 2.2.1.7,
+     HTTP >= 4000.0.9 && < 4001,
+     criterion == 0.5.0.0
+   
