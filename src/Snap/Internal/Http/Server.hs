@@ -528,6 +528,7 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
     whenEnum hs e = do
         let enum = enumBS hs >. e
         let hl = S.length hs
+
         (x,bs) <- liftIO $ enum (countBytes writeEnd) >>= run
 
         return (x, bs-hl)

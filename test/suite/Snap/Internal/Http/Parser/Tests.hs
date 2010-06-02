@@ -15,6 +15,8 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w)
+import           Data.Iteratee.WrappedByteString
+import           Data.List
 import qualified Data.Map as Map
 import           Data.Maybe (isNothing)
 import           Test.Framework 
@@ -28,7 +30,7 @@ import           Text.Printf
 
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Types hiding (Enumerator)
-import           Snap.Iteratee
+import           Snap.Iteratee hiding (foldl')
 import           Snap.Test.Common()
 
 
@@ -37,6 +39,8 @@ tests = [ testShow
         , testCookie
         , testChunked
         , testBothChunked
+        , testBothChunkedPipelined
+        , testBothChunkedEmpty
         , testP2I
         , testNull
         , testPartial
@@ -147,18 +151,95 @@ testBothChunked = testProperty "chunk . unchunk == id" $
     prop s = do
         buf <- QC.run mkIterateeBuffer
         bs <- QC.run $
-              writeChunkedTransferEncoding buf (enumLBS s) stream2stream
-                >>= run >>= return . fromWrap
+              writeChunkedTransferEncoding buf (enumBS s) stream2stream
+                >>= run >>= return . unWrap
 
-        let enum = enumLBS bs
+        let enum = enumBS bs
 
         iter <- do
             i <- (readChunkedTransferEncoding stream2stream) >>= enum 
-            return $ liftM fromWrap i
+            return $ liftM unWrap i
 
         x <- run iter
         QC.assert $ s == x
 
+
+testBothChunkedPipelined :: Test
+testBothChunkedPipelined = testProperty "pipelined chunk . unchunk == id" $
+                           monadicIO prop
+  where
+    prop = do
+        sz     <- QC.pick (choose (20,4000))
+        s'     <- QC.pick $ resize sz arbitrary
+        ntimes <- QC.pick (choose (1,7))
+        --let s' = L.take 2000 $ L.fromChunks $ repeat s
+
+        let e = enumLBS s'
+
+        buf <- QC.run mkIterateeBuffer
+
+        enums <- QC.run $
+                 replicateM ntimes
+                   (mkIterateeBuffer >>=
+                      return . flip writeChunkedTransferEncoding e)
+
+        let mothra = foldl' (>.) (enumBS "") enums
+
+        bs <- QC.run $ mothra stream2stream
+                >>= run >>= return . unWrap
+
+        let e2 = enumBS bs
+
+        let pcrlf = \s -> parserToIteratee $ string "\r\n" >> return s
+
+        iters <- QC.run $
+                 replicateM ntimes $
+                   readChunkedTransferEncoding stream2stream
+        let godzilla = sequence $ map (>>= pcrlf) iters
+
+        iter <- QC.run $ e2 godzilla
+
+        x <- QC.run $ liftM (map unWrap) $ run iter
+
+        QC.assert $
+          (map (L.fromChunks . (:[])) x) == (replicate ntimes s')
+
+
+
+testBothChunkedEmpty :: Test
+testBothChunkedEmpty = testCase "testBothChunkedEmpty" prop
+  where
+    prop = do
+        let s' = ""
+        let e = enumLBS s'
+
+        let ntimes = 5
+
+        buf <- mkIterateeBuffer
+
+        enums <- replicateM ntimes
+                   (mkIterateeBuffer >>=
+                      return . flip writeChunkedTransferEncoding e)
+
+        let mothra = foldl' (>.) (enumBS "") enums
+
+        bs <- mothra stream2stream
+                >>= run >>= return . unWrap
+
+        let e2 = enumBS bs
+
+        let pcrlf = \s -> parserToIteratee $ string "\r\n" >> return s
+
+        iters <- replicateM ntimes $
+                   readChunkedTransferEncoding stream2stream
+        let godzilla = sequence $ map (>>= pcrlf) iters
+
+        iter <- e2 godzilla
+
+        x <- liftM (map unWrap) $ run iter
+
+        assertBool "empty chunked transfer" $
+          (map (L.fromChunks . (:[])) x) == (replicate ntimes s')
 
 
 testCookie :: Test

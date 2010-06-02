@@ -31,6 +31,7 @@ import qualified Data.ByteString.Nums.Careless.Hex as Cvt
 import           Data.Char
 import           Data.List (foldl')
 import           Data.Int
+import           Data.IORef
 import           Data.Iteratee.WrappedByteString
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -71,12 +72,13 @@ parseRequest :: (Monad m) => Iteratee m (Maybe IRequest)
 parseRequest = parserToIteratee pRequest
 
 
-readChunkedTransferEncoding :: (Monad m) => Enumerator m a
+readChunkedTransferEncoding :: (Monad m) =>
+                               Iteratee m a
+                            -> m (Iteratee m a)
 readChunkedTransferEncoding iter = do
-      i <- chunkParserToEnumerator (parserToIteratee pGetTransferChunk)
-                                   iter
-
-      return i 
+    i <- chunkParserToEnumerator (parserToIteratee pGetTransferChunk)
+                                 iter
+    return i 
 
 
 toHex :: Int64 -> ByteString
@@ -111,37 +113,53 @@ toHex !i' = S.reverse s
 -- >
 -- > Chunk "3\r\nfoo\r\n3\r\nbar\r\n4\r\nquux\r\n0\r\n\r\n" Empty
 --
+
 writeChunkedTransferEncoding :: ForeignPtr CChar
                              -> Enumerator IO a
                              -> Enumerator IO a
 writeChunkedTransferEncoding _buf enum it = do
-    i'    <- wrap it
-    --(i,_) <- unsafeBufferIterateeWithBuffer buf i'
-    (i,_) <- bufferIteratee i'
-    enum i
+    killwrap <- newIORef False
+    (out,_)  <- bufferIteratee (ignoreEOF $ wrap killwrap it)
+    i <- enum out
+    v <- runIter i (EOF Nothing)
+    j <- checkIfDone return v
+    writeIORef killwrap True
+    -- w <- runIter j (Chunk (WrapBS "0\r\n\r\n"))
+    w <- runIter j (Chunk (WrapBS "0\r\n\r\n"))
+    checkIfDone return w
 
   where
-    wrap iter = return $ IterateeG $ \s ->
+    ignoreEOF iter = IterateeG $ \s ->
         case s of
-          (EOF Nothing) -> do
-              v <- runIter iter (Chunk $ toWrap "0\r\n\r\n")
-              i <- checkIfDone return v
-              runIter i (EOF Nothing)
-          (EOF e) -> return $ Cont undefined e
-          (Chunk (WrapBS x)) -> do
-              let n = S.length x
-              if n == 0
-                then do
-                    i' <- wrap iter
-                    return $ Cont i' Nothing
-                else do
-                  let o = S.concat [ toHex (toEnum n)
-                                   , "\r\n"
-                                   , x
-                                   , "\r\n" ]
-                  v <- runIter iter (Chunk $ WrapBS o)
-                  i <- checkIfDone wrap v
-                  return $ Cont i Nothing
+          (EOF Nothing) -> return $ Cont iter Nothing
+          _             -> do
+              i <- runIter iter s >>= checkIfDone return
+              return $ Cont (ignoreEOF i) Nothing
+
+    wrap killwrap iter = IterateeG $ \s -> do
+        quit <- readIORef killwrap
+
+        if quit
+          then runIter iter s
+          else case s of
+                  (EOF Nothing) -> do
+                      --S.putStrLn "wrap: eof"
+                      return $ Cont iter Nothing
+
+                  (EOF e) -> return $ Cont undefined e
+                  (Chunk (WrapBS x)) -> do
+                      --S.putStrLn $ S.concat ["wrap: got ", x]
+                      let n = S.length x
+                      if n == 0
+                        then do
+                            return $ Cont iter Nothing
+                        else do
+                          let o = S.concat [ toHex (toEnum n)
+                                           , "\r\n"
+                                           , x
+                                           , "\r\n" ]
+                          i <- liftM liftI $ runIter iter (Chunk $ WrapBS o)
+                          return $ Cont (wrap killwrap i) Nothing
 
 
 chunkParserToEnumerator :: (Monad m) =>

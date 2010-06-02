@@ -36,6 +36,7 @@ import           Snap.Internal.Http.Server
 import           Snap.Iteratee
 import           Snap.Types
 
+import Snap.Internal.Iteratee.Debug
 
 import System.IO
 
@@ -45,6 +46,8 @@ tests = [ testHttpRequest1
         , testHttpRequest2
         , testHttpRequest3
         , testHttpResponse1
+        , testHttpResponse2
+        , testHttpResponse3
         , testHttp1
         , testHttp2
         , testPartialParse
@@ -305,6 +308,21 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     , "0123456789"
                     ]) b
 
+  where
+    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+           setContentLength 10 $
+           setResponseStatus 600 "Test" $
+           modifyResponseBody (>. (enumBS "0123456789")) $
+           setResponseBody return $
+           emptyResponse { rspHttpVersion = (1,0) }
+
+
+testHttpResponse2 :: Test
+testHttpResponse2 = testCase "HttpResponse2" $ do
+    let onSendFile = \f -> enumFile f copyingStream2stream >>= run
+
+    buf <- mkIterateeBuffer
+
     b2 <- run $ rsm $
           sendResponse rsp2 copyingStream2stream buf (return ()) onSendFile >>=
                        return . fromWrap . snd
@@ -315,6 +333,21 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
                     , "Foo: Bar\r\n\r\n"
                     , "0123456789"
                     ]) b2
+  where
+    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+           setContentLength 10 $
+           setResponseStatus 600 "Test" $
+           modifyResponseBody (>. (enumBS "0123456789")) $
+           setResponseBody return $
+           emptyResponse { rspHttpVersion = (1,0) }
+    rsp2 = rsp1 { rspContentLength = Nothing }
+
+
+testHttpResponse3 :: Test
+testHttpResponse3 = testCase "HttpResponse3" $ do
+    let onSendFile = \f -> enumFile f copyingStream2stream >>= run
+
+    buf <- mkIterateeBuffer
 
     b3 <- run $ rsm $
           sendResponse rsp3 copyingStream2stream buf (return ()) onSendFile >>=
@@ -338,7 +371,6 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
            modifyResponseBody (>. (enumBS "0123456789")) $
            setResponseBody return $
            emptyResponse { rspHttpVersion = (1,0) }
-
     rsp2 = rsp1 { rspContentLength = Nothing }
     rsp3 = setContentType "text/plain" $ (rsp2 { rspHttpVersion = (1,1) })
 
