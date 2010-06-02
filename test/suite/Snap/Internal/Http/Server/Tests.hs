@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports #-}
 
 module Snap.Internal.Http.Server.Tests
   ( tests ) where
@@ -7,7 +8,7 @@ module Snap.Internal.Http.Server.Tests
 import           Control.Concurrent
 import           Control.Exception (try, SomeException)
 import           Control.Monad
-import           Control.Monad.Trans
+import "monads-fd" Control.Monad.Trans
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as LC

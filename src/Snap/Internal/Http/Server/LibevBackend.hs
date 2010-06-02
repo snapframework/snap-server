@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports #-}
 
 module Snap.Internal.Http.Server.LibevBackend
   ( Backend
@@ -34,7 +35,7 @@ module Snap.Internal.Http.Server.LibevBackend
 import           Control.Concurrent
 import           Control.Exception
 import           Control.Monad
-import           Control.Monad.Trans
+import "monads-fd" Control.Monad.Trans
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Unsafe as B

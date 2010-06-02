@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports #-}
 
 module Snap.Internal.Http.Server.SimpleBackend
   ( Backend
@@ -29,7 +30,7 @@ module Snap.Internal.Http.Server.SimpleBackend
 ------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Exception
-import           Control.Monad.Trans
+import "monads-fd" Control.Monad.Trans
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
