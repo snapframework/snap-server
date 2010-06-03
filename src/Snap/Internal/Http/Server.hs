@@ -353,7 +353,7 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
 
           if cc
              then return ()
-             else httpSession writeEnd ibuf onSendFile tickle handler
+             else httpSession writeEnd' ibuf onSendFile tickle handler
 
       Nothing -> return ()
 
