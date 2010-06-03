@@ -15,6 +15,7 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w)
+import           Data.IORef
 import           Data.Iteratee.WrappedByteString
 import           Data.List
 import qualified Data.Map as Map
@@ -39,6 +40,8 @@ tests = [ testShow
         , testCookie
         , testChunked
         , testBothChunked
+        , testBothChunkedBuffered1
+        , testBothChunkedBuffered2
         , testBothChunkedPipelined
         , testBothChunkedEmpty
         , testP2I
@@ -164,14 +167,93 @@ testBothChunked = testProperty "chunk . unchunk == id" $
         QC.assert $ s == x
 
 
-testBothChunkedPipelined :: Test
-testBothChunkedPipelined = testProperty "pipelined chunk . unchunk == id" $
+testBothChunkedBuffered1 :: Test
+testBothChunkedBuffered1 = testProperty "testBothChunkedBuffered1" $
                            monadicIO prop
   where
     prop = do
-        sz     <- QC.pick (choose (20,4000))
+        sz     <- QC.pick (choose (1000,4000))
         s'     <- QC.pick $ resize sz arbitrary
-        ntimes <- QC.pick (choose (1,7))
+        ntimes <- QC.pick (choose (4,7))
+
+        let e = enumLBS s'
+
+        buf <- QC.run mkIterateeBuffer
+
+        enums <- QC.run $
+                 replicateM ntimes
+                   (mkIterateeBuffer >>=
+                      return . flip writeChunkedTransferEncoding e)
+
+        let mothra = foldl' (>.) (enumBS "") enums
+
+        ----------------------------------------------------------------------
+        -- first go, buffer, no cancellation
+        (inputIter1,_) <- QC.run $ bufferIteratee stream2stream
+        bs1 <- QC.run $ mothra inputIter1
+                 >>= run >>= return . unWrap
+        let e1 = enumBS bs1
+        let pcrlf = \s -> parserToIteratee $ string "\r\n" >> return s
+        iters <- QC.run $
+                 replicateM ntimes $
+                   readChunkedTransferEncoding stream2stream
+        let godzilla = sequence $ map (>>= pcrlf) iters
+        outiter1 <- QC.run $ e1 godzilla
+        x1 <- QC.run $ liftM (map unWrap) $ run outiter1
+
+        QC.assert $
+          (map (L.fromChunks . (:[])) x1) == (replicate ntimes s')
+
+
+
+testBothChunkedBuffered2 :: Test
+testBothChunkedBuffered2 = testProperty "testBothChunkedBuffered2" $
+                           monadicIO prop
+  where
+    prop = do
+        sz     <- QC.pick (choose (1000,4000))
+        s'     <- QC.pick $ resize sz arbitrary
+        ntimes <- QC.pick (choose (4,7))
+
+        let e = enumLBS s'
+
+        buf <- QC.run mkIterateeBuffer
+
+        enums <- QC.run $
+                 replicateM ntimes
+                   (mkIterateeBuffer >>=
+                      return . flip writeChunkedTransferEncoding e)
+
+        let mothra = foldl' (>.) (enumBS "") enums
+
+        ----------------------------------------------------------------------
+        -- 2nd pass, cancellation
+        let pcrlf = \s -> parserToIteratee $ string "\r\n" >> return s
+        (inputIter2,esc) <- QC.run $ bufferIteratee stream2stream
+        QC.run $ writeIORef esc True
+        bs2 <- QC.run $ mothra inputIter2
+                 >>= run >>= return . unWrap
+        let e2 = enumBS bs2
+        iters' <- QC.run $
+                  replicateM ntimes $
+                    readChunkedTransferEncoding stream2stream
+        let godzilla2 = sequence $ map (>>= pcrlf) iters'
+        outiter2 <- QC.run $ e2 godzilla2
+        x2 <- QC.run $ liftM (map unWrap) $ run outiter2
+
+        QC.assert $
+          (map (L.fromChunks . (:[])) x2) == (replicate ntimes s')
+
+
+
+testBothChunkedPipelined :: Test
+testBothChunkedPipelined = testProperty "testBothChunkedPipelined" $
+                           monadicIO prop
+  where
+    prop = do
+        sz     <- QC.pick (choose (1000,4000))
+        s'     <- QC.pick $ resize sz arbitrary
+        ntimes <- QC.pick (choose (4,7))
         --let s' = L.take 2000 $ L.fromChunks $ repeat s
 
         let e = enumLBS s'
@@ -185,7 +267,9 @@ testBothChunkedPipelined = testProperty "pipelined chunk . unchunk == id" $
 
         let mothra = foldl' (>.) (enumBS "") enums
 
-        bs <- QC.run $ mothra stream2stream
+        (bufi,_) <- QC.run $ bufferIteratee stream2stream
+
+        bs <- QC.run $ mothra bufi
                 >>= run >>= return . unWrap
 
         let e2 = enumBS bs
