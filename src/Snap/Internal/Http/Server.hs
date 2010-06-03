@@ -601,17 +601,29 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
             return $ r { rspContentLength = Just fs }
 
 
+    handle304 :: Response -> Response
+    handle304 r = setResponseBody (enumBS "") $
+                  updateHeaders (Map.delete "Transfer-Encoding") $
+                  setContentLength 0 r
+
     fixupResponse :: Response -> ServerMonad Response
     fixupResponse r =
         {-# SCC "fixupResponse" #-}
         do
             let r' = updateHeaders (Map.delete "Content-Length") r
-            r'' <- case (rspBody r') of
-                     (Enum _)     -> return r'
-                     (SendFile f) -> setFileSize f r'
-            case (rspContentLength r'') of
-              Nothing   -> noCL r''
-              (Just sz) -> hasCL sz r''
+
+            let code = rspStatus r'
+
+            let r'' = if code == 204 || code == 304
+                       then handle304 r'
+                       else r'
+
+            r''' <- case (rspBody r'') of
+                     (Enum _)     -> return r''
+                     (SendFile f) -> setFileSize f r''
+            case (rspContentLength r''') of
+              Nothing   -> noCL r'''
+              (Just sz) -> hasCL sz r'''
 
 
     bsshow = l2s . show
