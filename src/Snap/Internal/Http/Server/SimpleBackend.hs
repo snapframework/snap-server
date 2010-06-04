@@ -28,13 +28,18 @@ module Snap.Internal.Http.Server.SimpleBackend
   ) where
 
 ------------------------------------------------------------------------------
+import "monads-fd" Control.Monad.Trans
+
 import           Control.Concurrent
 import           Control.Exception
-import "monads-fd" Control.Monad.Trans
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
+import           Data.DList (DList)
+import qualified Data.DList as D
+import           Data.IORef
 import           Data.Iteratee.WrappedByteString
+import           Data.List (foldl')
 import qualified Data.PSQueue as PSQ
 import           Data.PSQueue (PSQ)
 import           Data.Typeable
@@ -48,7 +53,7 @@ import           Prelude hiding (catch)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Date
-import           Snap.Iteratee
+import           Snap.Iteratee hiding (foldl')
 
 
 data BackendTerminatedException = BackendTerminatedException
@@ -59,10 +64,12 @@ instance Show BackendTerminatedException where
 
 instance Exception BackendTerminatedException
 
+type TimeoutTable = PSQ ThreadId CTime
+
 data Backend = Backend
-    { _acceptSocket  :: Socket
-    , _timeoutTable  :: MVar (PSQ ThreadId CTime)
-    , _timeoutThread :: MVar ThreadId }
+    { _acceptSocket  :: !Socket
+    , _timeoutEdits  :: !(IORef (DList (TimeoutTable -> TimeoutTable)))
+    , _timeoutThread :: !(MVar ThreadId) }
 
 data Connection = Connection 
     { _backend     :: Backend
@@ -102,29 +109,33 @@ new :: Socket   -- ^ value you got from bindIt
 new sock _ = do
     debug $ "Backend.new: listening"
 
-    mv  <- newMVar PSQ.empty
+    ed  <- newIORef D.empty
     t   <- newEmptyMVar
 
-    let b = Backend sock mv t
+    let b = Backend sock ed t
 
-    tid <- forkIO $ timeoutThread b
+    tid <- forkIO $ timeoutThread b PSQ.empty
     putMVar t tid
 
     return b
 
 
-timeoutThread :: Backend -> IO ()
+timeoutThread :: Backend -> TimeoutTable -> IO ()
 timeoutThread backend = loop
   where
-    loop = do
-        killTooOld
+    loop tt = do
+        tt' <- killTooOld tt
         threadDelay (5000000)
-        loop
+        loop tt'
 
 
-    killTooOld = modifyMVar_ tmvar $ \table -> do
-        now <- getCurrentDateTime
-        !t' <- killOlderThan now table
+    killTooOld table = do
+        -- atomic swap edit list
+        now   <- getCurrentDateTime
+        edits <- atomicModifyIORef tedits $ \t -> (D.empty, D.toList t)
+        
+        let table' = foldl' (flip ($)) table edits
+        !t'   <- killOlderThan now table'
         return t'
 
 
@@ -141,7 +152,7 @@ timeoutThread backend = loop
                        else return table)
               mmin
 
-    tmvar = _timeoutTable backend
+    tedits = _timeoutEdits backend
 
 
 stop :: Backend -> IO ()
@@ -202,8 +213,8 @@ withConnection backend cpu proc = do
                      thr <- readMVar tmvar
 
                      -- remove thread from timeout table
-                     modifyMVar_ (_timeoutTable backend) $
-                                 return . PSQ.delete thr
+                     atomicModifyIORef (_timeoutEdits backend) $
+                         \es -> (D.snoc es (PSQ.delete thr), ())
                      eatException $ shutdown sock ShutdownBoth
                      eatException $ sClose sock
                 )
@@ -266,14 +277,14 @@ instance Exception TimeoutException
 
 
 tickleTimeout :: Connection -> IO ()
-tickleTimeout conn = modifyMVar_ ttmvar $ \t -> do
+tickleTimeout conn = do
     now <- getCurrentDateTime
     tid <- readMVar $ _connTid conn
-    let !t' = PSQ.insert tid now t
-    return t'
+
+    atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.insert tid now), ())
 
   where
-    ttmvar = _timeoutTable $ _backend conn
+    tedits = _timeoutEdits $ _backend conn
 
 
 timeoutRecv :: Connection -> Int -> IO ByteString
