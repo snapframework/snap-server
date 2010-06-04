@@ -40,8 +40,11 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Unsafe as B
 import qualified Data.ByteString as B
+import           Data.DList (DList)
+import qualified Data.DList as D
 import           Data.IORef
 import           Data.Iteratee.WrappedByteString
+import qualified Data.List as List
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable
@@ -60,23 +63,24 @@ import           Snap.Internal.Debug
 
 
 data Backend = Backend
-    { _acceptSocket      :: Socket
-    , _acceptFd          :: CInt
-    , _connectionQueue   :: Chan CInt
-    , _evLoop            :: EvLoopPtr
-    , _acceptIOCallback  :: FunPtr IoCallback
-    , _acceptIOObj       :: EvIoPtr
-
-      -- FIXME: we don't need _loopThread
-    , _loopThread        :: MVar ThreadId
-    , _mutexCallbacks    :: (FunPtr MutexCallback, FunPtr MutexCallback)
-    , _loopLock          :: MVar ()
-    , _asyncCb           :: FunPtr AsyncCallback
-    , _asyncObj          :: EvAsyncPtr
-    , _killCb            :: FunPtr AsyncCallback
-    , _killObj           :: EvAsyncPtr
-    , _connectionThreads :: MVar (Set ThreadId)
-    , _backendCPU        :: Int
+    { _acceptSocket      :: !Socket
+    , _acceptFd          :: !CInt
+    , _connectionQueue   :: !(Chan CInt)
+    , _evLoop            :: !EvLoopPtr
+    , _acceptIOCallback  :: !(FunPtr IoCallback)
+    , _acceptIOObj       :: !EvIoPtr
+    , _mutexCallbacks    :: !(FunPtr MutexCallback, FunPtr MutexCallback)
+    , _loopLock          :: !(MVar ())
+    , _asyncCb           :: !(FunPtr AsyncCallback)
+    , _asyncObj          :: !EvAsyncPtr
+    , _killCb            :: !(FunPtr AsyncCallback)
+    , _killObj           :: !EvAsyncPtr
+    , _connectionThreads :: !(MVar (Set ThreadId))
+    , _connThreadEdits   :: !(IORef (DList (Set ThreadId -> Set ThreadId)))
+    , _connThreadId      :: !(MVar ThreadId)
+    , _connThreadIsDone  :: !(MVar ())
+    , _threadActivity    :: !(MVar ())
+    , _backendCPU        :: !Int
     }
 
 
@@ -185,10 +189,12 @@ new (sock,sockFd) cpu = do
     evIoInit accIO accCB sockFd ev_read
     evIoStart lp accIO
 
-    -- an MVar for the loop thread, and one to keep track of the set of active
-    -- threads
-    threadMVar <- newEmptyMVar
-    threadSetMVar <- newMVar Set.empty
+    -- thread set stuff
+    connThreadMVar <- newEmptyMVar
+    connSet        <- newMVar Set.empty
+    editsRef       <- newIORef D.empty
+    connThreadDone <- newEmptyMVar
+    threadActivity <- newMVar ()
 
     let b = Backend sock
                     sockFd
@@ -196,18 +202,23 @@ new (sock,sockFd) cpu = do
                     lp
                     accCB
                     accIO
-                    threadMVar
                     (mc1,mc2)
                     looplock
                     asyncCB
                     asyncObj
                     killCB
                     killObj
-                    threadSetMVar
+                    connSet
+                    editsRef
+                    connThreadMVar
+                    connThreadDone
+                    threadActivity
                     cpu
 
-    tid <- forkOnIO cpu $ loopThread b
-    putMVar threadMVar tid
+    forkOnIO cpu $ loopThread b
+
+    conntid <- forkOnIO cpu $ connTableSeqThread b
+    putMVar connThreadMVar conntid
 
     debug $ "Backend.new: loop spawned"
     return b
@@ -230,7 +241,7 @@ loopThread backend = do
 
 acceptCallback :: CInt -> Chan CInt -> IoCallback
 acceptCallback accFd chan _loopPtr _ioPtr _ = do
-    debug "inside acceptCallback"  
+    debug "inside acceptCallback"
     r <- c_accept accFd
 
     case r of
@@ -293,7 +304,7 @@ stop b = ignoreException $ do
 
     debug $ "Backend.stop: waiting at most 10 seconds for connection threads to die"
     waitForThreads b $ seconds 10
-    debug $ "Backend.stop: all threads dead, unlooping"
+    debug $ "Backend.stop: all threads presumed dead, unlooping"
 
     withMVar lock $ \_ -> do
         -- FIXME: hlibev should export EVUNLOOP_ALL
@@ -343,10 +354,21 @@ timerCallback tmv _ _ _ = do
     throwTo tid TimeoutException
 
 
+addThreadSetEdit :: Backend -> (Set ThreadId -> Set ThreadId) -> IO ()
+addThreadSetEdit backend edit = do
+    atomicModifyIORef (_connThreadEdits backend) $ \els ->
+        (D.snoc els edit, ())
+
+    tryPutMVar (_threadActivity backend) ()
+    return ()
+
+
+
 freeConnection :: Connection -> IO ()
 freeConnection conn = ignoreException $ do
     withMVar loopLock $ \_ -> block $ do
         debug $ "freeConnection (" ++ show fd ++ ")"
+
         c_close fd
 
         -- stop and free timer object
@@ -363,24 +385,21 @@ freeConnection conn = ignoreException $ do
         freeEvIo ioRdObj
         freeIoCallback ioRdCb
 
-        -- remove the thread id from the backend set
-        tid <- readMVar threadMVar
-        modifyMVar_ tsetMVar $ \s -> do
-            let !s' = Set.delete tid s
-            return $! s'
+        tid <- readMVar $ _connThread conn
+
+        -- schedule the removal of the thread id from the backend set
+        addThreadSetEdit backend (Set.delete tid)
 
         -- wake up the event loop so it can be apprised of the changes
         evAsyncSend loop asyncObj
 
   where
     backend    = _backend conn
-    tsetMVar   = _connectionThreads backend
     loop       = _evLoop backend
     loopLock   = _loopLock backend
     asyncObj   = _asyncObj backend
 
     fd         = _socketFd conn
-    threadMVar = _connThread conn
     ioWrObj    = _connWriteIOObj conn
     ioWrCb     = _connWriteIOCallback conn
     ioRdObj    = _connReadIOObj conn
@@ -393,18 +412,48 @@ ignoreException :: IO () -> IO ()
 ignoreException = handle (\(_::SomeException) -> return ())
 
 
+connTableSeqThread :: Backend -> IO ()
+connTableSeqThread backend = loop `finally` putMVar threadDone ()
+  where
+    threadDone = _connThreadIsDone backend
+    editsRef   = _connThreadEdits backend
+    table      = _connectionThreads backend
+    activity   = _threadActivity backend
+
+    loop = do
+        takeMVar activity
+
+        -- grab the edits
+        edits <- atomicModifyIORef editsRef $ \t -> (D.empty, D.toList t)
+
+        -- apply the edits
+        modifyMVar_ table $ \t -> block $ do
+               let !t' = List.foldl' (flip ($)) t edits
+               return t'
+
+        -- zzz
+        threadDelay 1000000
+        loop
+
+
 freeBackend :: Backend -> IO ()
 freeBackend backend = ignoreException $ block $ do
     -- note: we only get here after an unloop
 
-    withMVar tsetMVar $ \set -> do
-        mapM_ killThread $ Set.toList set
+    readMVar (_connThreadId backend) >>= killThread
+    takeMVar $ _connThreadIsDone backend
 
-    debug $ "Backend.freeBackend: wait at most 2 seconds for threads to die"
-    waitForThreads backend $ seconds 2
+    -- read edits and obtain final thread table
+    threads <- withMVar (_connectionThreads backend) $ \table -> do
+                   edits <- liftM D.toList $
+                            readIORef (_connThreadEdits backend)
 
-    debug $ "Backend.freeBackend: all threads dead"
+                   let !t = List.foldl' (flip ($)) table edits
+                   return $ Set.toList t
 
+    mapM_ killThread threads
+
+    debug $ "Backend.freeBackend: all threads killed"
     debug $ "Backend.freeBackend: destroying resources"
     freeEvIo acceptObj
     freeIoCallback acceptCb
@@ -428,7 +477,6 @@ freeBackend backend = ignoreException $ block $ do
     fd          = _acceptFd backend
     acceptObj   = _acceptIOObj backend
     acceptCb    = _acceptIOCallback backend
-    tsetMVar    = _connectionThreads backend
     asyncObj    = _asyncObj backend
     asyncCb     = _asyncCb backend
     killObj     = _killObj backend
@@ -518,11 +566,8 @@ withConnection backend cpu proc = go
 
         tid <- forkOnIO cpu $ threadProc conn
 
-        modifyMVar_ (_connectionThreads backend) $ ins tid
+        addThreadSetEdit backend (Set.insert tid)
         putMVar thrmv tid
-
-      where
-        ins !thr !s = let !r = Set.insert thr s in return (r `seq` r)
 
 
 data BackendTerminatedException = BackendTerminatedException

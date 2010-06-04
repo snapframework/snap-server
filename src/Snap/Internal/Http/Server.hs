@@ -26,7 +26,6 @@ import           Data.Monoid
 import           Data.Version
 import           Foreign.C.Types
 import           Foreign.ForeignPtr
-import           Foreign.Ptr (nullPtr)
 import           GHC.Conc
 import           Prelude hiding (catch, show, Show)
 import qualified Prelude
