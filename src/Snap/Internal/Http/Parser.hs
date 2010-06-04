@@ -117,14 +117,15 @@ toHex !i' = S.reverse s
 writeChunkedTransferEncoding :: ForeignPtr CChar
                              -> Enumerator IO a
                              -> Enumerator IO a
-writeChunkedTransferEncoding _buf enum it = do
+writeChunkedTransferEncoding buf enum it = do
     killwrap <- newIORef False
-    (out,_)  <- bufferIteratee (ignoreEOF $ wrap killwrap it)
+    --(out,_)  <- bufferIteratee (ignoreEOF $ wrap killwrap it)
+    (out,_)  <- unsafeBufferIterateeWithBuffer buf
+                    (ignoreEOF $ wrap killwrap it)
     i <- enum out
     v <- runIter i (EOF Nothing)
     j <- checkIfDone return v
     writeIORef killwrap True
-    -- w <- runIter j (Chunk (WrapBS "0\r\n\r\n"))
     w <- runIter j (Chunk (WrapBS "0\r\n\r\n"))
     checkIfDone return w
 

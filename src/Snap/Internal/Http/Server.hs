@@ -271,8 +271,7 @@ runHTTP lh lip lp rip rp alog elog
     logPrefix = S.concat [ "[", rip, "]: error: " ]
 
     go = do
-        --buf <- mkIterateeBuffer
-        buf <- newForeignPtr_ nullPtr
+        buf <- mkIterateeBuffer
         let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
                                   httpSession writeEnd buf onSendFile tickle
                                   handler
@@ -304,10 +303,10 @@ httpSession :: Iteratee IO ()       -- ^ write end of socket
             -> ServerMonad ()
 httpSession writeEnd' ibuf onSendFile tickle handler = do
 
-    -- (writeEnd, cancelBuffering) <-
-    --     liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
+    (writeEnd, cancelBuffering) <-
+        liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
 
-    (writeEnd, cancelBuffering) <- liftIO $ I.bufferIteratee writeEnd'
+    -- (writeEnd, cancelBuffering) <- liftIO $ I.bufferIteratee writeEnd'
     let killBuffer = writeIORef cancelBuffering True
 
 
