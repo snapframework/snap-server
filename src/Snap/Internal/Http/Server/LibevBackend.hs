@@ -117,8 +117,15 @@ sendFile c fp = do
       when act $ evIoStop loop io
       writeIORef (_writeActive c) False
       evAsyncSend loop asy
+      evTimerStop loop (_timerObj c)
 
+    -- FIXME
+    -- Temporary hack to stop sendFile from timing out.
+    -- An actual fix requires us to write our own sendfile wrapper that
+    -- checks for EINTR (will libev timers raise EINTR on sendfile?)
+    -- on OS X and just the return value on Linux to tickle the timeout.
     SF.sendFile s fp
+    tickleTimeout c
 
     withMVar lock $ \_ -> do
       tryTakeMVar $ _readAvailable c
@@ -349,7 +356,7 @@ getAddr addr =
 -- everything
 timerCallback :: MVar ThreadId -> TimerCallback
 timerCallback tmv _ _ _ = do
-    debug "timer callback"
+    debug "Backend.timerCallback: timed out"
     tid <- readMVar tmv
     throwTo tid TimeoutException
 
@@ -361,7 +368,6 @@ addThreadSetEdit backend edit = do
 
     tryPutMVar (_threadActivity backend) ()
     return ()
-
 
 
 freeConnection :: Connection -> IO ()
