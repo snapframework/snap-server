@@ -88,7 +88,9 @@ name = "simple"
 sendFile :: Connection -> FilePath -> IO ()
 sendFile c fp = do
     let s = _socket c
+    cancelTimeout c
     SF.sendFile s fp
+    tickleTimeout c
 
 
 bindIt :: ByteString         -- ^ bind address, or \"*\" for all
@@ -282,6 +284,16 @@ tickleTimeout conn = do
     tid <- readMVar $ _connTid conn
 
     atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.insert tid now), ())
+
+  where
+    tedits = _timeoutEdits $ _backend conn
+
+
+cancelTimeout :: Connection -> IO ()
+cancelTimeout conn = do
+    tid <- readMVar $ _connTid conn
+
+    atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.delete tid), ())
 
   where
     tedits = _timeoutEdits $ _backend conn
