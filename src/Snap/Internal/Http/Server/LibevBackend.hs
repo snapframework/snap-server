@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -54,13 +55,17 @@ import           Foreign.C.Types
 import           GHC.Conc (forkOnIO)
 import           Network.Libev
 import           Network.Socket
-import qualified Network.Socket.SendFile as SF
 import           Prelude hiding (catch)
 import           System.Timeout
 ------------------------------------------------------------------------------
 import           Snap.Iteratee
 import           Snap.Internal.Debug
 
+#if defined(HAS_SENDFILE) && !defined(PORTABLE)
+import qualified System.SendFile as SF
+import           System.Posix.IO
+import           System.Posix.Types (Fd(..))
+#endif
 
 data Backend = Backend
     { _acceptSocket      :: !Socket
@@ -110,22 +115,16 @@ name :: ByteString
 name = "libev"
 
 
-sendFile :: Connection -> FilePath -> IO ()
-sendFile c fp = do
+sendFile :: Connection -> FilePath -> Int -> IO ()
+sendFile c fp total = do
     withMVar lock $ \_ -> do
       act <- readIORef $ _writeActive c
       when act $ evIoStop loop io
       writeIORef (_writeActive c) False
       evAsyncSend loop asy
-      evTimerStop loop (_timerObj c)
 
-    -- FIXME
-    -- Temporary hack to stop sendFile from timing out.
-    -- An actual fix requires us to write our own sendfile wrapper that
-    -- checks for EINTR (will libev timers raise EINTR on sendfile?)
-    -- on OS X and just the return value on Linux to tickle the timeout.
-    SF.sendFile s fp
-    tickleTimeout c
+    fd <- openFd fp ReadOnly Nothing defaultFileFlags
+    go fd 0 total
 
     withMVar lock $ \_ -> do
       tryTakeMVar $ _readAvailable c
@@ -133,7 +132,15 @@ sendFile c fp = do
       evAsyncSend loop asy
 
   where
-    s    = _socket c
+    go fd off bytes
+      | bytes == 0 = return ()
+      | otherwise  = do
+            sent <- SF.sendFile sfd fd off bytes
+            if sent < bytes
+              then tickleTimeout c >> go fd (off+sent) (bytes-sent)
+              else return ()
+
+    sfd  = Fd $ _socketFd c
     io   = _connWriteIOObj c
     b    = _backend c
     loop = _evLoop b

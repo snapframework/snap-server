@@ -93,6 +93,7 @@ Library
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,  
     Snap.Internal.Http.Server.Date
+    System.SendFile
 
   build-depends:
     array >= 0.2 && <0.4,
@@ -111,7 +112,6 @@ Library
     monads-fd,
     network == 2.2.1.*,
     old-locale,
-    sendfile >= 0.6.1 && < 0.7,
     snap-core >= 0.2.7 && <0.3,
     time,
     transformers,
@@ -134,10 +134,16 @@ Library
     other-modules: Snap.Internal.Http.Server.SimpleBackend
 
   if os(linux)
-    cpp-options: -DLINUX
+    cpp-options: -DLINUX -DHAS_SENDFILE
+    other-modules: System.SendFile.Linux
 
   if os(darwin)
-    cpp-options: -DOSX
+    cpp-options: -DOSX -DHAS_SENDFILE
+    other-modules: System.SendFile.Darwin
+
+  if os(freebsd)
+    cpp-options: -DFREEBSD -DHAS_SENDFILE
+    other-modules: System.SendFile.FreeBSD
 
   ghc-prof-options: -prof -auto-all
 

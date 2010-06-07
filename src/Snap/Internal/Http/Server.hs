@@ -243,18 +243,18 @@ logA' logger req rsp = do
 
 
 ------------------------------------------------------------------------------
-runHTTP :: ByteString           -- ^ local host name
-        -> ByteString           -- ^ local ip address
-        -> Int                  -- ^ local port
-        -> ByteString           -- ^ remote ip address
-        -> Int                  -- ^ remote port
-        -> Maybe Logger         -- ^ access logger
-        -> Maybe Logger         -- ^ error logger
-        -> Enumerator IO ()     -- ^ read end of socket
-        -> Iteratee IO ()       -- ^ write end of socket
-        -> (FilePath -> IO ())  -- ^ sendfile end
-        -> IO ()                -- ^ timeout tickler
-        -> ServerHandler        -- ^ handler procedure
+runHTTP :: ByteString                  -- ^ local host name
+        -> ByteString                  -- ^ local ip address
+        -> Int                         -- ^ local port
+        -> ByteString                  -- ^ remote ip address
+        -> Int                         -- ^ remote port
+        -> Maybe Logger                -- ^ access logger
+        -> Maybe Logger                -- ^ error logger
+        -> Enumerator IO ()            -- ^ read end of socket
+        -> Iteratee IO ()              -- ^ write end of socket
+        -> (FilePath -> Int -> IO ())  -- ^ sendfile end
+        -> IO ()                       -- ^ timeout tickler
+        -> ServerHandler               -- ^ handler procedure
         -> IO ()
 runHTTP lh lip lp rip rp alog elog
         readEnd writeEnd onSendFile tickle handler =
@@ -294,11 +294,11 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 
 ------------------------------------------------------------------------------
 -- | Runs an HTTP session.
-httpSession :: Iteratee IO ()       -- ^ write end of socket
-            -> ForeignPtr CChar     -- ^ iteratee buffer
-            -> (FilePath -> IO ())  -- ^ sendfile continuation
-            -> IO ()                -- ^ timeout tickler
-            -> ServerHandler        -- ^ handler procedure
+httpSession :: Iteratee IO ()              -- ^ write end of socket
+            -> ForeignPtr CChar            -- ^ iteratee buffer
+            -> (FilePath -> Int -> IO ())  -- ^ sendfile continuation
+            -> IO ()                       -- ^ timeout tickler
+            -> ServerHandler               -- ^ handler procedure
             -> ServerMonad ()
 httpSession writeEnd' ibuf onSendFile tickle handler = do
 
@@ -510,15 +510,20 @@ sendResponse :: Response
              -> Iteratee IO a
              -> ForeignPtr CChar
              -> IO ()
-             -> (FilePath -> IO a)
-             -> ServerMonad (Int,a)
+             -> (FilePath -> Int -> IO a)
+             -> ServerMonad (Int, a)
 sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
 
     (!x,!bs) <- case (rspBody rsp) of
                   (Enum e)     -> liftIO $ whenEnum headerString e
+#if defined(HAS_SENDFILE)
                   (SendFile f) -> liftIO $ whenSendFile headerString rsp f
+#else
+                  (SendFile f) -> liftIO $ whenEnum headerString
+                                                    (I.enumFile f)
+#endif
 
     return $! (bs,x)
 
@@ -536,7 +541,7 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
         enumBS hs writeEnd >>= run
 
         let !cl = fromJust $ rspContentLength r
-        x <- onSendFile f
+        x <- onSendFile f cl
         return (x, cl)
 
     (major,minor) = rspHttpVersion rsp'

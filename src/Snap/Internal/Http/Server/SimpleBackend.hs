@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -48,12 +49,17 @@ import           Foreign.C.Types (CTime)
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
 import qualified Network.Socket.ByteString as SB
-import qualified Network.Socket.SendFile as SF
 import           Prelude hiding (catch)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Date
 import           Snap.Iteratee hiding (foldl')
+
+#if defined(HAS_SENDFILE) && !defined(PORTABLE)
+import qualified System.SendFile as SF
+import           System.Posix.IO
+import           System.Posix.Types (Fd(..))
+#endif
 
 
 data BackendTerminatedException = BackendTerminatedException
@@ -85,10 +91,20 @@ name :: ByteString
 name = "simple"
 
 
-sendFile :: Connection -> FilePath -> IO ()
-sendFile c fp = do
-    let s = _socket c
-    SF.sendFile s fp
+sendFile :: Connection -> FilePath -> Int -> IO ()
+sendFile c fp sz = do
+    fd <- openFd fp ReadOnly Nothing defaultFileFlags
+    go fd 0 sz
+  where
+    go fd off bytes
+      | bytes == 0 = return ()
+      | otherwise  = do
+            sent <- SF.sendFile sfd fd off bytes
+            if sent < bytes
+              then tickleTimeout c >> go fd (off+sent) (bytes-sent)
+              else return ()
+
+    sfd = Fd . fdSocket $ _socket c
 
 
 bindIt :: ByteString         -- ^ bind address, or \"*\" for all
@@ -278,6 +294,7 @@ instance Exception TimeoutException
 
 tickleTimeout :: Connection -> IO ()
 tickleTimeout conn = do
+    debug "Backend.tickleTimeout"
     now <- getCurrentDateTime
     tid <- readMVar $ _connTid conn
 

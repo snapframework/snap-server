@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP #-}
 
 -- | Snap's unified interface to sendfile.
--- Modified from sendfile by Matthew Elder
+-- Modified from sendfile 0.6.1
 
 module System.SendFile
   ( sendFile
