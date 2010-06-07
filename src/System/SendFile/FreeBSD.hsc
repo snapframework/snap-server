@@ -2,6 +2,7 @@
 -- | FreeBSD system-dependent code for 'sendfile'.
 module System.SendFile.FreeBSD (sendFile) where
 
+import Data.Int
 import Foreign.C.Error (eAGAIN, eINTR, getErrno, throwErrno)
 import Foreign.C.Types (CInt, CSize)
 import Foreign.Marshal.Alloc (alloca)
@@ -9,13 +10,13 @@ import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek)
 import System.Posix.Types (COff, Fd)
 
-sendFile :: Fd -> Fd -> Int -> Int -> IO Int
+sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
 sendFile out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do
         sbytes <- sendfile out_fd in_fd (fromIntegral off)
                                         (fromIntegral count) pbytes
-        return $ fromEnum sbytes
+        return $ fromIntegral sbytes
 
 sendfile :: Fd -> Fd -> COff -> CSize -> Ptr COff -> IO COff
 sendfile out_fd in_fd off count pbytes =

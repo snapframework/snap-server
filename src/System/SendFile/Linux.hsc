@@ -2,6 +2,7 @@
 -- | Linux system-dependent code for 'sendfile'.
 module System.SendFile.Linux (sendFile) where
 
+import Data.Int
 import Foreign.C.Error (eAGAIN, getErrno, throwErrno)
 import Foreign.C.Types (CSize)
 import Foreign.Marshal (alloca)
@@ -9,16 +10,16 @@ import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (poke)
 import System.Posix.Types (Fd, COff, CSsize)
 
-sendFile :: Fd -> Fd -> Int -> Int -> IO Int
+sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
 sendFile out_fd in_fd off count
   | count == 0 = return 0
   | off == 0   = do
         sbytes <- sendfile out_fd in_fd nullPtr bytes
-        return $ fromEnum sbytes
+        return $ fromIntegral sbytes
   | otherwise  = alloca $ \poff -> do
         poke poff (fromIntegral off)
         sbytes <- sendfile out_fd in_fd poff bytes
-        return $ fromEnum sbytes
+        return $ fromIntegral sbytes
     where
       bytes = min (fromIntegral count) maxBytes
 

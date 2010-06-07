@@ -115,7 +115,7 @@ name :: ByteString
 name = "libev"
 
 
-sendFile :: Connection -> FilePath -> Int -> IO ()
+sendFile :: Connection -> FilePath -> Int64 -> IO ()
 #if defined(HAS_SENDFILE)
 sendFile c fp sz = do
 #else
