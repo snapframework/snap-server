@@ -176,9 +176,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
             runHTTP localHostname laddr lport raddr rport
                     alog elog readEnd writeEnd
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
                     (Backend.sendFile conn)
-#endif
                     (Backend.tickleTimeout conn) handler
 
             debug "Server.httpServe.runHTTP: finished"
@@ -254,18 +252,12 @@ runHTTP :: ByteString                  -- ^ local host name
         -> Maybe Logger                -- ^ error logger
         -> Enumerator IO ()            -- ^ read end of socket
         -> Iteratee IO ()              -- ^ write end of socket
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
         -> (FilePath -> Int -> IO ())  -- ^ sendfile end
-#endif
         -> IO ()                       -- ^ timeout tickler
         -> ServerHandler               -- ^ handler procedure
         -> IO ()
 runHTTP lh lip lp rip rp alog elog
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
         readEnd writeEnd onSendFile tickle handler =
-#else
-        readEnd writeEnd tickle handler =
-#endif
     go `catches` [ Handler $ \(e :: AsyncException) -> do
                        throwIO e
 
@@ -280,11 +272,7 @@ runHTTP lh lip lp rip rp alog elog
     go = do
         buf <- mkIterateeBuffer
         let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
                                   httpSession writeEnd buf onSendFile tickle
-#else
-                                  httpSession writeEnd buf tickle
-#endif
                                   handler
         readEnd iter >>= run
 
@@ -308,17 +296,11 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 -- | Runs an HTTP session.
 httpSession :: Iteratee IO ()              -- ^ write end of socket
             -> ForeignPtr CChar            -- ^ iteratee buffer
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
             -> (FilePath -> Int -> IO ())  -- ^ sendfile continuation
-#endif
             -> IO ()                       -- ^ timeout tickler
             -> ServerHandler               -- ^ handler procedure
             -> ServerMonad ()
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
 httpSession writeEnd' ibuf onSendFile tickle handler = do
-#else
-httpSession writeEnd' ibuf tickle handler = do
-#endif
 
     (writeEnd, cancelBuffering) <-
         liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
@@ -358,11 +340,7 @@ httpSession writeEnd' ibuf tickle handler = do
           date <- liftIO getDateString
           let ins = (Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER)
           let rsp' = updateHeaders ins rsp
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
           (bytesSent,_) <- sendResponse rsp' writeEnd ibuf killBuffer onSendFile
-#else
-          (bytesSent,_) <- sendResponse rsp' writeEnd ibuf killBuffer
-#endif
 
           liftIO . debug $ "Server.httpSession: sent " ++
                            (Prelude.show bytesSent) ++ " bytes"
@@ -373,11 +351,7 @@ httpSession writeEnd' ibuf tickle handler = do
 
           if cc
              then return ()
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
              else httpSession writeEnd' ibuf onSendFile tickle handler
-#else
-             else httpSession writeEnd' ibuf tickle handler
-#endif
 
       Nothing -> return ()
 
@@ -536,26 +510,15 @@ sendResponse :: Response
              -> Iteratee IO a
              -> ForeignPtr CChar
              -> IO ()
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
              -> (FilePath -> Int -> IO a)
-#endif
              -> ServerMonad (Int, a)
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
 sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
-#else
-sendResponse rsp' writeEnd ibuf killBuffering = do
-#endif
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
 
     (!x,!bs) <- case (rspBody rsp) of
                   (Enum e)     -> liftIO $ whenEnum headerString e
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
                   (SendFile f) -> liftIO $ whenSendFile headerString rsp f
-#else
-                  (SendFile f) -> liftIO $ whenEnum headerString
-                                                    (I.enumFile f)
-#endif
 
     return $! (bs,x)
 
@@ -568,7 +531,6 @@ sendResponse rsp' writeEnd ibuf killBuffering = do
 
         return (x, bs-hl)
 
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
     whenSendFile hs r f = do
         -- guaranteed to have a content length here.
         enumBS hs writeEnd >>= run
@@ -576,7 +538,6 @@ sendResponse rsp' writeEnd ibuf killBuffering = do
         let !cl = fromJust $ rspContentLength r
         x <- onSendFile f cl
         return (x, cl)
-#endif
 
     (major,minor) = rspHttpVersion rsp'
 

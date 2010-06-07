@@ -18,9 +18,7 @@ module Snap.Internal.Http.Server.SimpleBackend
   , new
   , stop
   , withConnection
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
   , sendFile
-#endif
   , tickleTimeout
   , getReadEnd
   , getWriteEnd
@@ -57,7 +55,7 @@ import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Date
 import           Snap.Iteratee hiding (foldl')
 
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
+#if defined(HAS_SENDFILE)
 import qualified System.SendFile as SF
 import           System.Posix.IO
 import           System.Posix.Types (Fd(..))
@@ -93,8 +91,8 @@ name :: ByteString
 name = "simple"
 
 
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
 sendFile :: Connection -> FilePath -> Int -> IO ()
+#if defined(HAS_SENDFILE)
 sendFile c fp sz = do
     fd <- openFd fp ReadOnly Nothing defaultFileFlags
     go fd 0 sz
@@ -108,6 +106,11 @@ sendFile c fp sz = do
               else return ()
 
     sfd = Fd . fdSocket $ _socket c
+#else
+sendFile c fp _ = do
+    -- no need to count bytes
+    enumFile fp (getWriteEnd c) >>= run
+    return ()
 #endif
 
 

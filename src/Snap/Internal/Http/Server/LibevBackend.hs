@@ -18,9 +18,7 @@ module Snap.Internal.Http.Server.LibevBackend
   , new
   , stop
   , withConnection
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
   , sendFile
-#endif
   , tickleTimeout
   , getReadEnd
   , getWriteEnd
@@ -63,7 +61,7 @@ import           System.Timeout
 import           Snap.Iteratee
 import           Snap.Internal.Debug
 
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
+#if defined(HAS_SENDFILE)
 import qualified System.SendFile as SF
 import           System.Posix.IO
 import           System.Posix.Types (Fd(..))
@@ -117,17 +115,26 @@ name :: ByteString
 name = "libev"
 
 
-#if defined(HAS_SENDFILE) && !defined(PORTABLE)
 sendFile :: Connection -> FilePath -> Int -> IO ()
-sendFile c fp total = do
+#if defined(HAS_SENDFILE)
+sendFile c fp sz = do
+#else
+sendFile c fp _ = do
+#endif
     withMVar lock $ \_ -> do
       act <- readIORef $ _writeActive c
       when act $ evIoStop loop io
       writeIORef (_writeActive c) False
       evAsyncSend loop asy
 
+#if defined(HAS_SENDFILE)
     fd <- openFd fp ReadOnly Nothing defaultFileFlags
-    go fd 0 total
+    go fd 0 sz
+#else
+    -- no need to count bytes
+    enumFile fp (getWriteEnd c) >>= run
+    return ()
+#endif
 
     withMVar lock $ \_ -> do
       tryTakeMVar $ _readAvailable c
@@ -135,6 +142,7 @@ sendFile c fp total = do
       evAsyncSend loop asy
 
   where
+#if defined(HAS_SENDFILE)
     go fd off bytes
       | bytes == 0 = return ()
       | otherwise  = do
@@ -144,12 +152,12 @@ sendFile c fp total = do
               else return ()
 
     sfd  = Fd $ _socketFd c
+#endif
     io   = _connWriteIOObj c
     b    = _backend c
     loop = _evLoop b
     lock = _loopLock b
     asy  = _asyncObj b
-#endif
 
 
 bindIt :: ByteString         -- ^ bind address, or \"*\" for all
