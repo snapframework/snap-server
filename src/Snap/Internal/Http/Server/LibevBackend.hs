@@ -18,7 +18,9 @@ module Snap.Internal.Http.Server.LibevBackend
   , new
   , stop
   , withConnection
+#if defined(HAS_SENDFILE) && !defined(PORTABLE)
   , sendFile
+#endif
   , tickleTimeout
   , getReadEnd
   , getWriteEnd
@@ -115,6 +117,7 @@ name :: ByteString
 name = "libev"
 
 
+#if defined(HAS_SENDFILE) && !defined(PORTABLE)
 sendFile :: Connection -> FilePath -> Int -> IO ()
 sendFile c fp total = do
     withMVar lock $ \_ -> do
@@ -146,6 +149,7 @@ sendFile c fp total = do
     loop = _evLoop b
     lock = _loopLock b
     asy  = _asyncObj b
+#endif
 
 
 bindIt :: ByteString         -- ^ bind address, or \"*\" for all

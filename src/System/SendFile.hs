@@ -13,16 +13,12 @@ import System.SendFile.Linux (sendFile)
 
 sendFileMode :: String
 sendFileMode = "LINUX_SENDFILE"
-#endif
-
-#if defined(FREEBSD)
+#elif defined(FREEBSD)
 import System.SendFile.FreeBSD (sendFile)
 
 sendFileMode :: String
 sendFileMode = "FREEBSD_SENDFILE"
-#endif
-
-#if defined(OSX)
+#elif defined(OSX)
 import System.SendFile.Darwin (sendFile)
 
 sendFileMode :: String

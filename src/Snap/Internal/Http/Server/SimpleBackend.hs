@@ -18,7 +18,9 @@ module Snap.Internal.Http.Server.SimpleBackend
   , new
   , stop
   , withConnection
+#if defined(HAS_SENDFILE) && !defined(PORTABLE)
   , sendFile
+#endif
   , tickleTimeout
   , getReadEnd
   , getWriteEnd
@@ -91,6 +93,7 @@ name :: ByteString
 name = "simple"
 
 
+#if defined(HAS_SENDFILE) && !defined(PORTABLE)
 sendFile :: Connection -> FilePath -> Int -> IO ()
 sendFile c fp sz = do
     fd <- openFd fp ReadOnly Nothing defaultFileFlags
@@ -105,6 +108,7 @@ sendFile c fp sz = do
               else return ()
 
     sfd = Fd . fdSocket $ _socket c
+#endif
 
 
 bindIt :: ByteString         -- ^ bind address, or \"*\" for all
