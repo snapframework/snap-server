@@ -149,7 +149,7 @@ timeoutThread backend = loop
         -- atomic swap edit list
         now   <- getCurrentDateTime
         edits <- atomicModifyIORef tedits $ \t -> (D.empty, D.toList t)
-        
+
         let table' = foldl' (flip ($)) table edits
         !t'   <- killOlderThan now table'
         return t'
@@ -299,6 +299,16 @@ tickleTimeout conn = do
     tid <- readMVar $ _connTid conn
 
     atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.insert tid now), ())
+
+  where
+    tedits = _timeoutEdits $ _backend conn
+
+
+cancelTimeout :: Connection -> IO ()
+cancelTimeout conn = do
+    tid <- readMVar $ _connTid conn
+
+    atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.delete tid), ())
 
   where
     tedits = _timeoutEdits $ _backend conn
