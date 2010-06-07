@@ -93,14 +93,15 @@ Executable pongserver
      iteratee >= 0.3.1 && < 0.4,
      network == 2.2.1.7,
      network-bytestring >= 0.1.2 && < 0.2,
-     sendfile >= 0.6.1 && < 0.7,
      snap-core >= 0.2.7 && <0.3,
      time,
      transformers,
      unix-compat,
      vector >= 0.6.0.1 && < 0.7
 
-   if !os(windows)
+   if flag(portable) || os(windows)
+     cpp-options: -DPORTABLE
+   else
      build-depends: unix
 
    if flag(libev)
@@ -113,11 +114,23 @@ Executable pongserver
 
      other-modules: Snap.Internal.Http.Server.SimpleBackend
 
-   if os(linux)
-     cpp-options: -DLINUX
+   if os(linux) && !flag(portable)
+     cpp-options: -DLINUX -DHAS_SENDFILE
+     other-modules:
+       System.SendFile,
+       System.SendFile.Linux
 
-   if os(darwin)
-     cpp-options: -DOSX
+   if os(darwin) && !flag(portable)
+     cpp-options: -DOSX -DHAS_SENDFILE
+     other-modules:
+       System.SendFile,
+       System.SendFile.Darwin
+
+   if os(freebsd) && !flag(portable)
+     cpp-options: -DFREEBSD -DHAS_SENDFILE
+     other-modules:
+       System.SendFile,
+       System.SendFile.FreeBSD
 
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE

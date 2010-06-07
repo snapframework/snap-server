@@ -36,9 +36,6 @@ import           Snap.Internal.Http.Server
 import           Snap.Iteratee
 import           Snap.Types
 
-import Snap.Internal.Iteratee.Debug
-
-import System.IO
 
 tests :: [Test]
 tests = [ testHttpRequest1
@@ -293,7 +290,7 @@ rsm = runServerMonad "localhost" "127.0.0.1" 80 "127.0.0.1" 58382 alog elog
 
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "HttpResponse1" $ do
-    let onSendFile = \f -> enumFile f copyingStream2stream >>= run
+    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
     buf <- mkIterateeBuffer
 
@@ -319,7 +316,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
 
 testHttpResponse2 :: Test
 testHttpResponse2 = testCase "HttpResponse2" $ do
-    let onSendFile = \f -> enumFile f copyingStream2stream >>= run
+    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
     buf <- mkIterateeBuffer
 
@@ -345,7 +342,7 @@ testHttpResponse2 = testCase "HttpResponse2" $ do
 
 testHttpResponse3 :: Test
 testHttpResponse3 = testCase "HttpResponse3" $ do
-    let onSendFile = \f -> enumFile f copyingStream2stream >>= run
+    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
     buf <- mkIterateeBuffer
 
@@ -440,8 +437,8 @@ testHttp1 = testCase "http session" $ do
     assertBool "pipelined responses" ok
 
 
-mkIter :: IORef L.ByteString -> (Iteratee IO (), FilePath -> IO ())
-mkIter ref = (iter, \f -> onF f iter)
+mkIter :: IORef L.ByteString -> (Iteratee IO (), FilePath -> Int -> IO ())
+mkIter ref = (iter, \f _ -> onF f iter)
   where
     iter = do
         x <- copyingStream2stream
