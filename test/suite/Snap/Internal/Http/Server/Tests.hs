@@ -15,6 +15,7 @@ import qualified Data.ByteString.Lazy.Char8 as LC
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import           Data.Char
+import           Data.Int
 import           Data.IORef
 import           Data.Iteratee.WrappedByteString
 import qualified Data.Map as Map
@@ -437,7 +438,7 @@ testHttp1 = testCase "http session" $ do
     assertBool "pipelined responses" ok
 
 
-mkIter :: IORef L.ByteString -> (Iteratee IO (), FilePath -> Int -> IO ())
+mkIter :: IORef L.ByteString -> (Iteratee IO (), FilePath -> Int64 -> IO ())
 mkIter ref = (iter, \f _ -> onF f iter)
   where
     iter = do

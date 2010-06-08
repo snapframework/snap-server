@@ -18,6 +18,7 @@ import qualified Data.ByteString.Char8 as SC
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Nums.Careless.Int as Cvt
+import           Data.Int
 import           Data.IORef
 import           Data.List (foldl')
 import qualified Data.Map as Map
@@ -243,18 +244,18 @@ logA' logger req rsp = do
 
 
 ------------------------------------------------------------------------------
-runHTTP :: ByteString                  -- ^ local host name
-        -> ByteString                  -- ^ local ip address
-        -> Int                         -- ^ local port
-        -> ByteString                  -- ^ remote ip address
-        -> Int                         -- ^ remote port
-        -> Maybe Logger                -- ^ access logger
-        -> Maybe Logger                -- ^ error logger
-        -> Enumerator IO ()            -- ^ read end of socket
-        -> Iteratee IO ()              -- ^ write end of socket
-        -> (FilePath -> Int -> IO ())  -- ^ sendfile end
-        -> IO ()                       -- ^ timeout tickler
-        -> ServerHandler               -- ^ handler procedure
+runHTTP :: ByteString                    -- ^ local host name
+        -> ByteString                    -- ^ local ip address
+        -> Int                           -- ^ local port
+        -> ByteString                    -- ^ remote ip address
+        -> Int                           -- ^ remote port
+        -> Maybe Logger                  -- ^ access logger
+        -> Maybe Logger                  -- ^ error logger
+        -> Enumerator IO ()              -- ^ read end of socket
+        -> Iteratee IO ()                -- ^ write end of socket
+        -> (FilePath -> Int64 -> IO ())  -- ^ sendfile end
+        -> IO ()                         -- ^ timeout tickler
+        -> ServerHandler                 -- ^ handler procedure
         -> IO ()
 runHTTP lh lip lp rip rp alog elog
         readEnd writeEnd onSendFile tickle handler =
@@ -294,11 +295,11 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 
 ------------------------------------------------------------------------------
 -- | Runs an HTTP session.
-httpSession :: Iteratee IO ()              -- ^ write end of socket
-            -> ForeignPtr CChar            -- ^ iteratee buffer
-            -> (FilePath -> Int -> IO ())  -- ^ sendfile continuation
-            -> IO ()                       -- ^ timeout tickler
-            -> ServerHandler               -- ^ handler procedure
+httpSession :: Iteratee IO ()                -- ^ write end of socket
+            -> ForeignPtr CChar              -- ^ iteratee buffer
+            -> (FilePath -> Int64 -> IO ())  -- ^ sendfile continuation
+            -> IO ()                         -- ^ timeout tickler
+            -> ServerHandler                 -- ^ handler procedure
             -> ServerMonad ()
 httpSession writeEnd' ibuf onSendFile tickle handler = do
 
@@ -418,7 +419,7 @@ receiveRequest = do
         doIt = mbCT == Just "application/x-www-form-urlencoded"
         mbCT = liftM head $ Map.lookup "content-type" (rqHeaders req)
 
-        maximumPOSTBodySize :: Int
+        maximumPOSTBodySize :: Int64
         maximumPOSTBodySize = 10*1024*1024
 
         getIt :: ServerMonad Request
@@ -510,8 +511,8 @@ sendResponse :: Response
              -> Iteratee IO a
              -> ForeignPtr CChar
              -> IO ()
-             -> (FilePath -> Int -> IO a)
-             -> ServerMonad (Int, a)
+             -> (FilePath -> Int64 -> IO a)
+             -> ServerMonad (Int64, a)
 sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
@@ -525,7 +526,7 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
   where
     whenEnum hs e = do
         let enum = enumBS hs >. e
-        let hl = S.length hs
+        let hl = fromIntegral $ S.length hs
 
         (x,bs) <- liftIO $ enum (countBytes writeEnd) >>= run
 
@@ -574,7 +575,7 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
                   return $ setHeader "Connection" "close" r
 
 
-    hasCL :: Int -> Response -> ServerMonad Response
+    hasCL :: Int64 -> Response -> ServerMonad Response
     hasCL cl r =
         {-# SCC "hasCL" #-}
         do
@@ -595,7 +596,7 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
     setFileSize fp r =
         {-# SCC "setFileSize" #-}
         do
-            fs <- liftM fromEnum $ liftIO $ getFileSize fp
+            fs <- liftM fromIntegral $ liftIO $ getFileSize fp
             return $ r { rspContentLength = Just fs }
 
 

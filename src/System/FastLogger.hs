@@ -20,6 +20,7 @@ import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.ByteString.Internal (c2w)
 import           Data.DList (DList)
 import qualified Data.DList as D
+import           Data.Int
 import           Data.IORef
 import           Data.Maybe
 import           Data.Serialize.Put
@@ -74,7 +75,7 @@ combinedLogEntry :: ByteString        -- ^ remote host
                  -> ByteString        -- ^ request line (up to you to ensure
                                       --   there are no quotes in here)
                  -> Int               -- ^ status code
-                 -> Maybe Int         -- ^ num bytes sent
+                 -> Maybe Int64       -- ^ num bytes sent
                  -> Maybe ByteString  -- ^ referer (up to you to ensure
                                       --   there are no quotes in here)
                  -> ByteString        -- ^ user agent (up to you to ensure

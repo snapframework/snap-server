@@ -2,6 +2,7 @@
 -- | Darwin system-dependent code for 'sendfile'.
 module System.SendFile.Darwin (sendFile) where
 
+import Data.Int
 import Foreign.C.Error (eAGAIN, eINTR, getErrno, throwErrno)
 import Foreign.C.Types (CInt)
 import Foreign.Marshal (alloca)
@@ -9,13 +10,13 @@ import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
 import System.Posix.Types (Fd, COff)
 
-sendFile :: Fd -> Fd -> Int -> Int -> IO Int
+sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
 sendFile out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do
         poke pbytes $ min maxBytes (fromIntegral count)
         sbytes <- sendfile out_fd in_fd (fromIntegral off) pbytes
-        return $ fromEnum sbytes
+        return $ fromIntegral sbytes
 
 sendfile :: Fd -> Fd -> COff -> Ptr COff -> IO COff
 sendfile out_fd in_fd off pbytes = do
