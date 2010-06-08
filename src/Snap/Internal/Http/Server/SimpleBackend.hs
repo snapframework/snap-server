@@ -94,15 +94,16 @@ name = "simple"
 sendFile :: Connection -> FilePath -> Int -> IO ()
 #if defined(HAS_SENDFILE)
 sendFile c fp sz = do
-    fd <- openFd fp ReadOnly Nothing defaultFileFlags
-    go fd 0 sz
+    bracket (openFd fp ReadOnly Nothing defaultFileFlags)
+            (closeFd)
+            (go 0 sz)
   where
-    go fd off bytes
+    go off bytes fd
       | bytes == 0 = return ()
       | otherwise  = do
             sent <- SF.sendFile sfd fd off bytes
             if sent < bytes
-              then tickleTimeout c >> go fd (off+sent) (bytes-sent)
+              then tickleTimeout c >> go (off+sent) (bytes-sent) fd
               else return ()
 
     sfd = Fd . fdSocket $ _socket c
