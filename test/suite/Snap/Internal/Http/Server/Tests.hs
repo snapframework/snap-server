@@ -580,6 +580,6 @@ testServerStartupShutdown = testCase "startup/shutdown" $ do
 
     return ()
   where
-    waitabit = threadDelay $ ((10::Int)^(6::Int))
+    waitabit = threadDelay $ 2*((10::Int)^(6::Int))
     port = 8145
 
