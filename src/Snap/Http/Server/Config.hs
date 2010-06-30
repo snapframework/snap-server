@@ -6,13 +6,6 @@ module Snap.Http.Server.Config
   , readConfigFromCmdLineArgs
   , readFlagsFromCmdLineArgs
   , flagsToConfig
-  , flagLH
-  , flagBA
-  , flagPt
-  , flagAL
-  , flagEL
-  , flagHelp
-  , flagV
   ) where
 
 import qualified Data.ByteString.Char8 as S
