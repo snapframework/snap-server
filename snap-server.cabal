@@ -85,6 +85,7 @@ Library
 
   exposed-modules:
     Snap.Http.Server,
+    Snap.Http.Server.Config,
     System.FastLogger
 
   other-modules:
@@ -115,7 +116,6 @@ Library
     time,
     transformers,
     unix-compat,
-    utf8-string,
     vector >= 0.6 && <0.7
 
   if flag(portable) || os(windows)
