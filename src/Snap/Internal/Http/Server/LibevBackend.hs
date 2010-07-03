@@ -376,13 +376,12 @@ getAddr addr =
 
 -- | throw a timeout exception to the handling thread -- it'll clean up
 -- everything
-timerCallback :: MVar ()           -- ^ loop lock
-              -> EvLoopPtr         -- ^ loop obj
+timerCallback :: EvLoopPtr         -- ^ loop obj
               -> EvTimerPtr        -- ^ timer obj
               -> IORef CTime       -- ^ when to timeout?
               -> MVar ThreadId     -- ^ thread to kill
               -> TimerCallback
-timerCallback lock loop tmr ioref tmv _ _ _ = do
+timerCallback loop tmr ioref tmv _ _ _ = do
     debug "Backend.timerCallback: entered"
 
     now       <- getCurrentDateTime
@@ -394,7 +393,7 @@ timerCallback lock loop tmr ioref tmv _ _ _ = do
           tid <- readMVar tmv
           throwTo tid TimeoutException
 
-      else withMVar lock $ \_ -> do    -- re-arm the timer
+      else do    -- re-arm the timer
           -- fixme: should set repeat here, have to wait for an hlibev patch to
           -- do it
           evTimerAgain loop tmr
@@ -570,8 +569,7 @@ withConnection backend cpu proc = go
         thrmv       <- newEmptyMVar
         now         <- getCurrentDateTime
         timeoutTime <- newIORef $ now + 20
-        tcb         <- mkTimerCallback $ timerCallback (_loopLock backend)
-                                                       lp
+        tcb         <- mkTimerCallback $ timerCallback lp
                                                        tmr
                                                        timeoutTime
                                                        thrmv
