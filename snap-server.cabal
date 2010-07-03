@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.2.7.1
+version:        0.2.7.2
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   This is the first developer prerelease of the Snap framework.  Snap is a
@@ -94,8 +94,7 @@ Library
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,  
-    Snap.Internal.Http.Server.Date,
-    System.SendFile
+    Snap.Internal.Http.Server.Date
 
   build-depends:
     array >= 0.2 && <0.4,
