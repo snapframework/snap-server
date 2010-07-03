@@ -55,6 +55,8 @@ extra-source-files:
   LICENSE,
   README.md,
   README.SNAP.md,
+  test/benchmark/Benchmark.hs,
+  test/benchmark/Snap/Internal/Http/Parser/Benchmark.hs,
   test/data/fileServe/foo.bin,
   test/data/fileServe/foo.bin.bin.bin,
   test/data/fileServe/foo.html,
@@ -92,7 +94,8 @@ Library
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,  
-    Snap.Internal.Http.Server.Date
+    Snap.Internal.Http.Server.Date,
+    System.SendFile
 
   build-depends:
     array >= 0.2 && <0.4,
