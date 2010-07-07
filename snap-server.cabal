@@ -66,6 +66,8 @@ extra-source-files:
   test/runTestsAndCoverage.sh,
   test/snap-server-testsuite.cabal,
   test/suite/Paths_snap_server.hs,
+  test/suite/Data/HashMap/Concurrent/Tests.hs,
+  test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
   test/suite/Snap/Test/Common.hs,
@@ -91,6 +93,7 @@ Library
     System.FastLogger
 
   other-modules:
+    Data.HashMap.Concurrent,
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,  
@@ -111,6 +114,7 @@ Library
     filepath,
     iteratee >= 0.3.1 && <0.4,
     monads-fd,
+    murmur-hash >= 0.1 && < 0.2,
     network == 2.2.1.*,
     old-locale,
     snap-core >= 0.2.7 && <0.3,
