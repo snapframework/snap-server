@@ -33,38 +33,39 @@ module Snap.Internal.Http.Server.LibevBackend
 ---------------------------
 
 ------------------------------------------------------------------------------
-import           Control.Concurrent
-import           Control.Exception
-import           Control.Monad
+import             Control.Concurrent
+import             Control.Exception
+import             Control.Monad
 import "monads-fd" Control.Monad.Trans
-import           Data.ByteString (ByteString)
-import           Data.ByteString.Internal (c2w, w2c)
-import qualified Data.ByteString.Unsafe as B
-import qualified Data.ByteString as B
-import           Data.DList (DList)
-import qualified Data.DList as D
-import           Data.IORef
-import           Data.Iteratee.WrappedByteString
-import qualified Data.List as List
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Typeable
-import           Foreign hiding (new)
-import           Foreign.C.Error
-import           Foreign.C.Types
-import           GHC.Conc (forkOnIO)
-import           Network.Libev
-import           Network.Socket
-import           Prelude hiding (catch)
-import           System.Timeout
+import             Data.ByteString (ByteString)
+import             Data.ByteString.Internal (c2w, w2c)
+import qualified   Data.ByteString.Unsafe as B
+import qualified   Data.ByteString as B
+import             Data.DList (DList)
+import qualified   Data.DList as D
+import             Data.IORef
+import             Data.Iteratee.WrappedByteString
+import qualified   Data.List as List
+import             Data.Set (Set)
+import qualified   Data.Set as Set
+import             Data.Typeable
+import             Foreign hiding (new)
+import             Foreign.C.Error
+import             Foreign.C.Types
+import             GHC.Conc (forkOnIO)
+import             Network.Libev
+import             Network.Socket
+import             Prelude hiding (catch)
+import             System.Timeout
 ------------------------------------------------------------------------------
-import           Snap.Iteratee
-import           Snap.Internal.Debug
+import             Snap.Iteratee
+import             Snap.Internal.Debug
+import             Snap.Internal.Http.Server.Date
 
 #if defined(HAS_SENDFILE)
-import qualified System.SendFile as SF
-import           System.Posix.IO
-import           System.Posix.Types (Fd(..))
+import qualified   System.SendFile as SF
+import             System.Posix.IO
+import             System.Posix.Types (Fd(..))
 #endif
 
 data Backend = Backend
@@ -101,6 +102,7 @@ data Connection = Connection
     , _writeAvailable      :: !(MVar ())
     , _timerObj            :: !EvTimerPtr
     , _timerCallback       :: !(FunPtr TimerCallback)
+    , _timerTimeoutTime    :: !(IORef CTime)
     , _readActive          :: !(IORef Bool)
     , _writeActive         :: !(IORef Bool)
     , _connReadIOObj       :: !EvIoPtr
@@ -374,11 +376,27 @@ getAddr addr =
 
 -- | throw a timeout exception to the handling thread -- it'll clean up
 -- everything
-timerCallback :: MVar ThreadId -> TimerCallback
-timerCallback tmv _ _ _ = do
-    debug "Backend.timerCallback: timed out"
-    tid <- readMVar tmv
-    throwTo tid TimeoutException
+timerCallback :: EvLoopPtr         -- ^ loop obj
+              -> EvTimerPtr        -- ^ timer obj
+              -> IORef CTime       -- ^ when to timeout?
+              -> MVar ThreadId     -- ^ thread to kill
+              -> TimerCallback
+timerCallback loop tmr ioref tmv _ _ _ = do
+    debug "Backend.timerCallback: entered"
+
+    now       <- getCurrentDateTime
+    whenToDie <- readIORef ioref
+
+    if whenToDie < now
+      then do
+          debug "Backend.timerCallback: killing thread"
+          tid <- readMVar tmv
+          throwTo tid TimeoutException
+
+      else do    -- re-arm the timer
+          -- fixme: should set repeat here, have to wait for an hlibev patch to
+          -- do it
+          evTimerAgain loop tmr
 
 
 addThreadSetEdit :: Backend -> (Set ThreadId -> Set ThreadId) -> IO ()
@@ -543,10 +561,21 @@ withConnection backend cpu proc = go
         ra    <- newMVar ()
         wa    <- newMVar ()
 
-        tmr   <- mkEvTimer
-        thrmv <- newEmptyMVar
-        tcb   <- mkTimerCallback $ timerCallback thrmv
+
+        -----------------
+        -- setup timer --
+        -----------------
+        tmr         <- mkEvTimer
+        thrmv       <- newEmptyMVar
+        now         <- getCurrentDateTime
+        timeoutTime <- newIORef $ now + 20
+        tcb         <- mkTimerCallback $ timerCallback lp
+                                                       tmr
+                                                       timeoutTime
+                                                       thrmv
+        -- 20 second timeout
         evTimerInit tmr tcb 0 20.0
+
 
         readActive  <- newIORef True
         writeActive <- newIORef True
@@ -581,6 +610,7 @@ withConnection backend cpu proc = go
                               wa
                               tmr
                               tcb
+                              timeoutTime
                               readActive
                               writeActive
                               evioRead
@@ -664,12 +694,9 @@ instance Exception TimeoutException
 tickleTimeout :: Connection -> IO ()
 tickleTimeout conn = do
     debug "Backend.tickleTimeout"
-    withMVar (_loopLock bk) $ \_ -> evTimerAgain lp tmr
+    now       <- getCurrentDateTime
+    writeIORef (_timerTimeoutTime conn) (now + 20)
 
-  where
-    bk  = _backend conn
-    lp  = _evLoop bk
-    tmr = _timerObj conn
 
 recvData :: Connection -> Int -> IO ByteString
 recvData conn n = do
