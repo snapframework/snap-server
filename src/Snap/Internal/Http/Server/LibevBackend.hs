@@ -41,13 +41,8 @@ import             Data.ByteString (ByteString)
 import             Data.ByteString.Internal (c2w, w2c)
 import qualified   Data.ByteString.Unsafe as B
 import qualified   Data.ByteString as B
-import             Data.DList (DList)
-import qualified   Data.DList as D
 import             Data.IORef
 import             Data.Iteratee.WrappedByteString
-import qualified   Data.List as List
-import             Data.Set (Set)
-import qualified   Data.Set as Set
 import             Data.Typeable
 import             Foreign hiding (new)
 import             Foreign.C.Error
@@ -58,6 +53,10 @@ import             Network.Socket
 import             Prelude hiding (catch)
 import             System.Timeout
 ------------------------------------------------------------------------------
+
+-- FIXME: should be HashSet, make that later.
+import qualified   Data.HashMap.Concurrent as H
+import             Data.HashMap.Concurrent (HashMap)
 import             Snap.Iteratee
 import             Snap.Internal.Debug
 import             Snap.Internal.Http.Server.Date
@@ -81,11 +80,7 @@ data Backend = Backend
     , _asyncObj          :: !EvAsyncPtr
     , _killCb            :: !(FunPtr AsyncCallback)
     , _killObj           :: !EvAsyncPtr
-    , _connectionThreads :: !(MVar (Set ThreadId))
-    , _connThreadEdits   :: !(IORef (DList (Set ThreadId -> Set ThreadId)))
-    , _connThreadId      :: !(MVar ThreadId)
-    , _connThreadIsDone  :: !(MVar ())
-    , _threadActivity    :: !(MVar ())
+    , _connectionThreads :: !(HashMap ThreadId ())
     , _backendCPU        :: !Int
     }
 
@@ -219,11 +214,7 @@ new (sock,sockFd) cpu = do
     evIoStart lp accIO
 
     -- thread set stuff
-    connThreadMVar <- newEmptyMVar
-    connSet        <- newMVar Set.empty
-    editsRef       <- newIORef D.empty
-    connThreadDone <- newEmptyMVar
-    threadActivity <- newMVar ()
+    connSet <- H.new (H.hashString . show)
 
     let b = Backend sock
                     sockFd
@@ -238,16 +229,9 @@ new (sock,sockFd) cpu = do
                     killCB
                     killObj
                     connSet
-                    editsRef
-                    connThreadMVar
-                    connThreadDone
-                    threadActivity
                     cpu
 
     forkOnIO cpu $ loopThread b
-
-    conntid <- forkOnIO cpu $ connTableSeqThread b
-    putMVar connThreadMVar conntid
 
     debug $ "Backend.new: loop spawned"
     return b
@@ -357,8 +341,8 @@ waitForThreads backend t = timeout t wait >> return ()
   where
     threadSet = _connectionThreads backend
     wait = do
-        threads <- readMVar threadSet
-        if (Set.null threads)
+        b       <- H.null threadSet
+        if b
           then return ()
           else threadDelay (seconds 1) >> wait
 
@@ -399,15 +383,6 @@ timerCallback loop tmr ioref tmv _ _ _ = do
           evTimerAgain loop tmr
 
 
-addThreadSetEdit :: Backend -> (Set ThreadId -> Set ThreadId) -> IO ()
-addThreadSetEdit backend edit = do
-    atomicModifyIORef (_connThreadEdits backend) $ \els ->
-        (D.snoc els edit, ())
-
-    tryPutMVar (_threadActivity backend) ()
-    return ()
-
-
 freeConnection :: Connection -> IO ()
 freeConnection conn = ignoreException $ do
     withMVar loopLock $ \_ -> block $ do
@@ -431,8 +406,8 @@ freeConnection conn = ignoreException $ do
 
         tid <- readMVar $ _connThread conn
 
-        -- schedule the removal of the thread id from the backend set
-        addThreadSetEdit backend (Set.delete tid)
+        -- removal the thread id from the backend set
+        H.delete tid $ _connectionThreads backend
 
         -- wake up the event loop so it can be apprised of the changes
         evAsyncSend loop asyncObj
@@ -456,46 +431,14 @@ ignoreException :: IO () -> IO ()
 ignoreException = handle (\(_::SomeException) -> return ())
 
 
-connTableSeqThread :: Backend -> IO ()
-connTableSeqThread backend = loop `finally` putMVar threadDone ()
-  where
-    threadDone = _connThreadIsDone backend
-    editsRef   = _connThreadEdits backend
-    table      = _connectionThreads backend
-    activity   = _threadActivity backend
-
-    loop = do
-        takeMVar activity
-
-        -- grab the edits
-        edits <- atomicModifyIORef editsRef $ \t -> (D.empty, D.toList t)
-
-        -- apply the edits
-        modifyMVar_ table $ \t -> block $ do
-               let !t' = List.foldl' (flip ($)) t edits
-               return t'
-
-        -- zzz
-        threadDelay 1000000
-        loop
-
-
 freeBackend :: Backend -> IO ()
 freeBackend backend = ignoreException $ block $ do
     -- note: we only get here after an unloop
 
-    readMVar (_connThreadId backend) >>= killThread
-    takeMVar $ _connThreadIsDone backend
 
-    -- read edits and obtain final thread table
-    threads <- withMVar (_connectionThreads backend) $ \table -> do
-                   edits <- liftM D.toList $
-                            readIORef (_connThreadEdits backend)
-
-                   let !t = List.foldl' (flip ($)) table edits
-                   return $ Set.toList t
-
-    mapM_ killThread threads
+    -- kill everything in thread table
+    tset <- H.toList $ _connectionThreads backend
+    mapM_ (killThread . fst) tset
 
     debug $ "Backend.freeBackend: all threads killed"
     debug $ "Backend.freeBackend: destroying resources"
@@ -622,7 +565,7 @@ withConnection backend cpu proc = go
 
         tid <- forkOnIO cpu $ threadProc conn
 
-        addThreadSetEdit backend (Set.insert tid)
+        H.update tid () (_connectionThreads backend)
         putMVar thrmv tid
 
 
