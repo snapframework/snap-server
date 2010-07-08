@@ -20,6 +20,7 @@ import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Nums.Careless.Int as Cvt
 import           Data.Int
 import           Data.IORef
+import           Data.Iteratee.WrappedByteString (unWrap)
 import           Data.List (foldl')
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust, catMaybes, fromMaybe)
@@ -428,10 +429,10 @@ receiveRequest = do
             let (SomeEnumerator enum) = senum
             let i = joinI $ takeNoMoreThan maximumPOSTBodySize stream2stream
             iter <- liftIO $ enum i
-            body <- lift iter
-            let newParams = parseUrlEncoded $ strictize $ fromWrap body
+            body <- liftM unWrap $ lift iter
+            let newParams = parseUrlEncoded body
             liftIO $ writeIORef (rqBody req)
-                         (SomeEnumerator $ return . I.joinI . I.take 0)
+                         (SomeEnumerator $ enumBS body)
             return $ req { rqParams = rqParams req `mappend` newParams }
 
 

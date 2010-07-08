@@ -266,9 +266,12 @@ testHttpRequest3 =
                     (rqParam "postparam2" req)
                     (Just ["2"])
 
-        -- if we're www-form-encoded then we will have read the body already
-        assertEqual "parse body" "" body
+        -- make sure the post body is still emitted
+        assertEqual "parse body" (LC.fromChunks [samplePostBody3]) body
 
+
+samplePostBody3 :: ByteString
+samplePostBody3 = "postparam1=1&postparam2=2"
 
 sampleRequest3 :: ByteString
 sampleRequest3 =
@@ -279,7 +282,9 @@ sampleRequest3 =
              , "Multiheader: 2\r\n"
              , "X-Random-Other-Header: foo\r\n bar\r\n"
              , "\r\n"
-             , "postparam1=1&postparam2=2" ]
+             , samplePostBody3 ]
+
+
 
 
 rsm :: ServerMonad a -> Iteratee IO a
