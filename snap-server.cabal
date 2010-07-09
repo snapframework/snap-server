@@ -89,7 +89,6 @@ Library
 
   exposed-modules:
     Snap.Http.Server,
-    Snap.Http.Server.Config,
     System.FastLogger
 
   other-modules:
@@ -121,6 +120,7 @@ Library
     snap-core >= 0.3 && <0.4,
     time,
     transformers,
+    utf8-string,
     unix-compat,
     vector >= 0.6 && <0.7
 
