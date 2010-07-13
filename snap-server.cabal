@@ -89,6 +89,7 @@ Library
 
   exposed-modules:
     Snap.Http.Server,
+    Snap.Http.Server.Config,
     System.FastLogger
 
   other-modules:
