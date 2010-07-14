@@ -49,8 +49,9 @@ snapServerVersion = Int.snapServerVersion
 -- settings from the given config; error handling and compression are ignored.
 -- This function never returns; to shut down the HTTP server, kill the
 -- controlling thread.
-simpleHttpServe :: Config Snap () -> Snap () -> IO ()
-simpleHttpServe config handler =
+simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
+simpleHttpServe config handler = do
+    setUnicodeLocale $ fromJust $ getLocale conf
     Int.httpServe (fromJust $ getAddress   conf)
                   (fromJust $ getPort      conf)
                   (fromJust $ getHostname  conf)
@@ -67,15 +68,14 @@ simpleHttpServe config handler =
 -- server, kill the controlling thread.
 httpServe :: Config Snap () -> Snap () -> IO ()
 httpServe config handler = do
-    setUnicodeLocale $ fromJust $ getLocale conf
     output $ "Listening on " ++ (U.toString $ fromJust $ getAddress conf) ++
         ":" ++ (show $ fromJust $ getPort conf)
-    try $ serve $ compress $ catch500 handler :: IO (Either SomeException ())
-    output " shutting down..."
+    _ <- try $ serve handler :: IO (Either SomeException ())
+    output "\nShutting down..."
   where
     conf     = completeConfig config
     output   = when (fromJust $ getVerbose conf) . hPutStrLn stderr
-    serve    = simpleHttpServe config
+    serve    = simpleHttpServe config . compress . catch500
     catch500 = flip catch $ fromJust $ getErrorHandler conf
     compress = if fromJust $ getCompression conf then withCompression else id
 
@@ -90,12 +90,12 @@ quickHttpServe m = commandLineConfig emptyConfig >>= \c -> httpServe c m
 
 
 ------------------------------------------------------------------------------
--- | Given a string like \"en_US\", this sets the locale to \"en_US.utf8\".
+-- | Given a string like \"en_US\", this sets the locale to \"en_US.UTF-8\".
 -- This doesn't work on Windows.
 setUnicodeLocale :: String -> IO ()
-setUnicodeLocale lang = do
+setUnicodeLocale lang =
 #ifndef PORTABLE
-    mapM_ (\k -> setEnv k (lang ++ ".utf8") True)
+    mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
           [ "LANG"
           , "LC_CTYPE"
           , "LC_NUMERIC"
