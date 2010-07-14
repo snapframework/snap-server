@@ -376,10 +376,9 @@ timerCallback loop tmr ioref tmv _ _ _ = do
           tid <- readMVar tmv
           throwTo tid TimeoutException
 
-      else do    -- re-arm the timer
-          -- fixme: should set repeat here, have to wait for an hlibev patch to
-          -- do it
-          evTimerAgain loop tmr
+      else do
+        evTimerSetRepeat tmr $ fromRational . toRational $ (whenToDie - now)
+        evTimerAgain loop tmr
 
 
 freeConnection :: Connection -> IO ()
@@ -512,9 +511,9 @@ withConnection backend cpu proc = go
         now         <- getCurrentDateTime
         timeoutTime <- newIORef $ now + 20
         tcb         <- mkTimerCallback $ timerCallback lp
-                                                       tmr
-                                                       timeoutTime
-                                                       thrmv
+                                                      tmr
+                                                      timeoutTime
+                                                      thrmv
         -- 20 second timeout
         evTimerInit tmr tcb 0 20.0
 
