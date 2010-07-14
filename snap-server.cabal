@@ -117,7 +117,7 @@ Library
     murmur-hash >= 0.1 && < 0.2,
     network == 2.2.1.*,
     old-locale,
-    snap-core >= 0.2.8 && <0.3,
+    snap-core >= 0.2.8.1 && <0.3,
     time,
     transformers,
     unix-compat,
