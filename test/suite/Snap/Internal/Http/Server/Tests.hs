@@ -46,6 +46,7 @@ tests = [ testHttpRequest1
         , testHttpResponse1
         , testHttpResponse2
         , testHttpResponse3
+        , testHttpResponse4
         , testHttp1
         , testHttp2
         , testPartialParse
@@ -376,6 +377,27 @@ testHttpResponse3 = testCase "HttpResponse3" $ do
            emptyResponse { rspHttpVersion = (1,0) }
     rsp2 = rsp1 { rspContentLength = Nothing }
     rsp3 = setContentType "text/plain" $ (rsp2 { rspHttpVersion = (1,1) })
+
+
+testHttpResponse4 :: Test
+testHttpResponse4 = testCase "HttpResponse4" $ do
+    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
+
+    buf <- mkIterateeBuffer
+
+    b <- run $ rsm $
+         sendResponse rsp1 copyingStream2stream buf (return ()) onSendFile >>=
+                      return . fromWrap . snd
+
+    assertEqual "http response" (L.concat [
+                      "HTTP/1.0 304 Test\r\n"
+                    , "Transfer-Encoding: chunked\r\n\r\n"
+                    , "Content-Length: 0\r\n\r\n"
+                    ]) b
+
+  where
+    rsp1 = setResponseStatus 304 "Test" $
+           emptyResponse { rspHttpVersion = (1,0) }
 
 
 -- httpServe "127.0.0.1" 8080 "localhost" pongServer
