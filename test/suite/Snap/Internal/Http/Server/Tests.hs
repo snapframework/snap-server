@@ -391,7 +391,6 @@ testHttpResponse4 = testCase "HttpResponse4" $ do
 
     assertEqual "http response" (L.concat [
                       "HTTP/1.0 304 Test\r\n"
-                    , "Transfer-Encoding: chunked\r\n\r\n"
                     , "Content-Length: 0\r\n\r\n"
                     ]) b
 
