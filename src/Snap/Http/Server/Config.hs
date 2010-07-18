@@ -45,7 +45,6 @@ import qualified Data.ByteString.Char8 as B
 import           Data.ByteString (ByteString)
 import           Data.Char
 import           Data.List
-import           Data.Maybe
 import           Data.Monoid
 import           Prelude hiding (catch)
 import           Snap.Types
@@ -168,13 +167,14 @@ defaultConfig = Config
     , locale       = Just "en_US"
     , compression  = Just True
     , verbose      = Just True
-    , errorHandler = Just $ \e -> let msg = U.fromString $ show e in
+    , errorHandler = Just $ \e -> do
+        let err = U.fromString $ show e
+            msg = mappend "A web handler threw an exception. Details:\n" err
         finishWith $ setContentType "text/plain; charset=utf-8"
-        . setContentLength (fromIntegral $ B.length msg)
-        . setResponseStatus 500 "Internal Server Error"
-        . modifyResponseBody (>. (enumBS $ mappend
-            "A web handler threw an exception. Details:\n" msg))
-        $ emptyResponse
+                   . setContentLength (fromIntegral $ B.length msg)
+                   . setResponseStatus 500 "Internal Server Error"
+                   . modifyResponseBody (>. enumBS msg)
+                   $ emptyResponse
     , other        = Nothing
     }
 
