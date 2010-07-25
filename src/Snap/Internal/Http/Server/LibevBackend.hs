@@ -198,7 +198,7 @@ new (sock,sockFd) cpu = do
     killObj <- mkEvAsync
     killCB  <- mkAsyncCallback $ \_ _ _ -> do
                             debug "async kill wakeup"
-                            evUnloop lp 2
+                            evUnloop lp evunloop_all
                             return ()
 
     evAsyncInit asyncObj asyncCB
@@ -320,8 +320,7 @@ stop b = ignoreException $ do
     debug $ "Backend.stop: all threads presumed dead, unlooping"
 
     withMVar lock $ \_ -> do
-        -- FIXME: hlibev should export EVUNLOOP_ALL
-        evUnloop loop 2
+        evUnloop loop evunloop_all
         evAsyncSend loop killObj
 
     debug $ "unloop sent"
@@ -377,10 +376,9 @@ timerCallback loop tmr ioref tmv _ _ _ = do
           tid <- readMVar tmv
           throwTo tid TimeoutException
 
-      else do    -- re-arm the timer
-          -- fixme: should set repeat here, have to wait for an hlibev patch to
-          -- do it
-          evTimerAgain loop tmr
+      else do
+        evTimerSetRepeat tmr $ fromRational . toRational $ (whenToDie - now)
+        evTimerAgain loop tmr
 
 
 freeConnection :: Connection -> IO ()
@@ -513,9 +511,9 @@ withConnection backend cpu proc = go
         now         <- getCurrentDateTime
         timeoutTime <- newIORef $ now + 20
         tcb         <- mkTimerCallback $ timerCallback lp
-                                                       tmr
-                                                       timeoutTime
-                                                       thrmv
+                                                      tmr
+                                                      timeoutTime
+                                                      thrmv
         -- 20 second timeout
         evTimerInit tmr tcb 0 20.0
 

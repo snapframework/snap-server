@@ -131,7 +131,7 @@ Library
     build-depends: unix
 
   if flag(libev)
-    build-depends: hlibev >= 0.2.3
+    build-depends: hlibev >= 0.2.5 && < 0.3
     other-modules: Snap.Internal.Http.Server.LibevBackend
     cpp-options: -DLIBEV
   else
