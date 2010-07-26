@@ -40,7 +40,7 @@ Executable testsuite
      old-locale,
      parallel > 2,
      iteratee >= 0.3.1 && < 0.4,
-     snap-core >= 0.2.7 && <0.3,
+     snap-core >= 0.2.9 && <0.3,
      test-framework >= 0.3.1 && <0.4,
      test-framework-hunit >= 0.2.5 && < 0.3,
      test-framework-quickcheck2 >= 0.2.6 && < 0.3,
@@ -95,7 +95,7 @@ Executable pongserver
      murmur-hash >= 0.1 && < 0.2,
      network == 2.2.1.7,
      network-bytestring >= 0.1.2 && < 0.2,
-     snap-core >= 0.2.7 && <0.3,
+     snap-core >= 0.2.9 && <0.3,
      time,
      transformers,
      unix-compat,
@@ -140,6 +140,7 @@ Executable pongserver
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
    ghc-prof-options: -prof -auto-all
+
 
 Executable testserver
    hs-source-dirs:  testserver ../src
@@ -168,7 +169,7 @@ Executable testserver
      murmur-hash >= 0.1 && < 0.2,
      network == 2.2.1.7,
      network-bytestring >= 0.1.2 && < 0.2,
-     snap-core >= 0.2.7 && <0.3,
+     snap-core >= 0.2.9 && <0.3,
      time,
      transformers,
      unix-compat,
@@ -213,6 +214,7 @@ Executable testserver
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
    ghc-prof-options: -prof -auto-all
+
 
 Executable benchmark
    hs-source-dirs:  benchmark ../src

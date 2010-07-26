@@ -16,35 +16,35 @@ module Snap.Internal.Http.Parser
 
 
 ------------------------------------------------------------------------------
-import           Control.Applicative
-import           Control.Arrow (second)
-import           Control.Monad (liftM)
+import             Control.Applicative
+import             Control.Arrow (second)
+import             Control.Monad (liftM)
 import "monads-fd" Control.Monad.Trans
-import           Data.Attoparsec hiding (many, Result(..))
-import           Data.Attoparsec.Iteratee
-import           Data.Bits
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as S
-import           Data.ByteString.Internal (c2w, w2c)
-import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Nums.Careless.Hex as Cvt
-import           Data.Char
-import           Data.List (foldl')
-import           Data.Int
-import           Data.IORef
-import           Data.Iteratee.WrappedByteString
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe (catMaybes)
-import qualified Data.Vector.Unboxed as Vec
-import           Data.Vector.Unboxed (Vector)
-import           Data.Word (Word8, Word64)
-import           Foreign.C.Types
-import           Foreign.ForeignPtr
-import           Prelude hiding (take, takeWhile)
+import             Data.Attoparsec hiding (many, Result(..))
+import             Data.Attoparsec.Iteratee
+import             Data.Bits
+import             Data.ByteString (ByteString)
+import qualified   Data.ByteString as S
+import             Data.ByteString.Internal (c2w, w2c)
+import qualified   Data.ByteString.Lazy as L
+import qualified   Data.ByteString.Nums.Careless.Hex as Cvt
+import             Data.Char
+import             Data.List (foldl')
+import             Data.Int
+import             Data.IORef
+import             Data.Iteratee.WrappedByteString
+import             Data.Map (Map)
+import qualified   Data.Map as Map
+import             Data.Maybe (catMaybes)
+import qualified   Data.Vector.Unboxed as Vec
+import             Data.Vector.Unboxed (Vector)
+import             Data.Word (Word8, Word64)
+import             Foreign.C.Types
+import             Foreign.ForeignPtr
+import             Prelude hiding (take, takeWhile)
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Types hiding (Enumerator)
-import           Snap.Iteratee hiding (take, foldl', filter)
+import             Snap.Internal.Http.Types hiding (Enumerator)
+import             Snap.Iteratee hiding (take, foldl', filter)
 
 
 
@@ -57,6 +57,8 @@ data IRequest = IRequest
     , iRequestHeaders :: [(ByteString, ByteString)]
     }
 
+
+------------------------------------------------------------------------------
 instance Show IRequest where
     show (IRequest m u v r) =
         concat [ show m
@@ -67,11 +69,13 @@ instance Show IRequest where
                , " "
                , show r ]
 
+
 ------------------------------------------------------------------------------
 parseRequest :: (Monad m) => Iteratee m (Maybe IRequest)
 parseRequest = parserToIteratee pRequest
 
 
+------------------------------------------------------------------------------
 readChunkedTransferEncoding :: (Monad m) =>
                                Iteratee m a
                             -> m (Iteratee m a)
@@ -81,6 +85,7 @@ readChunkedTransferEncoding iter = do
     return i 
 
 
+------------------------------------------------------------------------------
 toHex :: Int64 -> ByteString
 toHex !i' = S.reverse s
   where
@@ -100,10 +105,10 @@ toHex !i' = S.reverse s
         theRest = (d .&. (complement 0xf)) `shiftR` 4
 
 
+------------------------------------------------------------------------------
 -- | Given an iteratee, produces a new one that wraps chunks sent to it with a
 -- chunked transfer-encoding. Example usage:
 --
--- FIXME: sample output no longer looks like this, we buffer now
 --
 -- > > (writeChunkedTransferEncoding
 -- >     (enumLBS (L.fromChunks ["foo","bar","quux"]))
@@ -111,15 +116,13 @@ toHex !i' = S.reverse s
 -- >     run >>=
 -- >     return . fromWrap
 -- >
--- > Chunk "3\r\nfoo\r\n3\r\nbar\r\n4\r\nquux\r\n0\r\n\r\n" Empty
+-- > Chunk "a\r\nfoobarquux\r\n0\r\n\r\n" Empty
 --
-
 writeChunkedTransferEncoding :: ForeignPtr CChar
                              -> Enumerator IO a
                              -> Enumerator IO a
 writeChunkedTransferEncoding buf enum it = do
     killwrap <- newIORef False
-    --(out,_)  <- bufferIteratee (ignoreEOF $ wrap killwrap it)
     (out,_)  <- unsafeBufferIterateeWithBuffer buf
                     (ignoreEOF $ wrap killwrap it)
     i <- enum out
@@ -144,12 +147,10 @@ writeChunkedTransferEncoding buf enum it = do
           then runIter iter s
           else case s of
                   (EOF Nothing) -> do
-                      --S.putStrLn "wrap: eof"
                       return $ Cont iter Nothing
 
                   (EOF e) -> return $ Cont undefined e
                   (Chunk (WrapBS x)) -> do
-                      --S.putStrLn $ S.concat ["wrap: got ", x]
                       let n = S.length x
                       if n == 0
                         then do
@@ -163,6 +164,7 @@ writeChunkedTransferEncoding buf enum it = do
                           return $ Cont (wrap killwrap i) Nothing
 
 
+------------------------------------------------------------------------------
 chunkParserToEnumerator :: (Monad m) =>
                            Iteratee m (Maybe ByteString)
                         -> Iteratee m a
@@ -209,31 +211,45 @@ chunkParserToEnumerator getChunk client = return $ do
 -- theft alert: many of these routines adapted from Johan Tibell's hyena
 -- package
 
+
+------------------------------------------------------------------------------
 -- | Parsers for different tokens in an HTTP request.
 sp, digit, letter :: Parser Word8
 sp       = word8 $ c2w ' '
 digit    = satisfy (isDigit . w2c)
 letter   = satisfy (isAlpha . w2c)
 
+
+------------------------------------------------------------------------------
 untilEOL :: Parser ByteString
 untilEOL = takeWhile notend
   where
     notend d = let c = w2c d in not $ c == '\r' || c == '\n'
 
+
+------------------------------------------------------------------------------
 crlf :: Parser ByteString
 crlf = string "\r\n"
 
+
+------------------------------------------------------------------------------
 -- | Parser for zero or more spaces.
 spaces :: Parser [Word8]
 spaces = many sp
 
+
+------------------------------------------------------------------------------
 pSpaces :: Parser ByteString
 pSpaces = takeWhile (isSpace . w2c)
 
+
+------------------------------------------------------------------------------
 -- | Parser for the internal request data type.
 pRequest :: Parser (Maybe IRequest)
 pRequest = (Just <$> pRequest') <|> (endOfInput *> pure Nothing)
 
+
+------------------------------------------------------------------------------
 pRequest' :: Parser IRequest
 pRequest' = IRequest
                <$> (option "" crlf *> pMethod)  <* sp
@@ -245,6 +261,7 @@ pRequest' = IRequest
   -- send an extra crlf after a POST body
 
 
+------------------------------------------------------------------------------
 -- | Parser for the request method.
 pMethod :: Parser Method
 pMethod =     (OPTIONS <$ string "OPTIONS")
@@ -256,10 +273,14 @@ pMethod =     (OPTIONS <$ string "OPTIONS")
           <|> (TRACE   <$ string "TRACE")
           <|> (CONNECT <$ string "CONNECT")
 
+
+------------------------------------------------------------------------------
 -- | Parser for the request URI.
 pUri :: Parser ByteString
 pUri = takeWhile (not . isSpace . w2c)
 
+
+------------------------------------------------------------------------------
 -- | Parser for the request's HTTP protocol version.
 pVersion :: Parser (Int, Int)
 pVersion = string "HTTP/" *>
@@ -267,17 +288,22 @@ pVersion = string "HTTP/" *>
     where
       digit' = fmap (digitToInt . w2c) digit
 
+
+------------------------------------------------------------------------------
 fieldChars :: Parser ByteString
 fieldChars = takeWhile isFieldChar
   where
     isFieldChar c = (Vec.!) fieldCharTable (fromEnum c)
 
+
+------------------------------------------------------------------------------
 fieldCharTable :: Vector Bool
 fieldCharTable = Vec.generate 256 f
   where
     f d = let c=toEnum d in (isDigit c) || (isAlpha c) || c == '-' || c == '_'
 
 
+------------------------------------------------------------------------------
 -- | Parser for request headers.
 pHeaders :: Parser [(ByteString, ByteString)]
 pHeaders = many header
@@ -309,6 +335,7 @@ pHeaders = many header
                           contents
 
 
+------------------------------------------------------------------------------
 pGetTransferChunk :: Parser (Maybe ByteString)
 pGetTransferChunk = do
     !hex <- liftM fromHex $ (takeWhile (isHexDigit . w2c))
@@ -332,10 +359,13 @@ pGetTransferChunk = do
 -- these definitions try to mirror RFC-2068 (the HTTP/1.1 spec) and RFC-2109
 -- (cookie spec): please point out any errors!
 
+------------------------------------------------------------------------------
 {-# INLINE matchAll #-}
 matchAll :: [ Char -> Bool ] -> Char -> Bool
 matchAll x c = and $ map ($ c) x
 
+
+------------------------------------------------------------------------------
 {-# INLINE isToken #-}
 isToken :: Char -> Bool
 isToken c = (Vec.!) tokenTable (fromEnum c)
@@ -351,14 +381,18 @@ isToken c = (Vec.!) tokenTable (fromEnum c)
                                    , '?', '=', '{', '}' ]
                  ]
 
+------------------------------------------------------------------------------
 {-# INLINE isRFCText #-}
 isRFCText :: Char -> Bool
 isRFCText = not . isControl
 
+
+------------------------------------------------------------------------------
 pToken :: Parser ByteString
 pToken = takeWhile (isToken . w2c)
 
 
+------------------------------------------------------------------------------
 pQuotedString :: Parser ByteString
 pQuotedString = q *> quotedText <* q
   where
@@ -379,6 +413,7 @@ pQuotedString = q *> quotedText <* q
     qdtext = matchAll [ isRFCText, (/= '\"'), (/= '\\') ] . w2c
     
 
+------------------------------------------------------------------------------
 pCookies :: Parser [Cookie]
 pCookies = do
     -- grab kvps and turn to strict bytestrings
@@ -390,11 +425,14 @@ pCookies = do
     toCookie (nm,val) = Cookie nm val Nothing Nothing Nothing
 
 
+------------------------------------------------------------------------------
 -- unhelpfully, the spec mentions "old-style" cookies that don't have quotes
 -- around the value. wonderful.
 pWord :: Parser ByteString
 pWord = pQuotedString <|> (takeWhile ((/= ';') . w2c))
 
+
+------------------------------------------------------------------------------
 pAvPairs :: Parser [(ByteString, ByteString)]
 pAvPairs = do
     a <- pAvPair
@@ -402,6 +440,8 @@ pAvPairs = do
 
     return $ a:b
 
+
+------------------------------------------------------------------------------
 pAvPair :: Parser (ByteString, ByteString)
 pAvPair = do
     key <- pToken <* pSpaces
@@ -409,13 +449,17 @@ pAvPair = do
 
     return (key,val)
 
+
+------------------------------------------------------------------------------
 parseCookie :: ByteString -> Maybe [Cookie]
 parseCookie = parseToCompletion pCookies
 
+
 ------------------------------------------------------------------------------
--- MULTIPART/FORMDATA
+-- application/x-www-form-urlencoded
 ------------------------------------------------------------------------------
 
+------------------------------------------------------------------------------
 parseUrlEncoded :: ByteString -> Map ByteString [ByteString]
 parseUrlEncoded s = foldl' (\m (k,v) -> Map.insertWith' (++) k [v] m)
                            Map.empty
@@ -440,8 +484,10 @@ parseUrlEncoded s = foldl' (\m (k,v) -> Map.insertWith' (++) k [v] m)
 -- utility functions
 ------------------------------------------------------------------------------
 
+------------------------------------------------------------------------------
 strictize :: L.ByteString -> ByteString
 strictize         = S.concat . L.toChunks
+
 
 ------------------------------------------------------------------------------
 char :: Char -> Parser Word8

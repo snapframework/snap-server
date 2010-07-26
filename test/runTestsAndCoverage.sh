@@ -4,7 +4,7 @@ set -e
 
 SUITE=./dist/build/testsuite/testsuite
 
-rm -f testsuite.tix
+rm -f *.tix
 
 if [ ! -f $SUITE ]; then
     cat <<EOF
