@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PackageImports #-}
@@ -82,27 +83,28 @@ readChunkedTransferEncoding :: (Monad m) =>
 readChunkedTransferEncoding iter = do
     i <- chunkParserToEnumerator (parserToIteratee pGetTransferChunk)
                                  iter
-    return i 
+    return i
 
 
 ------------------------------------------------------------------------------
-toHex :: Int64 -> ByteString
-toHex !i' = S.reverse s
+data P = P {-# UNPACK #-} !Int {-# UNPACK #-} !Word64
+
+toHex :: Int64 -> S.ByteString
+toHex 0 = "0"
+toHex n' = s
   where
-    !i     = abs i'
-    (!s,_) = S.unfoldrN 16 f (fromIntegral i)
+    P i n = trim 16 (fromIntegral (abs n'))
+    (!s,_) = S.unfoldrN i f n
 
-    f :: Word64 -> Maybe (Word8, Word64)
-    f d = if d == 0
-            then Nothing
-            else Just (ch, theRest)
+    f n = Just (char (n `shiftR` 60), n `shiftL` 4)
 
-      where
-        low4    = fromIntegral $ d .&. 0xf
-        ch      = if low4 >= 10
-                    then c2w 'a' + low4 - 10
-                    else c2w '0' + low4
-        theRest = (d .&. (complement 0xf)) `shiftR` 4
+    trim !i !n
+      | n .&. 0xf000000000000000 == 0 = trim (i-1) (n `shiftL` 4)
+      | otherwise = P i n
+
+    char (fromIntegral -> i)
+      | i < 10    = (c2w '0' -  0) + i
+      | otherwise = (c2w 'a' - 10) + i
 
 
 ------------------------------------------------------------------------------
@@ -375,7 +377,7 @@ isToken c = (Vec.!) tokenTable (fromEnum c)
 
     f = matchAll [ isAscii
                  , not . isControl
-                 , not . isSpace 
+                 , not . isSpace
                  , not . flip elem [ '(', ')', '<', '>', '@', ',', ';'
                                    , ':', '\\', '\"', '/', '[', ']'
                                    , '?', '=', '{', '}' ]
@@ -411,7 +413,7 @@ pQuotedString = q *> quotedText <* q
     q = word8 $ c2w '\"'
 
     qdtext = matchAll [ isRFCText, (/= '\"'), (/= '\\') ] . w2c
-    
+
 
 ------------------------------------------------------------------------------
 pCookies :: Parser [Cookie]
@@ -465,7 +467,7 @@ parseUrlEncoded s = foldl' (\m (k,v) -> Map.insertWith' (++) k [v] m)
                            Map.empty
                            decoded
   where
-    breakApart = (second (S.drop 1)) . S.break (== (c2w '=')) 
+    breakApart = (second (S.drop 1)) . S.break (== (c2w '='))
 
     parts :: [(ByteString,ByteString)]
     parts = map breakApart $ S.split (c2w '&') s
@@ -492,4 +494,3 @@ strictize         = S.concat . L.toChunks
 ------------------------------------------------------------------------------
 char :: Char -> Parser Word8
 char = word8 . c2w
-
