@@ -87,20 +87,18 @@ readChunkedTransferEncoding iter = do
 
 
 ------------------------------------------------------------------------------
-data P = P {-# UNPACK #-} !Int {-# UNPACK #-} !Word64
-
 toHex :: Int64 -> S.ByteString
 toHex 0 = "0"
 toHex n' = s
   where
-    P i n = trim 16 (fromIntegral (abs n'))
-    (!s,_) = S.unfoldrN i f n
+    !s = trim 16 (fromIntegral (abs n'))
 
-    f n = Just (char (n `shiftR` 60), n `shiftL` 4)
-
+    trim :: Int -> Word64 -> S.ByteString
     trim !i !n
       | n .&. 0xf000000000000000 == 0 = trim (i-1) (n `shiftL` 4)
-      | otherwise = P i n
+      | otherwise = fst (S.unfoldrN i f n)
+
+    f n = Just (char (n `shiftR` 60), n `shiftL` 4)
 
     char (fromIntegral -> i)
       | i < 10    = (c2w '0' -  0) + i
