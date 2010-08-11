@@ -2,6 +2,7 @@
 -- | FreeBSD system-dependent code for 'sendfile'.
 module System.SendFile.FreeBSD (sendFile) where
 
+import Control.Concurrent (threadWaitWrite)
 import Data.Int
 import Foreign.C.Error (eAGAIN, eINTR, getErrno, throwErrno)
 import Foreign.C.Types (CInt, CSize)

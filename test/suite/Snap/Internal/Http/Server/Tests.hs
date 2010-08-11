@@ -43,6 +43,7 @@ tests = [ testHttpRequest1
         , testMultiRequest
         , testHttpRequest2
         , testHttpRequest3
+        , testHttpRequest3'
         , testHttpResponse1
         , testHttpResponse2
         , testHttpResponse3
@@ -271,13 +272,51 @@ testHttpRequest3 =
         assertEqual "parse body" (LC.fromChunks [samplePostBody3]) body
 
 
+testHttpRequest3' :: Test
+testHttpRequest3' =
+    testCase "HttpRequest3'" $ do
+        iter <- enumBS sampleRequest3' $
+                do
+                    r <- liftM fromJust $ rsm receiveRequest
+                    se <- liftIO $ readIORef (rqBody r)
+                    let (SomeEnumerator e) = se
+                    b <- liftM fromWrap $ joinIM $ e copyingStream2stream
+                    return (r,b)
+
+        (req,body) <- run iter
+
+        assertEqual "post param 1"
+                    (rqParam "postparam1" req)
+                    (Just ["1"])
+
+        assertEqual "post param 2"
+                    (rqParam "postparam2" req)
+                    (Just ["2"])
+
+        -- make sure the post body is still emitted
+        assertEqual "parse body" (LC.fromChunks [samplePostBody3]) body
+
+
 samplePostBody3 :: ByteString
 samplePostBody3 = "postparam1=1&postparam2=2"
+
 
 sampleRequest3 :: ByteString
 sampleRequest3 =
     S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
              , "Content-Type: application/x-www-form-urlencoded\r\n"
+             , "Content-Length: 25\r\n"
+             , "Multiheader: 1\r\n"
+             , "Multiheader: 2\r\n"
+             , "X-Random-Other-Header: foo\r\n bar\r\n"
+             , "\r\n"
+             , samplePostBody3 ]
+
+
+sampleRequest3' :: ByteString
+sampleRequest3' =
+    S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
+             , "Content-Type: application/x-www-form-urlencoded; charset=UTF-8\r\n"
              , "Content-Length: 25\r\n"
              , "Multiheader: 1\r\n"
              , "Multiheader: 2\r\n"
