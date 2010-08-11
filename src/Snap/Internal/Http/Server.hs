@@ -469,8 +469,11 @@ receiveRequest = do
     parseForm req = {-# SCC "receiveRequest/parseForm" #-}
         if doIt then getIt else return req
       where
-        doIt = mbCT == Just "application/x-www-form-urlencoded"
-        mbCT = liftM head $ Map.lookup "content-type" (rqHeaders req)
+        mbCT   = liftM head $ Map.lookup "content-type" (rqHeaders req)
+        trimIt = fst . SC.spanEnd isSpace . SC.takeWhile (/= ';')
+                     . SC.dropWhile isSpace
+        mbCT'  = liftM trimIt mbCT
+        doIt   = mbCT' == Just "application/x-www-form-urlencoded"
 
         maximumPOSTBodySize :: Int64
         maximumPOSTBodySize = 10*1024*1024
