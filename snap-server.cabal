@@ -107,7 +107,7 @@ Library
     bytestring,
     bytestring-nums,
     bytestring-show >= 0.3.2 && < 0.4,
-    cereal >= 0.2 && < 0.3,
+    cereal >= 0.3 && < 0.4,
     containers,
     directory-tree,
     dlist >= 0.5 && < 0.6,
