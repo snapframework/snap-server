@@ -170,6 +170,7 @@ Executable testserver
      network == 2.2.1.7,
      network-bytestring >= 0.1.2 && < 0.2,
      snap-core >= 0.2.9 && <0.3,
+     template-haskell,
      time,
      transformers,
      unix-compat,

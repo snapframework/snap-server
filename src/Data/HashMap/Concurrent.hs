@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Data.HashMap.Concurrent
   ( HashMap
@@ -35,44 +36,44 @@ import           GHC.Conc (numCapabilities)
 import           Prelude hiding (lookup, null)
 import qualified Prelude
 
-
 #if __GLASGOW_HASKELL__ >= 503
 import GHC.Exts ( Word(..), Int(..), shiftRL# )
-import Data.Word (Word32, Word64)
 #else
 import Data.Word
 #endif
 
-whichHash :: (a -> Word32) -> (a -> Word64) -> a -> Word
-whichHash as32 as64 x = if bitSize (undefined :: Word) == 32
-                         then fromIntegral $ as32 x
-                         else fromIntegral $ as64 x
+import           Data.HashMap.Concurrent.Internal
 
 
 hashString :: String -> Word
-hashString = whichHash hashString32 hashString64
-  where
-    hashString32 s = Murmur.asWord32 $ Murmur.hash32 s
-    hashString64 s = Murmur.asWord64 $ Murmur.hash64 s
+hashString = $(whichHash [| Murmur.asWord32 . Murmur.hash32 |]
+                         [| Murmur.asWord64 . Murmur.hash64 |])
 {-# INLINE hashString #-}
 
 
 hashInt :: Int -> Word
-hashInt = whichHash h32 h64
-  where
-    h32 x = Murmur.asWord32 $ Murmur.hash32 x
-    h64 x = Murmur.asWord64 $ Murmur.hash64 x
+hashInt = $(whichHash [| Murmur.asWord32 . Murmur.hash32 |]
+                      [| Murmur.asWord64 . Murmur.hash64 |])
 {-# INLINE hashInt #-}
 
 
 hashBS :: B.ByteString -> Word
-hashBS = whichHash h32 h64
-  where
-    h32 !s = Murmur.asWord32 $ B.foldl' f32 (Murmur.hash32 ([] :: [Int])) s
-    h64 !s = Murmur.asWord64 $ B.foldl' f64 (Murmur.hash64 ([] :: [Int])) s
-
-    f32 !h !c = Murmur.hash32AddInt (fromEnum c) h
-    f64 !h !c = Murmur.hash64AddInt (fromEnum c) h
+hashBS =
+    $(let h32 = [| \s -> s `seq`
+                         Murmur.asWord32 $
+                         B.foldl' (\h c -> h `seq` c `seq`
+                                           Murmur.hash32AddInt (fromEnum c) h)
+                                  (Murmur.hash32 ([] :: [Int]))
+                                  s
+                |]
+          h64 = [| \s -> s `seq`
+                         Murmur.asWord64 $
+                         B.foldl' (\h c -> h `seq` c `seq`
+                                           Murmur.hash64AddInt (fromEnum c) h)
+                                  (Murmur.hash64 ([] :: [Int]))
+                                  s
+                |]
+      in whichHash h32 h64)
 {-# INLINE hashBS #-}
 
 
@@ -215,8 +216,7 @@ delSubmap hashcode key m =
   where
     f l = let l' = del l in if Prelude.null l' then Nothing else Just l'
 
-    del []     = []
-    del (x:xs) = if fst x == key then xs else x:(del xs)
+    del = filter ((/= key) . fst)
 
 
 lookupSubmap :: (Eq k) => Word -> k -> Submap k v -> Maybe v

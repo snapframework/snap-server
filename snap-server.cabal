@@ -118,6 +118,7 @@ Library
     network == 2.2.1.*,
     old-locale,
     snap-core >= 0.2.10 && <0.3,
+    template-haskell,
     time,
     transformers,
     unix-compat,
