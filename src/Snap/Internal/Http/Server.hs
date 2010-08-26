@@ -120,15 +120,15 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         bracket (spawn n)
                 (\xs -> do
                      logE elog "Server.httpServe: SHUTDOWN"
-                     mapM_ (Backend.stop . fst) xs
+                     Prelude.mapM_ (Backend.stop . fst) xs
                      logE elog "Server.httpServe: BACKEND STOPPED")
                 (runAll alog elog)
 
 
     --------------------------------------------------------------------------
     runAll alog elog xs = {-# SCC "httpServe/runAll" #-} do
-        mapM_ f $ xs `zip` [0..]
-        mapM_ (takeMVar . snd) xs
+        Prelude.mapM_ f $ xs `zip` [0..]
+        Prelude.mapM_ (takeMVar . snd) xs
       where
         f ((backend,mvar),cpu) = forkOnIO cpu $ do
             labelMe $ map w2c $ S.unpack $
