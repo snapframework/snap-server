@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.2.10
+version:        0.2.10.1
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   This is the first developer prerelease of the Snap framework.  Snap is a
@@ -88,12 +88,13 @@ Library
   hs-source-dirs: src
 
   exposed-modules:
+    Data.HashMap.Concurrent,
     Snap.Http.Server,
     Snap.Http.Server.Config,
     System.FastLogger
 
   other-modules:
-    Data.HashMap.Concurrent,
+    Data.HashMap.Concurrent.Internal,
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,  
