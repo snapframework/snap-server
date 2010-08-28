@@ -11,6 +11,7 @@ import           Control.Exception
 import           Control.Monad
 import           Data.ByteString (ByteString)
 import           Data.IORef
+import           Data.Maybe
 import           Foreign.C.Types
 import           System.IO.Unsafe
 
@@ -31,16 +32,18 @@ import           Snap.Internal.Http.Types (formatHttpTime, formatLogTime)
 -- running the computation on a timer. We'll allow client traffic to trigger
 -- the process.
 
+------------------------------------------------------------------------------
 data DateState = DateState {
       _cachedDateString :: !(IORef ByteString)
     , _cachedLogString  :: !(IORef ByteString)
     , _cachedDate       :: !(IORef CTime)
     , _valueIsOld       :: !(IORef Bool)
     , _morePlease       :: !(MVar ())
-    , _dataAvailable    :: !(MVar ())
     , _dateThread       :: !(MVar ThreadId)
     }
 
+
+------------------------------------------------------------------------------
 dateState :: DateState
 dateState = unsafePerformIO $ do
     (s1,s2,date) <- fetchTime
@@ -50,9 +53,8 @@ dateState = unsafePerformIO $ do
     ov  <- newIORef False
     th  <- newEmptyMVar
     mp  <- newMVar ()
-    da  <- newMVar ()
 
-    let d = DateState bs1 bs2 dt ov mp da th
+    let d = DateState bs1 bs2 dt ov mp th
 
     t  <- forkIO $ dateThread d
     putMVar th t
@@ -61,6 +63,7 @@ dateState = unsafePerformIO $ do
 
 
 #ifdef PORTABLE
+------------------------------------------------------------------------------
 epochTime :: IO CTime
 epochTime = do
     t <- getPOSIXTime
@@ -68,6 +71,7 @@ epochTime = do
 #endif
 
 
+------------------------------------------------------------------------------
 fetchTime :: IO (ByteString,ByteString,CTime)
 fetchTime = do
     now <- epochTime
@@ -76,48 +80,66 @@ fetchTime = do
     return (t1, t2, now)
 
 
-dateThread :: DateState -> IO ()
-dateThread ds@(DateState dateString logString time valueIsOld morePlease
-                         dataAvailable _) = do
-    -- a lot of effort to make sure we don't deadlock
-    takeMVar morePlease
-
+------------------------------------------------------------------------------
+updateState :: DateState -> IO ()
+updateState (DateState dateString logString time valueIsOld _ _) = do
     (s1,s2,now) <- fetchTime
     atomicModifyIORef dateString $ const (s1,())
-    atomicModifyIORef logString $ const (s2,())
-    atomicModifyIORef time $ const (now,())
-
+    atomicModifyIORef logString  $ const (s2,())
+    atomicModifyIORef time       $ const (now,())
     writeIORef valueIsOld False
-    tryPutMVar dataAvailable ()
 
-    threadDelay 2000000
+    -- force values in the iorefs to prevent thunk buildup
+    !_ <- readIORef dateString
+    !_ <- readIORef logString
+    !_ <- readIORef time
 
-    takeMVar dataAvailable
-    writeIORef valueIsOld True
+    return ()
 
-    dateThread ds
 
+------------------------------------------------------------------------------
+dateThread :: DateState -> IO ()
+dateThread ds@(DateState _ _ _ valueIsOld morePlease _) = loop
+  where
+    loop = do
+        b <- tryTakeMVar morePlease
+        when (isNothing b) $ do
+            writeIORef valueIsOld True
+            takeMVar morePlease
+
+        updateState ds
+        threadDelay 2000000
+        loop
+
+
+------------------------------------------------------------------------------
 ensureFreshDate :: IO ()
 ensureFreshDate = block $ do
     old <- readIORef $ _valueIsOld dateState
-    when old $ do
-        tryPutMVar (_morePlease dateState) ()
-        readMVar $ _dataAvailable dateState
+    tryPutMVar (_morePlease dateState) ()
 
+    -- if the value is not fresh we will tickle the date thread but also fetch
+    -- the new value immediately; we used to block but we'll do a little extra
+    -- work to avoid a delay
+    when old $ updateState dateState
+
+
+------------------------------------------------------------------------------
 getDateString :: IO ByteString
 getDateString = block $ do
     ensureFreshDate
     readIORef $ _cachedDateString dateState
 
 
+------------------------------------------------------------------------------
 getLogDateString :: IO ByteString
 getLogDateString = block $ do
     ensureFreshDate
     readIORef $ _cachedLogString dateState
 
 
+------------------------------------------------------------------------------
 getCurrentDateTime :: IO CTime
 getCurrentDateTime = block $ do
     ensureFreshDate
     readIORef $ _cachedDate dateState
-
