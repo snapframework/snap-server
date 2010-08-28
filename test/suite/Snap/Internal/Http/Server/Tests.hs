@@ -84,7 +84,7 @@ sampleRequest1_0 =
 
 testMethodParsing :: Test
 testMethodParsing =
-    testCase "method parsing" $ mapM_ testOneMethod ms
+    testCase "method parsing" $ Prelude.mapM_ testOneMethod ms
   where
     ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT ]
 
