@@ -127,8 +127,10 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
 
     --------------------------------------------------------------------------
     runAll alog elog xs = {-# SCC "httpServe/runAll" #-} do
-        Prelude.mapM_ f $ xs `zip` [0..]
-        Prelude.mapM_ (takeMVar . snd) xs
+        tids <- Prelude.mapM f $ xs `zip` [0..]
+        Prelude.mapM_ (takeMVar . snd) xs `catch` \ (e::SomeException) -> do
+            mapM killThread tids
+            throwIO e
       where
         f ((backend,mvar),cpu) = forkOnIO cpu $ do
             labelMe $ map w2c $ S.unpack $
