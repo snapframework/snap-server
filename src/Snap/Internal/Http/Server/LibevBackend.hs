@@ -436,7 +436,7 @@ freeBackend backend = ignoreException $ block $ do
 
     -- kill everything in thread table
     tset <- H.toList $ _connectionThreads backend
-    mapM_ (killThread . fst) tset
+    Prelude.mapM_ (killThread . fst) tset
 
     debug $ "Backend.freeBackend: all threads killed"
     debug $ "Backend.freeBackend: destroying resources"
