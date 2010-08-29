@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PackageImports #-}
 
-module Data.HashMap.Concurrent.Tests
+module Data.Concurrent.HashMap.Tests
   ( tests ) where
 
 import           Data.ByteString.Char8 (ByteString)
@@ -13,7 +13,7 @@ import           Test.Framework.Providers.QuickCheck2
 import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
 
-import qualified Data.HashMap.Concurrent as H
+import qualified Data.Concurrent.HashMap as H
 import           Snap.Test.Common ()
 
 tests :: [Test]

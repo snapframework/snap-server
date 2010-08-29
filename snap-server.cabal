@@ -66,7 +66,7 @@ extra-source-files:
   test/runTestsAndCoverage.sh,
   test/snap-server-testsuite.cabal,
   test/suite/Paths_snap_server.hs,
-  test/suite/Data/HashMap/Concurrent/Tests.hs,
+  test/suite/Data/Concurrent/HashMap/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
