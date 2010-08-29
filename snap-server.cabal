@@ -88,7 +88,7 @@ Library
   hs-source-dirs: src
 
   exposed-modules:
-    Data.HashMap.Concurrent,
+    Data.Concurrent.HashMap,
     Snap.Http.Server,
     Snap.Http.Server.Config,
     System.FastLogger

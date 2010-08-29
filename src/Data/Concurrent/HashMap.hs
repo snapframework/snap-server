@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Data.HashMap.Concurrent
+module Data.Concurrent.HashMap
   ( HashMap
   , new
   , new'
@@ -42,7 +42,7 @@ import GHC.Exts ( Word(..), Int(..), shiftRL# )
 import Data.Word
 #endif
 
-import           Data.HashMap.Concurrent.Internal
+import           Data.Concurrent.HashMap.Internal
 
 
 hashString :: String -> Word

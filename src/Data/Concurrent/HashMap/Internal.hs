@@ -3,7 +3,7 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Data.HashMap.Concurrent.Internal where
+module Data.Concurrent.HashMap.Internal where
 
 import           Data.Bits
 import           Data.Word
