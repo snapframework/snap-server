@@ -72,7 +72,7 @@ extra-source-files:
   test/suite/Snap/Test/Common.hs,
   test/suite/TestSuite.hs,
   test/testserver/Main.hs,
-  test/testserver/Paths_snap_server.hs.
+  test/testserver/Paths_snap_server.hs,
   test/testserver/static/hello.txt
 
 
