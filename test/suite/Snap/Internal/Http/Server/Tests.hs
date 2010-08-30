@@ -50,6 +50,7 @@ tests = [ testHttpRequest1
         , testHttpResponse4
         , testHttp1
         , testHttp2
+        , testHttp100
         , testPartialParse
         , testMethodParsing
         , testServerStartupShutdown
@@ -67,6 +68,17 @@ sampleRequest =
     S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
              , "Host: www.zabble.com:7777\r\n"
              , "Content-Length: 10\r\n"
+             , "X-Random-Other-Header: foo\r\n bar\r\n"
+             , "Cookie: foo=\"bar\\\"\"\r\n"
+             , "\r\n"
+             , "0123456789" ]
+
+sampleRequestExpectContinue :: ByteString
+sampleRequestExpectContinue =
+    S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
+             , "Host: www.zabble.com:7777\r\n"
+             , "Content-Length: 10\r\n"
+             , "Expect: 100-continue\r\n"
              , "X-Random-Other-Header: foo\r\n bar\r\n"
              , "Cookie: foo=\"bar\\\"\"\r\n"
              , "\r\n"
@@ -591,6 +603,50 @@ testHttp2 = testCase "connection: close" $ do
                _ -> False
 
     assertBool "connection: close" ok
+
+
+
+testHttp100 :: Test
+testHttp100 = testCase "Expect: 100-continue" $ do
+    let enumBody = enumBS sampleRequestExpectContinue
+
+    ref <- newIORef ""
+
+    let (iter,onSendFile) = mkIter ref
+
+    runHTTP "localhost"
+            "127.0.0.1"
+            80
+            "127.0.0.1"
+            58384
+            Nothing
+            Nothing
+            enumBody
+            iter
+            onSendFile
+            (return ())
+            echoServer2
+
+    s <- readIORef ref
+
+    let lns = LC.lines s
+
+    let ok = case lns of
+               ([ "HTTP/1.1 100 Continue\r"
+                , "\r"
+                , "HTTP/1.1 200 OK\r"
+                , "Content-Length: 10\r"
+                , d1
+                , s1
+                , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                , "\r"
+                , "0123456789" ]) -> (("Date" `L.isPrefixOf` d1) &&
+                                      ("Server" `L.isPrefixOf` s1))
+
+               _ -> False
+
+    assertBool "100 Continue" ok
+
 
 
 
