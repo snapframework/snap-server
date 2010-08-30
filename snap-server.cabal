@@ -68,10 +68,12 @@ extra-source-files:
   test/suite/Paths_snap_server.hs,
   test/suite/Data/Concurrent/HashMap/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
-  test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
   test/suite/Snap/Test/Common.hs,
-  test/suite/TestSuite.hs
+  test/suite/TestSuite.hs,
+  test/testserver/Main.hs,
+  test/testserver/Paths_snap_server.hs.
+  test/testserver/static/hello.txt
 
 
 Flag libev
