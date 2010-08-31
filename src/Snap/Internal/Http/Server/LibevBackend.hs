@@ -55,8 +55,8 @@ import             System.Timeout
 ------------------------------------------------------------------------------
 
 -- FIXME: should be HashSet, make that later.
-import qualified   Data.HashMap.Concurrent as H
-import             Data.HashMap.Concurrent (HashMap)
+import qualified   Data.Concurrent.HashMap as H
+import             Data.Concurrent.HashMap (HashMap)
 import             Snap.Iteratee
 import             Snap.Internal.Debug
 import             Snap.Internal.Http.Server.Date
@@ -436,7 +436,7 @@ freeBackend backend = ignoreException $ block $ do
 
     -- kill everything in thread table
     tset <- H.toList $ _connectionThreads backend
-    mapM_ (killThread . fst) tset
+    Prelude.mapM_ (killThread . fst) tset
 
     debug $ "Backend.freeBackend: all threads killed"
     debug $ "Backend.freeBackend: destroying resources"

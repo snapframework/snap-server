@@ -120,15 +120,17 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         bracket (spawn n)
                 (\xs -> do
                      logE elog "Server.httpServe: SHUTDOWN"
-                     mapM_ (Backend.stop . fst) xs
+                     Prelude.mapM_ (Backend.stop . fst) xs
                      logE elog "Server.httpServe: BACKEND STOPPED")
                 (runAll alog elog)
 
 
     --------------------------------------------------------------------------
     runAll alog elog xs = {-# SCC "httpServe/runAll" #-} do
-        mapM_ f $ xs `zip` [0..]
-        mapM_ (takeMVar . snd) xs
+        tids <- Prelude.mapM f $ xs `zip` [0..]
+        Prelude.mapM_ (takeMVar . snd) xs `catch` \ (e::SomeException) -> do
+            mapM killThread tids
+            throwIO e
       where
         f ((backend,mvar),cpu) = forkOnIO cpu $ do
             labelMe $ map w2c $ S.unpack $
@@ -352,6 +354,10 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
                            Prelude.show (rqMethod req) ++
                            " " ++ SC.unpack (rqURI req) ++
                            " " ++ Prelude.show (rqVersion req)
+
+          -- check for Expect: 100-continue
+          checkExpect100Continue req writeEnd
+
           logerr <- gets _logError
           (req',rspOrig) <- lift $ handler logerr req
 
@@ -392,6 +398,29 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
           liftIO $ debug $ "Server.httpSession: parser did not produce a " ++
                            "request, ending session"
           return ()
+
+
+------------------------------------------------------------------------------
+checkExpect100Continue :: Request
+                       -> Iteratee IO ()
+                       -> ServerMonad ()
+checkExpect100Continue req writeEnd = do
+    let mbEx = getHeaders "Expect" req
+
+    maybe (return ())
+          (\l -> if elem "100-continue" l then go else return ())
+          mbEx
+
+  where
+    go = do
+        let (major,minor) = rqVersion req
+        let hl = [ "HTTP/"
+                 , bsshow major
+                 , "."
+                 , bsshow minor
+                 , " 100 Continue\r\n\r\n" ] 
+        iter <- liftIO $ enumBS (S.concat hl) writeEnd
+        liftIO $ run iter
 
 
 ------------------------------------------------------------------------------
@@ -703,10 +732,6 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
 
 
     --------------------------------------------------------------------------
-    bsshow = l2s . show
-
-
-    --------------------------------------------------------------------------
     mkHeaderString :: Response -> ByteString
     mkHeaderString r =
         {-# SCC "mkHeaderString" #-}
@@ -765,3 +790,10 @@ l2s = S.concat . L.toChunks
 ------------------------------------------------------------------------------
 toBS :: String -> ByteString
 toBS = S.pack . map c2w
+
+
+--------------------------------------------------------------------------
+bsshow :: (Show a) => a -> ByteString
+bsshow = l2s . show
+
+

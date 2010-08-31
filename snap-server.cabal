@@ -66,12 +66,14 @@ extra-source-files:
   test/runTestsAndCoverage.sh,
   test/snap-server-testsuite.cabal,
   test/suite/Paths_snap_server.hs,
-  test/suite/Data/HashMap/Concurrent/Tests.hs,
-  test/suite/Snap/Internal/Http/Parser/Tests.hs,
+  test/suite/Data/Concurrent/HashMap/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
   test/suite/Snap/Test/Common.hs,
-  test/suite/TestSuite.hs
+  test/suite/TestSuite.hs,
+  test/testserver/Main.hs,
+  test/testserver/Paths_snap_server.hs,
+  test/testserver/static/hello.txt
 
 
 Flag libev
@@ -93,7 +95,8 @@ Library
     System.FastLogger
 
   other-modules:
-    Data.HashMap.Concurrent,
+    Data.Concurrent.HashMap,
+    Data.Concurrent.HashMap.Internal,
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,
@@ -101,13 +104,13 @@ Library
 
   build-depends:
     array >= 0.2 && <0.4,
-    attoparsec >= 0.8.0.2 && < 0.9,
+    attoparsec >= 0.8.1 && < 0.9,
     attoparsec-iteratee >= 0.1.1 && <0.2,
     base >= 4 && < 5,
     bytestring,
     bytestring-nums,
     bytestring-show >= 0.3.2 && < 0.4,
-    cereal >= 0.2 && < 0.3,
+    cereal >= 0.3 && < 0.4,
     containers,
     directory-tree,
     dlist >= 0.5 && < 0.6,
@@ -119,6 +122,8 @@ Library
     network == 2.2.1.*,
     old-locale,
     snap-core >= 0.3 && <0.4,
+    snap-core >= 0.2.12 && <0.3,
+    template-haskell,
     time,
     transformers,
     utf8-string,
