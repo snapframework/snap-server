@@ -152,9 +152,8 @@ testBothChunked = testProperty "chunk . unchunk == id" $
                   monadicIO $ forAllM arbitrary prop
   where
     prop s = do
-        buf <- QC.run mkIterateeBuffer
         bs <- QC.run $
-              writeChunkedTransferEncoding buf (enumBS s) stream2stream
+              writeChunkedTransferEncoding (enumBS s) stream2stream
                 >>= run >>= return . unWrap
 
         let enum = enumBS bs
@@ -178,12 +177,7 @@ testBothChunkedBuffered1 = testProperty "testBothChunkedBuffered1" $
 
         let e = enumLBS s'
 
-        buf <- QC.run mkIterateeBuffer
-
-        enums <- QC.run $
-                 replicateM ntimes
-                   (mkIterateeBuffer >>=
-                      return . flip writeChunkedTransferEncoding e)
+        let enums = replicate ntimes (writeChunkedTransferEncoding e)
 
         let mothra = foldl' (>.) (enumBS "") enums
 
@@ -217,12 +211,7 @@ testBothChunkedBuffered2 = testProperty "testBothChunkedBuffered2" $
 
         let e = enumLBS s'
 
-        buf <- QC.run mkIterateeBuffer
-
-        enums <- QC.run $
-                 replicateM ntimes
-                   (mkIterateeBuffer >>=
-                      return . flip writeChunkedTransferEncoding e)
+        let enums = replicate ntimes (writeChunkedTransferEncoding e)
 
         let mothra = foldl' (>.) (enumBS "") enums
 
@@ -258,12 +247,7 @@ testBothChunkedPipelined = testProperty "testBothChunkedPipelined" $
 
         let e = enumLBS s'
 
-        buf <- QC.run mkIterateeBuffer
-
-        enums <- QC.run $
-                 replicateM ntimes
-                   (mkIterateeBuffer >>=
-                      return . flip writeChunkedTransferEncoding e)
+        let enums = replicate ntimes (writeChunkedTransferEncoding e)
 
         let mothra = foldl' (>.) (enumBS "") enums
 
@@ -299,11 +283,7 @@ testBothChunkedEmpty = testCase "testBothChunkedEmpty" prop
 
         let ntimes = 5
 
-        buf <- mkIterateeBuffer
-
-        enums <- replicateM ntimes
-                   (mkIterateeBuffer >>=
-                      return . flip writeChunkedTransferEncoding e)
+        let enums = replicate ntimes $ writeChunkedTransferEncoding e
 
         let mothra = foldl' (>.) (enumBS "") enums
 

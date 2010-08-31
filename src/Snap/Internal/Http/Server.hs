@@ -335,12 +335,7 @@ httpSession :: Iteratee IO ()                -- ^ write end of socket
             -> ServerMonad ()
 httpSession writeEnd' ibuf onSendFile tickle handler = do
 
-    (writeEnd, cancelBuffering) <-
-        liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
-
-    -- (writeEnd, cancelBuffering) <- liftIO $ I.bufferIteratee writeEnd'
-    let killBuffer = writeIORef cancelBuffering True
-
+    writeEnd <- liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
 
     liftIO $ debug "Server.httpSession: entered"
     mreq  <- receiveRequest
@@ -381,7 +376,7 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
           date <- liftIO getDateString
           let ins = Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER
           let rsp' = updateHeaders ins rsp
-          (bytesSent,_) <- sendResponse rsp' writeEnd ibuf killBuffer onSendFile
+          (bytesSent,_) <- sendResponse rsp' writeEnd onSendFile
 
           liftIO . debug $ "Server.httpSession: sent " ++
                            (Prelude.show bytesSent) ++ " bytes"
@@ -603,11 +598,9 @@ receiveRequest = do
 -- Response must be well-formed here
 sendResponse :: Response
              -> Iteratee IO a
-             -> ForeignPtr CChar
-             -> IO ()
              -> (FilePath -> Int64 -> IO a)
              -> ServerMonad (Int64, a)
-sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
+sendResponse rsp' writeEnd onSendFile = do
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
 
@@ -663,9 +656,8 @@ sendResponse rsp' writeEnd ibuf killBuffering onSendFile = do
             let sendChunked = (rspHttpVersion r) == (1,1)
             if sendChunked
               then do
-                  liftIO $ killBuffering
                   let r' = setHeader "Transfer-Encoding" "chunked" r
-                  let e  = writeChunkedTransferEncoding ibuf $
+                  let e  = writeChunkedTransferEncoding $
                            rspBodyToEnum $ rspBody r
                   return $ r' { rspBody = Enum e }
 

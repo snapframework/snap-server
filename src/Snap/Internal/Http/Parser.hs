@@ -30,9 +30,10 @@ import             Data.ByteString.Internal (c2w, w2c)
 import qualified   Data.ByteString.Lazy as L
 import qualified   Data.ByteString.Nums.Careless.Hex as Cvt
 import             Data.Char
+import             Data.DList (DList)
+import qualified   Data.DList as D
 import             Data.List (foldl')
 import             Data.Int
-import             Data.IORef
 import             Data.Iteratee.WrappedByteString
 import             Data.Map (Map)
 import qualified   Data.Map as Map
@@ -40,8 +41,6 @@ import             Data.Maybe (catMaybes)
 import qualified   Data.Vector.Unboxed as Vec
 import             Data.Vector.Unboxed (Vector)
 import             Data.Word (Word8, Word64)
-import             Foreign.C.Types
-import             Foreign.ForeignPtr
 import             Prelude hiding (take, takeWhile)
 ------------------------------------------------------------------------------
 import             Snap.Internal.Http.Types hiding (Enumerator)
@@ -98,9 +97,9 @@ toHex n' = s
       | n .&. 0xf000000000000000 == 0 = trim (i-1) (n `shiftL` 4)
       | otherwise = fst (S.unfoldrN i f n)
 
-    f n = Just (char (n `shiftR` 60), n `shiftL` 4)
+    f n = Just (ch (n `shiftR` 60), n `shiftL` 4)
 
-    char (fromIntegral -> i)
+    ch (fromIntegral -> i)
       | i < 10    = (c2w '0' -  0) + i
       | otherwise = (c2w 'a' - 10) + i
 
@@ -118,18 +117,14 @@ toHex n' = s
 -- >
 -- > Chunk "a\r\nfoobarquux\r\n0\r\n\r\n" Empty
 --
-writeChunkedTransferEncoding :: ForeignPtr CChar
+writeChunkedTransferEncoding :: Enumerator IO a
                              -> Enumerator IO a
-                             -> Enumerator IO a
-writeChunkedTransferEncoding buf enum it = do
-    killwrap <- newIORef False
-    (out,_)  <- unsafeBufferIterateeWithBuffer buf
-                    (ignoreEOF $ wrap killwrap it)
-    i <- enum out
-    v <- runIter i (EOF Nothing)
-    j <- checkIfDone return v
-    writeIORef killwrap True
-    w <- runIter j (Chunk (WrapBS "0\r\n\r\n"))
+writeChunkedTransferEncoding enum it = do
+    let out = wrap it
+    i   <- enum out
+    v   <- runIter i (EOF Nothing)
+    j   <- checkIfDone return v
+    w   <- runIter j (Chunk (WrapBS "0\r\n\r\n"))
     checkIfDone return w
 
   where
@@ -140,28 +135,51 @@ writeChunkedTransferEncoding buf enum it = do
               i <- runIter iter s >>= checkIfDone return
               return $ Cont (ignoreEOF i) Nothing
 
-    wrap killwrap iter = IterateeG $ \s -> do
-        quit <- readIORef killwrap
+    wrap iter = bufIt (0,D.empty) $ ignoreEOF iter
 
-        if quit
-          then runIter iter s
-          else case s of
-                  (EOF Nothing) -> do
-                      return $ Cont iter Nothing
+    bufSiz = 16284
 
-                  (EOF e) -> return $ Cont undefined e
-                  (Chunk (WrapBS x)) -> do
-                      let n = S.length x
-                      if n == 0
-                        then do
-                            return $ Cont iter Nothing
-                        else do
-                          let o = S.concat [ toHex (toEnum n)
-                                           , "\r\n"
-                                           , x
-                                           , "\r\n" ]
-                          i <- liftM liftI $ runIter iter (Chunk $ WrapBS o)
-                          return $ Cont (wrap killwrap i) Nothing
+    sendOut :: DList ByteString
+            -> Iteratee IO a
+            -> IO (Iteratee IO a)
+    sendOut dl iter = do
+        let chunks = D.toList dl
+        let bs     = L.fromChunks chunks
+        let n      = L.length bs
+
+        if n == 0
+          then return iter
+          else do
+            let o = L.concat [ L.fromChunks [ toHex (toEnum . fromEnum $ n)
+                                            , "\r\n" ]
+                             , bs
+                             , "\r\n" ]
+
+            enumLBS o iter
+
+
+    bufIt (n,dl) iter = IterateeG $ \s -> do
+        case s of
+          (EOF Nothing) -> do
+               i'  <- sendOut dl iter
+               runIter i' (EOF Nothing)
+
+          (EOF e) -> return $ Cont undefined e
+
+          (Chunk (WrapBS x)) -> do
+               let m   = S.length x
+
+               if m == 0
+                 then return $ Cont (bufIt (n,dl) iter) Nothing
+                 else do
+                   let n'  = m + n
+                   let dl' = D.snoc dl x
+
+                   if n' > bufSiz
+                     then do
+                       i' <- sendOut dl' iter
+                       return $ Cont (bufIt (0,D.empty) i') Nothing
+                     else return $ Cont (bufIt (n',dl') iter) Nothing
 
 
 ------------------------------------------------------------------------------
