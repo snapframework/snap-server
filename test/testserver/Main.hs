@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
+
 module Main where
 
 import           Control.Concurrent
 
-import           Snap.Iteratee
+import           Snap.Iteratee hiding (Enumerator)
 import           Snap.Types
 import           Snap.Http.Server
 import           Snap.Util.FileServe
@@ -23,10 +25,18 @@ pongHandler = modifyResponse $ setResponseBody (enumBS "PONG") .
                               setContentType "text/plain" .
                               setContentLength 4
 
-echoHandler :: Snap ()
-echoHandler = do
+echoUriHandler :: Snap ()
+echoUriHandler = do
     req <- getRequest
     writeBS $ rqPathInfo req
+
+
+echoHandler :: Snap ()
+echoHandler = do
+    unsafeDetachRequestBody >>= \e -> do
+      let (SomeEnumerator x) = e
+      modifyResponse $ setResponseBody x
+
 
 responseHandler = do
     code <- getParam "code"
@@ -37,13 +47,16 @@ responseHandler = do
     f "300" = undefined
     f "304" = undefined
 
+
 handlers :: Snap ()
 handlers =
     route [ ("pong", pongHandler)
           , ("echo", echoHandler)
+          , ("echoUri", echoUriHandler)
           , ("fileserve", fileServe "static")
           , ("respcode/:code", responseHandler)
           ]
+
 
 main :: IO ()
 main = do
