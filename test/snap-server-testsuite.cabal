@@ -224,5 +224,4 @@ Executable benchmark
      base >= 4 && < 5,
      network == 2.2.1.7,
      HTTP >= 4000.0.9 && < 4001,
-     criterion >= 0.5 && <0.6
-   
+     criterion >= 0.5 && <0.6     
