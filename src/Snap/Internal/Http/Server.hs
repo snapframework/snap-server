@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server where
@@ -299,9 +300,10 @@ runHTTP lh lip lp rip rp alog elog
 
     go = do
         buf <- mkIterateeBuffer
-        let iter = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
-                                  httpSession writeEnd buf onSendFile tickle
-                                  handler
+        let iter1 = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
+                                   httpSession writeEnd buf onSendFile tickle
+                                   handler
+        let iter = iterateeDebugWrapper "httpSession iteratee" iter1
         readEnd iter >>= run
 
 
@@ -335,10 +337,14 @@ httpSession :: Iteratee IO ()                -- ^ write end of socket
             -> ServerMonad ()
 httpSession writeEnd' ibuf onSendFile tickle handler = do
 
-    writeEnd <- liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
+    writeEnd1 <- liftIO $ I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
+
+    let writeEnd = iterateeDebugWrapper "writeEnd" writeEnd1
 
     liftIO $ debug "Server.httpSession: entered"
     mreq  <- receiveRequest
+
+    
 
     -- successfully got a request, so restart timer
     liftIO tickle
@@ -354,6 +360,7 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
           checkExpect100Continue req writeEnd
 
           logerr <- gets _logError
+
           (req',rspOrig) <- lift $ handler logerr req
 
           liftIO $ debug $ "Server.httpSession: finished running user handler"
@@ -367,9 +374,11 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
                       else rspTmp
 
           liftIO $ debug "Server.httpSession: handled, skipping request body"
+
           srqEnum <- liftIO $ readIORef $ rqBody req'
           let (SomeEnumerator rqEnum) = srqEnum
-          lift $ joinIM $ rqEnum skipToEof
+          lift $ joinIM
+               $ rqEnum (iterateeDebugWrapper "httpSession/skipToEof" skipToEof)
           liftIO $ debug $ "Server.httpSession: request body skipped, " ++
                            "sending response"
 
@@ -464,13 +473,13 @@ receiveRequest = do
         hasContentLength :: Int -> ServerMonad ()
         hasContentLength l = do
             liftIO $ debug $ "receiveRequest/setEnumerator: " ++
-                             "request had content-length"
+                             "request had content-length " ++ Prelude.show l
             liftIO $ writeIORef (rqBody req) (SomeEnumerator e)
             liftIO $ debug "receiveRequest/setEnumerator: body enumerator set"
           where
             e :: Enumerator IO a
-            e = return . joinI . I.take l .
-                iterateeDebugWrapper "rqBody iterator"
+            e it = return $ joinI $ I.take l $
+                iterateeDebugWrapper "rqBody iterator" it
 
         noContentLength :: ServerMonad ()
         noContentLength = do
@@ -596,7 +605,7 @@ receiveRequest = do
 
 ------------------------------------------------------------------------------
 -- Response must be well-formed here
-sendResponse :: Response
+sendResponse :: forall a . Response
              -> Iteratee IO a
              -> (FilePath -> Int64 -> IO a)
              -> ServerMonad (Int64, a)
@@ -605,18 +614,18 @@ sendResponse rsp' writeEnd onSendFile = do
     let !headerString = mkHeaderString rsp
 
     (!x,!bs) <- case (rspBody rsp) of
-                  (Enum e)     -> liftIO $ whenEnum headerString e
-                  (SendFile f) -> liftIO $ whenSendFile headerString rsp f
+                  (Enum e)     -> lift $ whenEnum headerString e
+                  (SendFile f) -> lift $ whenSendFile headerString rsp f
 
     return $! (bs,x)
 
   where
     --------------------------------------------------------------------------
+    whenEnum :: ByteString -> (forall x . Enumerator IO x) -> Iteratee IO (a,Int64)
     whenEnum hs e = do
-        let enum = enumBS hs >. e
+        let enum = enumBS hs >. e >. enumEof
         let hl = fromIntegral $ S.length hs
-
-        (x,bs) <- liftIO $ enum (countBytes writeEnd) >>= run
+        (x,bs) <- joinIM $ enum (countBytes writeEnd)
 
         return (x, bs-hl)
 
@@ -624,10 +633,10 @@ sendResponse rsp' writeEnd onSendFile = do
     --------------------------------------------------------------------------
     whenSendFile hs r f = do
         -- guaranteed to have a content length here.
-        enumBS hs writeEnd >>= run
+        joinIM $ (enumBS hs >. enumEof) writeEnd
 
         let !cl = fromJust $ rspContentLength r
-        x <- onSendFile f cl
+        x <- liftIO $ onSendFile f cl
         return (x, cl)
 
 
@@ -657,8 +666,10 @@ sendResponse rsp' writeEnd onSendFile = do
             if sendChunked
               then do
                   let r' = setHeader "Transfer-Encoding" "chunked" r
-                  let e  = writeChunkedTransferEncoding $
-                           rspBodyToEnum $ rspBody r
+                  let origE = rspBodyToEnum $ rspBody r
+
+                  let e i = writeChunkedTransferEncoding i >>= origE
+
                   return $ r' { rspBody = Enum e }
 
               else do
@@ -682,7 +693,7 @@ sendResponse rsp' writeEnd onSendFile = do
             return $ r' { rspBody = b }
 
       where
-        i :: Enumerator IO a -> Enumerator IO a
+        i :: forall a . Enumerator IO a -> Enumerator IO a
         i enum iter = enum (joinI $ takeExactly cl iter)
 
 

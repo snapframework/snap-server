@@ -10,6 +10,9 @@ import           Snap.Types
 import           Snap.Http.Server
 import           Snap.Util.FileServe
 
+
+import Snap.Internal.Iteratee.Debug
+
 {-
 
 /pong
@@ -35,7 +38,8 @@ echoHandler :: Snap ()
 echoHandler = do
     unsafeDetachRequestBody >>= \e -> do
       let (SomeEnumerator x) = e
-      modifyResponse $ setResponseBody x
+      let e' i = x (iterateeDebugWrapper "echoHandler" i)
+      modifyResponse $ setResponseBody e'
 
 
 responseHandler = do
@@ -69,6 +73,7 @@ main = do
 
   where
     go m = do
-        httpServe "*" 3000 "localhost" Nothing Nothing handlers 
+        httpServe "*" 3000 "localhost" (Just "ts-access.log")
+                  (Just "ts-error.log") handlers 
         putMVar m ()
 

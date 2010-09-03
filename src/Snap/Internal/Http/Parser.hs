@@ -45,7 +45,8 @@ import             Prelude hiding (take, takeWhile)
 ------------------------------------------------------------------------------
 import             Snap.Internal.Http.Types hiding (Enumerator)
 import             Snap.Iteratee hiding (take, foldl', filter)
-
+import qualified   Snap.Iteratee as I
+import             Snap.Internal.Iteratee.Debug
 
 
 ------------------------------------------------------------------------------
@@ -118,14 +119,9 @@ toHex n' = s
 -- > Chunk "a\r\nfoobarquux\r\n0\r\n\r\n" Empty
 --
 writeChunkedTransferEncoding :: Enumerator IO a
-                             -> Enumerator IO a
-writeChunkedTransferEncoding enum it = do
+writeChunkedTransferEncoding it = do
     let out = wrap it
-    i   <- enum out
-    v   <- runIter i (EOF Nothing)
-    j   <- checkIfDone return v
-    w   <- runIter j (Chunk (WrapBS "0\r\n\r\n"))
-    checkIfDone return w
+    return out
 
   where
     ignoreEOF iter = IterateeG $ \s ->
@@ -135,7 +131,8 @@ writeChunkedTransferEncoding enum it = do
               i <- runIter iter s >>= checkIfDone return
               return $ Cont (ignoreEOF i) Nothing
 
-    wrap iter = bufIt (0,D.empty) $ ignoreEOF iter
+    --wrap iter = bufIt (0,D.empty) $ ignoreEOF iter
+    wrap iter = bufIt (0,D.empty) iter
 
     bufSiz = 16284
 
@@ -162,7 +159,8 @@ writeChunkedTransferEncoding enum it = do
         case s of
           (EOF Nothing) -> do
                i'  <- sendOut dl iter
-               runIter i' (EOF Nothing)
+               j   <- liftM liftI $ runIter i' (Chunk (WrapBS "0\r\n\r\n"))
+               runIter j (EOF Nothing)
 
           (EOF e) -> return $ Cont undefined e
 
