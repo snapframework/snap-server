@@ -32,7 +32,8 @@ parseChunked = do
   return ()
 
 -- utils
-toChunked lbs = writeChunkedTransferEncoding (enumLBS lbs) stream2stream >>= run >>= return . fromWrap
+toChunked lbs = writeChunkedTransferEncoding stream2stream >>=
+                enumLBS lbs >>= run >>= return . fromWrap
 
 benchmarks = bgroup "parser"
              [ bench "firefoxget" $ whnfIO parseGet
