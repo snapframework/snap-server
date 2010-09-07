@@ -13,7 +13,7 @@ Flag portable
   Default: False
 
 Executable testsuite
-   hs-source-dirs:  suite ../src 
+   hs-source-dirs:  suite ../src
    main-is:         TestSuite.hs
 
    build-depends:
@@ -64,12 +64,13 @@ Executable testsuite
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
 
-   ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
+   ghc-options: -O2 -Wall -fhpc  -hpcdir .hpc-testsuite -fwarn-tabs
+                -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
 
 
 Executable blackbox
-   hs-source-dirs:  blackbox ../src 
+   hs-source-dirs:  blackbox ../src
    main-is:         TestSuite.hs
 
    build-depends:
@@ -270,7 +271,7 @@ Executable testserver
      cpp-options: -DPORTABLE
 
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind -fhpc
+                -fno-warn-unused-do-bind -fhpc -hpcdir .hpc-blackbox
    ghc-prof-options: -prof -auto-all
 
 
@@ -281,4 +282,4 @@ Executable benchmark
      base >= 4 && < 5,
      network == 2.2.1.7,
      HTTP >= 4000.0.9 && < 4001,
-     criterion >= 0.5 && <0.6     
+     criterion >= 0.5 && <0.6
