@@ -45,8 +45,6 @@ import             Prelude hiding (take, takeWhile)
 ------------------------------------------------------------------------------
 import             Snap.Internal.Http.Types hiding (Enumerator)
 import             Snap.Iteratee hiding (take, foldl', filter)
-import qualified   Snap.Iteratee as I
-import             Snap.Internal.Iteratee.Debug
 
 
 ------------------------------------------------------------------------------
@@ -124,14 +122,6 @@ writeChunkedTransferEncoding it = do
     return out
 
   where
-    ignoreEOF iter = IterateeG $ \s ->
-        case s of
-          (EOF Nothing) -> return $ Cont iter Nothing
-          _             -> do
-              i <- runIter iter s >>= checkIfDone return
-              return $ Cont (ignoreEOF i) Nothing
-
-    --wrap iter = bufIt (0,D.empty) $ ignoreEOF iter
     wrap iter = bufIt (0,D.empty) iter
 
     bufSiz = 16284

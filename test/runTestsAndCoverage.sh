@@ -26,8 +26,8 @@ mkdir -p $DIR
 
 EXCLUDES='Main
 Data.CIByteString
-Data.HashMap.Concurrent.Internal
-Data.HashMap.Concurrent.Tests
+Data.Concurrent.HashMap.Internal
+Data.Concurrent.HashMap.Tests
 Paths_snap_server
 Snap.Internal.Http.Parser.Tests
 Snap.Internal.Http.Server.Tests
@@ -42,7 +42,7 @@ for m in $EXCLUDES; do
     EXCL="$EXCL --exclude=$m"
 done
 
-hpc markup $EXCL --hpcdir .hpc-testsuite --destdir=$DIR testsuite >/dev/null 2>&1
+hpc markup $EXCL --destdir=$DIR testsuite >/dev/null 2>&1
 
 rm -f testsuite.tix
 

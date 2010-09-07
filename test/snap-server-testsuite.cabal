@@ -41,6 +41,7 @@ Executable testsuite
      parallel > 2,
      iteratee >= 0.3.1 && < 0.4,
      snap-core >= 0.2.12 && <0.3,
+     template-haskell,
      test-framework >= 0.3.1 && <0.4,
      test-framework-hunit >= 0.2.5 && < 0.3,
      test-framework-quickcheck2 >= 0.2.6 && < 0.3,
@@ -64,144 +65,13 @@ Executable testsuite
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
 
-   ghc-options: -O2 -Wall -fhpc  -hpcdir .hpc-testsuite -fwarn-tabs
+   ghc-options: -O2 -Wall -fhpc -fwarn-tabs
                 -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
 
 
-Executable blackbox
-   hs-source-dirs:  blackbox ../src
-   main-is:         TestSuite.hs
-
-   build-depends:
-     QuickCheck >= 2,
-     array >= 0.3 && <0.4,
-     attoparsec >= 0.8.1 && < 0.9,
-     attoparsec-iteratee >= 0.1.1 && <0.2,
-     base >= 4 && < 5,
-     binary >= 0.5 && < 0.6,
-     bytestring,
-     bytestring-nums >= 0.3.1 && < 0.4,
-     bytestring-show >= 0.3.2 && < 0.4,
-     containers,
-     directory-tree,
-     dlist >= 0.5 && < 0.6,
-     filepath,
-     haskell98,
-     HTTP >= 4000.0.9 && < 4001,
-     HUnit >= 1.2 && < 2,
-     monads-fd,
-     murmur-hash >= 0.1 && < 0.2,
-     network == 2.2.1.7,
-     network-bytestring >= 0.1.2 && < 0.2,
-     old-locale,
-     parallel > 2,
-     iteratee >= 0.3.1 && < 0.4,
-     snap-core >= 0.2.12 && <0.3,
-     test-framework >= 0.3.1 && <0.4,
-     test-framework-hunit >= 0.2.5 && < 0.3,
-     test-framework-quickcheck2 >= 0.2.6 && < 0.3,
-     time,
-     transformers,
-     vector >= 0.6.0.1 && < 0.7
-
-   if !os(windows)
-     build-depends: unix
-
-   if flag(libev)
-     build-depends: hlibev >= 0.2.5 && < 0.3
-     other-modules: Snap.Internal.Http.Server.LibevBackend
-     cpp-options: -DLIBEV
-   else
-     build-depends: network-bytestring >= 0.1.2 && < 0.2,
-                    PSQueue >= 1.1 && <1.2
-
-     other-modules: Snap.Internal.Http.Server.SimpleBackend
-
-   if flag(portable) || os(windows)
-     cpp-options: -DPORTABLE
-
-   ghc-options: -O2 -Wall -fhpc -fwarn-tabs -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind
-
-
-
 Executable pongserver
    hs-source-dirs:  pongserver ../src
-   main-is:         Main.hs
-
-   build-depends:
-     QuickCheck >= 2,
-     array >= 0.3 && <0.4,
-     attoparsec >= 0.8.1 && < 0.9,
-     attoparsec-iteratee >= 0.1.1 && <0.2,
-     base >= 4 && < 5,
-     bytestring,
-     bytestring-nums >= 0.3.1 && < 0.4,
-     bytestring-show >= 0.3.2 && < 0.4,
-     cereal >= 0.3 && < 0.4,
-     containers,
-     directory-tree,
-     dlist >= 0.5 && < 0.6,
-     filepath,
-     haskell98,
-     HUnit >= 1.2 && < 2,
-     monads-fd,
-     old-locale,
-     parallel > 2,
-     iteratee >= 0.3.1 && < 0.4,
-     murmur-hash >= 0.1 && < 0.2,
-     network == 2.2.1.7,
-     network-bytestring >= 0.1.2 && < 0.2,
-     snap-core >= 0.2.12 && <0.3,
-     time,
-     transformers,
-     unix-compat,
-     vector >= 0.6.0.1 && < 0.7
-
-   if flag(portable) || os(windows)
-     cpp-options: -DPORTABLE
-   else
-     build-depends: unix
-
-   if flag(libev)
-     build-depends: hlibev >= 0.2.5 && < 0.3
-     other-modules: Snap.Internal.Http.Server.LibevBackend
-     cpp-options: -DLIBEV
-   else
-     build-depends: network-bytestring >= 0.1.2 && < 0.2,
-                    PSQueue >= 1.1 && <1.2
-
-     other-modules: Snap.Internal.Http.Server.SimpleBackend
-
-   if os(linux) && !flag(portable)
-     cpp-options: -DLINUX -DHAS_SENDFILE
-     other-modules:
-       System.SendFile,
-       System.SendFile.Linux
-
-   if os(darwin) && !flag(portable)
-     cpp-options: -DOSX -DHAS_SENDFILE
-     other-modules:
-       System.SendFile,
-       System.SendFile.Darwin
-
-   if os(freebsd) && !flag(portable)
-     cpp-options: -DFREEBSD -DHAS_SENDFILE
-     other-modules:
-       System.SendFile,
-       System.SendFile.FreeBSD
-
-   if flag(portable) || os(windows)
-     cpp-options: -DPORTABLE
-
-   ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind
-   ghc-prof-options: -prof -auto-all
-
-
-Executable testserver
-   hs-source-dirs:  testserver ../src
    main-is:         Main.hs
 
    build-depends:
@@ -271,7 +141,7 @@ Executable testserver
      cpp-options: -DPORTABLE
 
    ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind -fhpc -hpcdir .hpc-blackbox
+                -fno-warn-unused-do-bind
    ghc-prof-options: -prof -auto-all
 
 
