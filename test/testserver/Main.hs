@@ -1,9 +1,14 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
 module Main where
 
 import           Control.Concurrent
+import           Control.Monad
+
+import qualified Data.ByteString.Char8 as B
+import           Data.Maybe
 
 import           Snap.Iteratee hiding (Enumerator)
 import           Snap.Types
@@ -25,13 +30,13 @@ slowloris attack / timeout test
 
 pongHandler :: Snap ()
 pongHandler = modifyResponse $ setResponseBody (enumBS "PONG") .
-                              setContentType "text/plain" .
-                              setContentLength 4
+                               setContentType "text/plain" .
+                               setContentLength 4
 
 echoUriHandler :: Snap ()
 echoUriHandler = do
     req <- getRequest
-    writeBS $ rqPathInfo req
+    writeBS $ rqURI req
 
 
 echoHandler :: Snap ()
@@ -42,14 +47,11 @@ echoHandler = do
       modifyResponse $ setResponseBody e'
 
 
+responseHandler :: Snap ()
 responseHandler = do
-    code <- getParam "code"
-    case code of
-        Nothing   -> undefined
-        Just code -> f code
-  where
-    f "300" = undefined
-    f "304" = undefined
+    !code <- liftM (read . B.unpack . fromMaybe "503") $ getParam "code"
+    modifyResponse $ setResponseCode code
+    writeBS $ B.pack $ show code
 
 
 handlers :: Snap ()
@@ -57,7 +59,7 @@ handlers =
     route [ ("pong", pongHandler)
           , ("echo", echoHandler)
           , ("echoUri", echoUriHandler)
-          , ("fileserve", fileServe "static")
+          , ("fileserve", fileServe "testserver/static")
           , ("respcode/:code", responseHandler)
           ]
 
