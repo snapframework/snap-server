@@ -614,16 +614,22 @@ sendResponse rsp' writeEnd onSendFile = do
     let !headerString = mkHeaderString rsp
 
     (!x,!bs) <- case (rspBody rsp) of
-                  (Enum e)     -> lift $ whenEnum headerString e
+                  (Enum e)     -> lift $ whenEnum headerString rsp e
                   (SendFile f) -> lift $ whenSendFile headerString rsp f
 
     return $! (bs,x)
 
   where
     --------------------------------------------------------------------------
-    whenEnum :: ByteString -> (forall x . Enumerator IO x) -> Iteratee IO (a,Int64)
-    whenEnum hs e = do
-        let enum = enumBS hs >. e >. enumEof
+    whenEnum :: ByteString
+             -> Response
+             -> (forall x . Enumerator IO x)
+             -> Iteratee IO (a,Int64)
+    whenEnum hs rsp e = do
+        let enum = if rspDetachedBody rsp
+                     then enumBS hs >. e
+                     else enumBS hs >. e >. enumEof
+
         let hl = fromIntegral $ S.length hs
         (x,bs) <- joinIM $ enum (countBytes writeEnd)
 
