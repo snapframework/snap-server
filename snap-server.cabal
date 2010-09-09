@@ -57,22 +57,21 @@ extra-source-files:
   README.SNAP.md,
   test/benchmark/Benchmark.hs,
   test/benchmark/Snap/Internal/Http/Parser/Benchmark.hs,
+  test/common/Paths_snap_server.hs,
+  test/common/Test/Common/TestHandler.hs
   test/data/fileServe/foo.bin,
   test/data/fileServe/foo.bin.bin.bin,
   test/data/fileServe/foo.html,
   test/data/fileServe/foo.txt,
   test/pongserver/Main.hs,
-  test/pongserver/Paths_snap_server.hs,
   test/runTestsAndCoverage.sh,
   test/snap-server-testsuite.cabal,
-  test/suite/Paths_snap_server.hs,
   test/suite/Data/Concurrent/HashMap/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
   test/suite/Snap/Test/Common.hs,
   test/suite/TestSuite.hs,
   test/testserver/Main.hs,
-  test/testserver/Paths_snap_server.hs,
   test/testserver/static/hello.txt
 
 

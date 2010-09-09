@@ -5,6 +5,7 @@ import Test.Framework (defaultMain, testGroup)
 import qualified Data.Concurrent.HashMap.Tests
 import qualified Snap.Internal.Http.Parser.Tests
 import qualified Snap.Internal.Http.Server.Tests
+import qualified Test.Blackbox
 
 main :: IO ()
 main = defaultMain tests
@@ -14,4 +15,6 @@ main = defaultMain tests
                             Snap.Internal.Http.Parser.Tests.tests
                 , testGroup "Snap.Internal.Http.Server.Tests"
                             Snap.Internal.Http.Server.Tests.tests
+                , testGroup "Test.Blackbox"
+                            Test.Blackbox.tests
                 ]

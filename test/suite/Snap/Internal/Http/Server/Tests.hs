@@ -5,37 +5,37 @@
 module Snap.Internal.Http.Server.Tests
   ( tests ) where
 
-import           Control.Concurrent
-import           Control.Exception (try, SomeException)
-import           Control.Monad
+import             Control.Concurrent
+import             Control.Exception (try, SomeException)
+import             Control.Monad
 import "monads-fd" Control.Monad.Trans
-import qualified Data.ByteString as S
-import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Lazy.Char8 as LC
-import           Data.ByteString (ByteString)
-import           Data.ByteString.Internal (c2w, w2c)
-import           Data.Char
-import           Data.Int
-import           Data.IORef
-import           Data.Iteratee.WrappedByteString
-import qualified Data.Map as Map
-import           Data.Maybe (fromJust)
-import           Data.Monoid
-import           Data.Time.Calendar
-import           Data.Time.Clock
-import           Data.Word
-import qualified Network.HTTP as HTTP
-import           Prelude hiding (take)
-import qualified Prelude
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import           Test.HUnit hiding (Test, path)
+import qualified   Data.ByteString as S
+import qualified   Data.ByteString.Lazy as L
+import qualified   Data.ByteString.Lazy.Char8 as LC
+import             Data.ByteString (ByteString)
+import             Data.ByteString.Internal (c2w, w2c)
+import             Data.Char
+import             Data.Int
+import             Data.IORef
+import             Data.Iteratee.WrappedByteString
+import qualified   Data.Map as Map
+import             Data.Maybe (fromJust)
+import             Data.Monoid
+import             Data.Time.Calendar
+import             Data.Time.Clock
+import             Data.Word
+import qualified   Network.HTTP as HTTP
+import             Prelude hiding (take)
+import qualified   Prelude
+import             Test.Framework
+import             Test.Framework.Providers.HUnit
+import             Test.HUnit hiding (Test, path)
 
 
-import           Snap.Internal.Http.Types
-import           Snap.Internal.Http.Server
-import           Snap.Iteratee
-import           Snap.Types
+import             Snap.Internal.Http.Types
+import             Snap.Internal.Http.Server
+import             Snap.Iteratee
+import             Snap.Types
 
 
 tests :: [Test]
