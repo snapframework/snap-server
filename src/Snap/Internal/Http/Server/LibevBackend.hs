@@ -638,7 +638,7 @@ tickleTimeout :: Connection -> IO ()
 tickleTimeout conn = do
     debug "Backend.tickleTimeout"
     now       <- getCurrentDateTime
-    writeIORef (_timerTimeoutTime conn) (now + 20)
+    writeIORef (_timerTimeoutTime conn) (now + 30)
 
 
 recvData :: Connection -> Int -> IO ByteString

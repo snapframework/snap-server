@@ -163,13 +163,19 @@ timeoutThread backend = loop
         return t'
 
 
-    -- timeout = 60 seconds
-    tIMEOUT = 60
+    -- timeout = 30 seconds
+    tIMEOUT = 30
 
     killOlderThan now !table = do
+        debug "Backend.timeoutThread: killing old connections"
         let mmin = PSQ.findMin table
         maybe (return table)
-              (\m -> if now - PSQ.prio m > tIMEOUT
+              (\m -> do
+                   debug $ "Backend.timeoutThread: minimum value "
+                            ++ show (PSQ.prio m) ++ ", cutoff="
+                            ++ show (now - tIMEOUT)
+
+                   if now - PSQ.prio m >= tIMEOUT
                        then do
                            killThread $ PSQ.key m
                            killOlderThan now $ PSQ.deleteMin table
@@ -314,6 +320,7 @@ tickleTimeout conn = do
 
 cancelTimeout :: Connection -> IO ()
 cancelTimeout conn = do
+    debug "Backend.cancelTimeout"
     tid <- readMVar $ _connTid conn
 
     atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.delete tid), ())
