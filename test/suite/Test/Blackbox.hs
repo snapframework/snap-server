@@ -8,28 +8,16 @@ module Test.Blackbox
 
 
 import             Control.Concurrent
-import             Control.Exception (try, SomeException)
 import             Control.Monad
-import "monads-fd" Control.Monad.Trans
+import             Control.Monad.CatchIO
 import qualified   Data.ByteString as S
-import qualified   Data.ByteString.Lazy as L
-import qualified   Data.ByteString.Lazy.Char8 as LC
-import             Data.ByteString (ByteString)
-import             Data.ByteString.Internal (c2w, w2c)
-import             Data.Char
 import             Data.Int
-import             Data.IORef
-import             Data.Iteratee.WrappedByteString
-import qualified   Data.Map as Map
 import             Data.Maybe (fromJust)
-import             Data.Monoid
-import             Data.Time.Calendar
-import             Data.Time.Clock
-import             Data.Word
-import qualified   Network.URI as URI
 import qualified   Network.HTTP as HTTP
+import qualified   Network.URI as URI
+import             Network.Socket
+import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (take)
-import qualified   Prelude
 import             Test.Framework
 import             Test.Framework.Providers.HUnit
 import             Test.Framework.Providers.QuickCheck2
@@ -39,18 +27,17 @@ import qualified   Test.QuickCheck.Monadic as QC
 import             Test.QuickCheck.Monadic hiding (run, assert)
 
 import             Snap.Http.Server
-import             Snap.Iteratee
-import             Snap.Test.Common ()
-import             Snap.Types
+import             Snap.Test.Common
 
 import             Test.Common.Rot13
 import             Test.Common.TestHandler
 
 
 tests :: Int -> [Test]
-tests port = [ testPong  port
-             , testEcho  port
-             , testRot13 port ]
+tests port = [ testPong      port
+             , testEcho      port
+             , testRot13     port
+             , testSlowLoris port ]
 
 
 startTestServer :: IO (ThreadId,Int)
@@ -118,6 +105,37 @@ testRot13 port = testProperty "blackbox/rot13" $
         doc <- QC.run $ HTTP.getResponseBody rsp
 
         QC.assert $ txt == rot13 doc
+
+
+testSlowLoris :: Int -> Test
+testSlowLoris port = testCase "blackbox/slowloris" $ do
+    addr <- liftM (addrAddress . Prelude.head) $
+            getAddrInfo (Just myHints)
+                        (Just "127.0.0.1")
+                        (Just $ show port)
+
+    sock <- socket AF_INET Stream defaultProtocol
+    connect sock addr
+
+    go sock `finally` sClose sock
+
+  where
+    myHints = defaultHints { addrFlags = [ AI_NUMERICHOST ] }
+
+    go sock = do
+        N.sendAll sock "POST /echo HTTP/1.1\r\n"
+        N.sendAll sock "Host: 127.0.0.1\r\n"
+        N.sendAll sock "Content-Length: 2500000\r\n"
+        N.sendAll sock "Connection: close\r\n\r\n"
+
+        b <- expectExceptionBeforeTimeout (loris sock) 60
+
+        assertBool "didn't catch slow loris attack" b
+
+    loris sock = do
+        N.sendAll sock "."
+        threadDelay 2000000
+        loris sock
 
 
 ------------------------------------------------------------------------------

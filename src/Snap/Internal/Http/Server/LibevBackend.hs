@@ -370,15 +370,17 @@ timerCallback loop tmr ioref tmv _ _ _ = do
     now       <- getCurrentDateTime
     whenToDie <- readIORef ioref
 
-    if whenToDie < now
+    if whenToDie <= now
       then do
           debug "Backend.timerCallback: killing thread"
           tid <- readMVar tmv
           throwTo tid TimeoutException
 
       else do
-        evTimerSetRepeat tmr $ fromRational . toRational $ (whenToDie - now)
-        evTimerAgain loop tmr
+          debug $ "Backend.timerCallback: now=" ++ show now
+                  ++ ", whenToDie=" ++ show whenToDie
+          evTimerSetRepeat tmr $ fromRational . toRational $ (whenToDie - now)
+          evTimerAgain loop tmr
 
 
 freeConnection :: Connection -> IO ()
