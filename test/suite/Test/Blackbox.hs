@@ -43,7 +43,14 @@ import             Snap.Iteratee
 import             Snap.Test.Common ()
 import             Snap.Types
 
+import             Test.Common.Rot13
 import             Test.Common.TestHandler
+
+
+tests :: Int -> [Test]
+tests port = [ testPong  port
+             , testEcho  port
+             , testRot13 port ]
 
 
 startTestServer :: IO (ThreadId,Int)
@@ -61,11 +68,6 @@ startTestServer = do
 
   where
     port = 8199
-
-
-tests :: Int -> [Test]
-tests port = [ testPong port
-             , testEcho port ]
 
 
 testPong :: Int -> Test
@@ -98,24 +100,24 @@ testEcho port = testProperty "blackbox/echo" $
         QC.assert $ txt == doc
 
 
-{-
-foo = do
-    let uri = fromJust $
-              URI.parseURI $
-              "http://localhost:3000/echo"
+testRot13 :: Int -> Test
+testRot13 port = testProperty "blackbox/rot13" $
+                 monadicIO $ forAllM arbitrary prop
+  where
+    prop txt = do
+        let uri = fromJust $
+                  URI.parseURI $
+                  "http://localhost:" ++ show port ++ "/rot13"
 
-    let txt = "fdslkjflkdsjflkdsjfldskjflds" :: S.ByteString
-    let len = S.length txt
+        let len = S.length txt
 
-    let req' = (HTTP.mkRequest HTTP.POST uri) :: HTTP.Request S.ByteString
-    let req = HTTP.replaceHeader HTTP.HdrContentLength (show len) req'
+        let req' = (HTTP.mkRequest HTTP.POST uri) :: HTTP.Request S.ByteString
+        let req = HTTP.replaceHeader HTTP.HdrContentLength (show len) req'
+                  
+        rsp <- QC.run $ HTTP.simpleHTTP $ req { HTTP.rqBody = (txt::S.ByteString) }
+        doc <- QC.run $ HTTP.getResponseBody rsp
 
-    rsp <- HTTP.simpleHTTP $ req { HTTP.rqBody = txt }
-    doc <- HTTP.getResponseBody rsp
-
-    putStrLn $ "txt: " ++ show txt
-    putStrLn $ "doc: " ++ show doc
--}
+        QC.assert $ txt == rot13 doc
 
 
 ------------------------------------------------------------------------------

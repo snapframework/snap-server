@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 
@@ -12,9 +11,7 @@ import           Data.Iteratee.WrappedByteString
 import           Data.Word
 import           Test.QuickCheck
 
-
-instance Show (WrappedByteString Word8) where
-    show (WrapBS s) = show s
+import           Snap.Internal.Iteratee.Debug ()
 
 instance Arbitrary S.ByteString where
     arbitrary = liftM (S.pack . map c2w) arbitrary
