@@ -626,7 +626,7 @@ sendResponse rsp' writeEnd onSendFile = do
              -> (forall x . Enumerator IO x)
              -> Iteratee IO (a,Int64)
     whenEnum hs rsp e = do
-        let enum = if rspDetachedBody rsp
+        let enum = if rspTransformingRqBody rsp
                      then enumBS hs >. e
                      else enumBS hs >. e >. enumEof
 

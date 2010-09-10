@@ -29,11 +29,7 @@ echoUriHandler = do
 
 
 echoHandler :: Snap ()
-echoHandler = do
-    unsafeDetachRequestBody >>= \e -> do
-      let (SomeEnumerator x) = e
-      let e' i = x (iterateeDebugWrapper "echoHandler" i)
-      modifyResponse $ setResponseBody e'
+echoHandler = transformRequestBody return
 
 
 responseHandler :: Snap ()
