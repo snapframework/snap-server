@@ -157,7 +157,6 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                     elog <- maybeSpawnLogger efp
                     return (alog, elog))
                 (\(alog, elog) -> do
-                    threadDelay 1000000
                     maybe (return ()) stopLogger alog
                     maybe (return ()) stopLogger elog)
 
@@ -699,7 +698,7 @@ sendResponse rsp' writeEnd onSendFile = do
             return $ r' { rspBody = b }
 
       where
-        i :: forall a . Enumerator IO a -> Enumerator IO a
+        i :: forall z . Enumerator IO z -> Enumerator IO z
         i enum iter = enum (joinI $ takeExactly cl iter)
 
 

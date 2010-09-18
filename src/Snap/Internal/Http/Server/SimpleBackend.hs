@@ -138,33 +138,46 @@ new sock _ = do
 
     let b = Backend sock ed t
 
-    tid <- forkIO $ timeoutThread b PSQ.empty
+    tid <- forkIO $ timeoutThread b
     putMVar t tid
 
     return b
 
 
-timeoutThread :: Backend -> TimeoutTable -> IO ()
-timeoutThread backend = loop
-  where
-    loop tt = do
-        tt' <- killTooOld tt
+timeoutThread :: Backend -> IO ()
+timeoutThread backend = do
+    tref <- newIORef $ PSQ.empty
+    let loop = do
+        killTooOld tref
         threadDelay (5000000)
-        loop tt'
+        loop
 
+    loop `catch` (\(_::SomeException) -> killAll tref)
 
-    killTooOld table = do
+  where
+    killTooOld tref = do
+        !table <- readIORef tref
         -- atomic swap edit list
         now   <- getCurrentDateTime
         edits <- atomicModifyIORef tedits $ \t -> (D.empty, D.toList t)
 
         let table' = foldl' (flip ($)) table edits
         !t'   <- killOlderThan now table'
-        return t'
+        writeIORef tref t'
 
 
     -- timeout = 30 seconds
     tIMEOUT = 30
+
+    killAll !tref = do
+        debug "Backend.timeoutThread: shutdown, killing all connections"
+        !table <- readIORef tref
+        go table
+      where
+        go t = maybe (return ())
+                     (\m -> (killThread $ PSQ.key m) >>
+                            (go $ PSQ.deleteMin t))
+                     (PSQ.findMin t)
 
     killOlderThan now !table = do
         debug "Backend.timeoutThread: killing old connections"
@@ -190,7 +203,8 @@ stop (Backend s _ t) = do
     debug $ "Backend.stop"
     sClose s
 
-    -- kill timeout thread and current thread
+    -- kill timeout thread and current thread; timeout thread handler will stop
+    -- all of the running connection threads
     readMVar t >>= killThread
     myThreadId >>= killThread
 
@@ -318,8 +332,8 @@ tickleTimeout conn = do
     tedits = _timeoutEdits $ _backend conn
 
 
-cancelTimeout :: Connection -> IO ()
-cancelTimeout conn = do
+_cancelTimeout :: Connection -> IO ()
+_cancelTimeout conn = do
     debug "Backend.cancelTimeout"
     tid <- readMVar $ _connTid conn
 

@@ -47,11 +47,10 @@ import             Data.Typeable
 import             Foreign hiding (new)
 import             Foreign.C.Error
 import             Foreign.C.Types
-import             GHC.Conc (forkOnIO)
+import             GHC.Conc (forkOnIO, numCapabilities)
 import             Network.Libev
 import             Network.Socket
 import             Prelude hiding (catch)
-import             System.Timeout
 ------------------------------------------------------------------------------
 
 -- FIXME: should be HashSet, make that later.
@@ -82,6 +81,7 @@ data Backend = Backend
     , _killObj           :: !EvAsyncPtr
     , _connectionThreads :: !(HashMap ThreadId ())
     , _backendCPU        :: !Int
+    , _backendFreed      :: !(MVar ())
     }
 
 
@@ -216,6 +216,9 @@ new (sock,sockFd) cpu = do
     -- thread set stuff
     connSet <- H.new (H.hashString . show)
 
+    -- freed gets stuffed with () when all resources are released.
+    freed <- newEmptyMVar
+
     let b = Backend sock
                     sockFd
                     connq
@@ -230,6 +233,7 @@ new (sock,sockFd) cpu = do
                     killObj
                     connSet
                     cpu
+                    freed
 
     forkOnIO cpu $ loopThread b
 
@@ -244,9 +248,11 @@ loopThread backend = do
     (ignoreException go) `finally` cleanup
     debug $ "loop finished"
   where
-    cleanup = do
+    cleanup = block $ do
         debug $ "loopThread: cleaning up"
         ignoreException $ freeBackend backend
+        putMVar (_backendFreed backend) ()
+
     lock    = _loopLock backend
     loop    = _evLoop backend
     go      = takeMVar lock >> block (evLoop loop 0)
@@ -288,43 +294,28 @@ ioWriteCallback fd active wa _loopPtr _ioPtr _ = do
     writeIORef active False
 
 
-seconds :: Int -> Int
-seconds n = n * ((10::Int)^(6::Int))
-
-
 stop :: Backend -> IO ()
 stop b = ignoreException $ do
     debug $ "Backend.stop"
 
-    -- FIXME: what are we gonna do here?
-    --
     -- 1. take the loop lock
     -- 2. shut down the accept() callback
     -- 3. stuff a poison pill (a bunch of -1 values should do) down the
     --    connection queue so that withConnection knows to throw an exception
     --    back up to its caller
-    -- 4. release the loop lock
-    -- 5. wait until all of the threads have finished, or until 10 seconds have
-    --    elapsed, whichever comes first
-    -- 6. take the loop lock
-    -- 7. call evUnloop and wake up the loop using evAsyncSend
-    -- 8. release the loop lock, the main loop thread should then free/clean
+    -- 4. call evUnloop and wake up the loop using evAsyncSend
+    -- 5. release the loop lock, the main loop thread should then free/clean
     --    everything up (threads, connections, io objects, callbacks, etc)
+    -- 6. wait for the loop thread to signal it has cleaned up and exited
 
     withMVar lock $ \_ -> do
         evIoStop loop acceptObj
-        replicateM_ 10 $ writeChan connQ (-1)
-
-    debug $ "Backend.stop: waiting at most 10 seconds for connection threads to die"
-    waitForThreads b $ seconds 10
-    debug $ "Backend.stop: all threads presumed dead, unlooping"
-
-    withMVar lock $ \_ -> do
+        replicateM_ (numCapabilities*2) $ writeChan connQ (-1)
         evUnloop loop evunloop_all
         evAsyncSend loop killObj
 
-    debug $ "unloop sent"
-
+    debug $ "accepting threads killed, unloop sent, waiting for completion"
+    takeMVar $ _backendFreed b
 
   where
     loop           = _evLoop b
@@ -332,18 +323,6 @@ stop b = ignoreException $ do
     killObj        = _killObj b
     lock           = _loopLock b
     connQ          = _connectionQueue b
-
-
-
-waitForThreads :: Backend -> Int -> IO ()
-waitForThreads backend t = timeout t wait >> return ()
-  where
-    threadSet = _connectionThreads backend
-    wait = do
-        b       <- H.null threadSet
-        if b
-          then return ()
-          else threadDelay (seconds 1) >> wait
 
 
 
@@ -434,8 +413,6 @@ ignoreException = handle (\(_::SomeException) -> return ())
 freeBackend :: Backend -> IO ()
 freeBackend backend = ignoreException $ block $ do
     -- note: we only get here after an unloop
-
-
     -- kill everything in thread table
     tset <- H.toList $ _connectionThreads backend
     Prelude.mapM_ (killThread . fst) tset
