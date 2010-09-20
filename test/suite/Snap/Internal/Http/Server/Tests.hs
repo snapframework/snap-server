@@ -31,6 +31,7 @@ import             Test.Framework
 import             Test.Framework.Providers.HUnit
 import             Test.HUnit hiding (Test, path)
 
+import qualified   Snap.Http.Server as Svr
 
 import             Snap.Internal.Http.Types
 import             Snap.Internal.Http.Server
@@ -55,8 +56,13 @@ tests = [ testHttpRequest1
         , testMethodParsing
         , testServerStartupShutdown
         , testChunkOn1_0
-        , testSendFile ]
+        , testSendFile
+        , testTrivials]
 
+
+testTrivials :: Test
+testTrivials = testCase "server/trivials" $
+               let !x = Svr.snapServerVersion in return $! x `seq` ()
 
 ------------------------------------------------------------------------------
 -- HTTP request tests
