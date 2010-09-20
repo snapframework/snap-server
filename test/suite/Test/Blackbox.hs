@@ -10,7 +10,9 @@ module Test.Blackbox
 import             Control.Concurrent
 import             Control.Monad
 import             Control.Monad.CatchIO
-import qualified   Data.ByteString as S
+import             Data.ByteString.Char8 (ByteString)
+import qualified   Data.ByteString.Char8 as S
+import qualified   Data.DList as D
 import             Data.Int
 import             Data.Maybe (fromJust)
 import qualified   Network.HTTP as HTTP
@@ -34,10 +36,12 @@ import             Test.Common.TestHandler
 
 
 tests :: Int -> [Test]
-tests port = [ testPong      port
-             , testEcho      port
-             , testRot13     port
-             , testSlowLoris port ]
+tests port = map ($ port) [ testPong
+                          , testEcho
+                          , testRot13
+                          , testSlowLoris
+                          , testBlockingRead
+                          , testPartial ]
 
 
 startTestServer :: IO (ThreadId,Int)
@@ -57,13 +61,18 @@ startTestServer = do
     port = 8199
 
 
-testPong :: Int -> Test
-testPong port = testCase "blackbox/pong" $ do
+doPong :: Int -> IO String
+doPong port = do
     rsp <- HTTP.simpleHTTP $
            HTTP.getRequest $
            "http://localhost:" ++ show port ++ "/pong"
 
-    doc <- HTTP.getResponseBody rsp
+    HTTP.getResponseBody rsp
+
+
+testPong :: Int -> Test
+testPong port = testCase "blackbox/pong" $ do
+    doc <- doPong port
     assertEqual "pong response" "PONG" doc
 
 
@@ -80,7 +89,7 @@ testEcho port = testProperty "blackbox/echo" $
 
         let req' = (HTTP.mkRequest HTTP.POST uri) :: HTTP.Request S.ByteString
         let req = HTTP.replaceHeader HTTP.HdrContentLength (show len) req'
-                  
+
         rsp <- QC.run $ HTTP.simpleHTTP $ req { HTTP.rqBody = (txt::S.ByteString) }
         doc <- QC.run $ HTTP.getResponseBody rsp
 
@@ -100,15 +109,15 @@ testRot13 port = testProperty "blackbox/rot13" $
 
         let req' = (HTTP.mkRequest HTTP.POST uri) :: HTTP.Request S.ByteString
         let req = HTTP.replaceHeader HTTP.HdrContentLength (show len) req'
-                  
+
         rsp <- QC.run $ HTTP.simpleHTTP $ req { HTTP.rqBody = (txt::S.ByteString) }
         doc <- QC.run $ HTTP.getResponseBody rsp
 
         QC.assert $ txt == rot13 doc
 
 
-testSlowLoris :: Int -> Test
-testSlowLoris port = testCase "blackbox/slowloris" $ do
+withSock :: Int -> (Socket -> IO a) -> IO a
+withSock port go = do
     addr <- liftM (addrAddress . Prelude.head) $
             getAddrInfo (Just myHints)
                         (Just "127.0.0.1")
@@ -122,6 +131,11 @@ testSlowLoris port = testCase "blackbox/slowloris" $ do
   where
     myHints = defaultHints { addrFlags = [ AI_NUMERICHOST ] }
 
+
+testSlowLoris :: Int -> Test
+testSlowLoris port = testCase "blackbox/slowloris" $ withSock port go
+
+  where
     go sock = do
         N.sendAll sock "POST /echo HTTP/1.1\r\n"
         N.sendAll sock "Host: 127.0.0.1\r\n"
@@ -134,8 +148,58 @@ testSlowLoris port = testCase "blackbox/slowloris" $ do
 
     loris sock = do
         N.sendAll sock "."
-        threadDelay 2000000
+        waitabit
         loris sock
+
+
+ditchHeaders :: [ByteString] -> [ByteString]
+ditchHeaders ("":xs)   = xs
+ditchHeaders ("\r":xs) = xs
+ditchHeaders (_:xs)    = ditchHeaders xs
+ditchHeaders []        = []
+
+
+
+testBlockingRead :: Int -> Test
+testBlockingRead port = testCase "blackbox/testBlockingRead" $
+                        withSock port $ \sock -> do
+    N.sendAll sock "GET /"
+    waitabit
+    N.sendAll sock "pong HTTP/1.1\r\n"
+    N.sendAll sock "Host: 127.0.0.1\r\n"
+    N.sendAll sock "Content-Length: 0\r\n"
+    N.sendAll sock "Connection: close\r\n\r\n"
+
+    resp <- recvAll sock
+
+    let s = head $ ditchHeaders $ S.lines resp
+
+    assertEqual "pong response" "PONG" s
+
+
+  where
+    recvAll sock = do
+        d <- f D.empty sock
+        return $ S.concat $ D.toList d
+
+      where
+        f d sk = do
+            s <- N.recv sk 8192
+            if S.null s
+              then return d
+              else f (D.snoc d s) sk
+
+
+-- test server's ability to trap/recover from IO errors
+testPartial :: Int -> Test
+testPartial port = testCase "blackbox/testPartial" $ do
+    withSock port $ \sock ->
+        N.sendAll sock "GET /pong HTTP/1.1\r\n"
+
+    doc <- doPong port
+    assertEqual "pong response" "PONG" doc
+
+    
 
 
 ------------------------------------------------------------------------------

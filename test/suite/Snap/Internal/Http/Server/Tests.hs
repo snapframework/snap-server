@@ -52,6 +52,7 @@ tests = [ testHttpRequest1
         , testHttp1
         , testHttp2
         , testHttp100
+        , testExpectGarbage
         , testPartialParse
         , testMethodParsing
         , testServerStartupShutdown
@@ -90,6 +91,17 @@ sampleRequestExpectContinue =
              , "\r\n"
              , "0123456789" ]
 
+sampleRequestExpectGarbage :: ByteString
+sampleRequestExpectGarbage =
+    S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
+             , "Host: www.zabble.com:7777\r\n"
+             , "Content-Length: 10\r\n"
+             , "Expect: wuzzawuzzawuzza\r\n"
+             , "X-Random-Other-Header: foo\r\n bar\r\n"
+             , "Cookie: foo=\"bar\\\"\"\r\n"
+             , "\r\n"
+             , "0123456789" ]
+
 sampleRequest1_0 :: ByteString
 sampleRequest1_0 =
     S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.0\r\n"
@@ -102,7 +114,7 @@ sampleRequest1_0 =
 
 testMethodParsing :: Test
 testMethodParsing =
-    testCase "method parsing" $ Prelude.mapM_ testOneMethod ms
+    testCase "server/method parsing" $ Prelude.mapM_ testOneMethod ms
   where
     ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT ]
 
@@ -123,7 +135,7 @@ copyingStream2stream = IterateeG (step mempty)
 
 testHttpRequest1 :: Test
 testHttpRequest1 =
-    testCase "HttpRequest1" $ do
+    testCase "server/HttpRequest1" $ do
         iter <- enumBS sampleRequest $
                 do
                     r <- liftM fromJust $ rsm receiveRequest
@@ -166,7 +178,7 @@ testHttpRequest1 =
 
 testMultiRequest :: Test
 testMultiRequest =
-    testCase "MultiRequest" $ do
+    testCase "server/MultiRequest" $ do
         iter <- (enumBS sampleRequest >. enumBS sampleRequest) $
                 do
                     r1 <- liftM fromJust $ rsm receiveRequest
@@ -217,7 +229,7 @@ expectException m = do
 
 
 testPartialParse :: Test
-testPartialParse = testCase "Short" $ do
+testPartialParse = testCase "server/short" $ do
     iter <- enumBS sampleShortRequest $ liftM fromJust $ rsm receiveRequest
 
     expectException $ run iter
@@ -243,7 +255,7 @@ sampleRequest2 =
 
 testHttpRequest2 :: Test
 testHttpRequest2 =
-    testCase "HttpRequest2" $ do
+    testCase "server/HttpRequest2" $ do
         iter <- enumBS sampleRequest2 $
                 do
                     r <- liftM fromJust $ rsm receiveRequest
@@ -259,7 +271,7 @@ testHttpRequest2 =
 
 testHttpRequest3 :: Test
 testHttpRequest3 =
-    testCase "HttpRequest3" $ do
+    testCase "server/HttpRequest3" $ do
         iter <- enumBS sampleRequest3 $
                 do
                     r <- liftM fromJust $ rsm receiveRequest
@@ -292,7 +304,7 @@ testHttpRequest3 =
 
 testHttpRequest3' :: Test
 testHttpRequest3' =
-    testCase "HttpRequest3'" $ do
+    testCase "server/HttpRequest3'" $ do
         iter <- enumBS sampleRequest3' $
                 do
                     r <- liftM fromJust $ rsm receiveRequest
@@ -353,7 +365,7 @@ rsm = runServerMonad "localhost" "127.0.0.1" 80 "127.0.0.1" 58382 alog elog
 
 
 testHttpResponse1 :: Test
-testHttpResponse1 = testCase "HttpResponse1" $ do
+testHttpResponse1 = testCase "server/HttpResponse1" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
     b <- run $ rsm $
@@ -377,7 +389,7 @@ testHttpResponse1 = testCase "HttpResponse1" $ do
 
 
 testHttpResponse2 :: Test
-testHttpResponse2 = testCase "HttpResponse2" $ do
+testHttpResponse2 = testCase "server/HttpResponse2" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
     b2 <- run $ rsm $
@@ -401,7 +413,7 @@ testHttpResponse2 = testCase "HttpResponse2" $ do
 
 
 testHttpResponse3 :: Test
-testHttpResponse3 = testCase "HttpResponse3" $ do
+testHttpResponse3 = testCase "server/HttpResponse3" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
     b3 <- run $ rsm $
@@ -431,7 +443,7 @@ testHttpResponse3 = testCase "HttpResponse3" $ do
 
 
 testHttpResponse4 :: Test
-testHttpResponse4 = testCase "HttpResponse4" $ do
+testHttpResponse4 = testCase "server/HttpResponse4" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
     b <- run $ rsm $
@@ -478,7 +490,7 @@ echoServer2 _ req = do
 
 
 testHttp1 :: Test
-testHttp1 = testCase "http session" $ do
+testHttp1 = testCase "server/http session" $ do
     let enumBody = enumBS sampleRequest >. enumBS sampleRequest2
 
     ref <- newIORef ""
@@ -524,7 +536,7 @@ mkIter ref = (iter, \f _ -> onF f iter)
 
 
 testChunkOn1_0 :: Test
-testChunkOn1_0 = testCase "transfer-encoding chunked" $ do
+testChunkOn1_0 = testCase "server/transfer-encoding chunked" $ do
     let enumBody = enumBS sampleRequest1_0
 
     ref <- newIORef ""
@@ -563,7 +575,7 @@ sampleRequest4 =
 
 
 testHttp2 :: Test
-testHttp2 = testCase "connection: close" $ do
+testHttp2 = testCase "server/connection: close" $ do
     let enumBody = enumBS sampleRequest4 >. enumBS sampleRequest2
 
     ref <- newIORef ""
@@ -605,7 +617,7 @@ testHttp2 = testCase "connection: close" $ do
 
 
 testHttp100 :: Test
-testHttp100 = testCase "Expect: 100-continue" $ do
+testHttp100 = testCase "server/Expect: 100-continue" $ do
     let enumBody = enumBS sampleRequestExpectContinue
 
     ref <- newIORef ""
@@ -646,6 +658,46 @@ testHttp100 = testCase "Expect: 100-continue" $ do
     assertBool "100 Continue" ok
 
 
+testExpectGarbage :: Test
+testExpectGarbage = testCase "server/Expect: garbage" $ do
+    let enumBody = enumBS sampleRequestExpectGarbage
+
+    ref <- newIORef ""
+
+    let (iter,onSendFile) = mkIter ref
+
+    runHTTP "localhost"
+            "127.0.0.1"
+            80
+            "127.0.0.1"
+            58384
+            Nothing
+            Nothing
+            enumBody
+            iter
+            onSendFile
+            (return ())
+            echoServer2
+
+    s <- readIORef ref
+
+    let lns = LC.lines s
+
+    let ok = case lns of
+               ([ "HTTP/1.1 200 OK\r"
+                , "Content-Length: 10\r"
+                , d1
+                , s1
+                , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                , "\r"
+                , "0123456789" ]) -> (("Date" `L.isPrefixOf` d1) &&
+                                      ("Server" `L.isPrefixOf` s1))
+
+               _ -> False
+
+    assertBool "random expect: header" ok
+
+
 
 
 pongServer :: Snap ()
@@ -658,7 +710,7 @@ sendFileFoo = sendFile "data/fileServe/foo.html"
 
 
 testSendFile :: Test
-testSendFile = testCase "sendFile" $ do
+testSendFile = testCase "server/sendFile" $ do
     tid <- forkIO $ httpServe "*" port "localhost"
            Nothing Nothing $
            runSnap sendFileFoo
@@ -678,7 +730,7 @@ testSendFile = testCase "sendFile" $ do
     
 
 testServerStartupShutdown :: Test
-testServerStartupShutdown = testCase "startup/shutdown" $ do
+testServerStartupShutdown = testCase "server/startup/shutdown" $ do
     tid <- forkIO $
            httpServe "*"
                      port
