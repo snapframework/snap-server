@@ -33,7 +33,10 @@ Snap.Internal.Http.Server.Tests
 Snap.Internal.Http.Types.Tests
 Snap.Internal.Iteratee.Tests
 Text.Snap.Templates.Tests
-Snap.Test.Common'
+Snap.Test.Common
+Test.BlackBox
+Test.Common.Rot13
+Test.Common.TestHandler'
 
 EXCL=""
 
