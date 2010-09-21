@@ -6,7 +6,7 @@ module Test.Common.TestHandler (testHandler) where
 
 import           Control.Monad
 
-import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.Iteratee.WrappedByteString
 import           Data.Maybe
@@ -48,16 +48,16 @@ rot13Handler = transformRequestBody $ return . f
 bigResponseHandler :: Snap ()
 bigResponseHandler = do
     let sz = 4000000
-    let s = L.take sz $ L.cycle $ L.replicate 4096 '.'
+    let s = L.take sz $ L.cycle $ L.fromChunks [S.replicate 400000 '.']
     modifyResponse $ setContentLength sz
     writeLBS s
 
 
 responseHandler :: Snap ()
 responseHandler = do
-    !code <- liftM (read . B.unpack . fromMaybe "503") $ getParam "code"
+    !code <- liftM (read . S.unpack . fromMaybe "503") $ getParam "code"
     modifyResponse $ setResponseCode code
-    writeBS $ B.pack $ show code
+    writeBS $ S.pack $ show code
 
 
 testHandler :: Snap ()
