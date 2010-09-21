@@ -773,7 +773,7 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
 testServerShutdownWithOpenConns :: Test
 testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
     tid <- forkIO $
-           httpServe "*"
+           httpServe "127.0.0.1"
                      port
                      "localhost"
                      Nothing
