@@ -38,7 +38,7 @@ Snap.Internal.Http.Types.Tests
 Snap.Internal.Iteratee.Tests
 Text.Snap.Templates.Tests
 Snap.Test.Common
-Test.BlackBox
+Test.Blackbox
 Test.Common.Rot13
 Test.Common.TestHandler'
 
