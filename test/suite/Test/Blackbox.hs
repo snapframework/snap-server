@@ -117,22 +117,6 @@ testRot13 port = testProperty "blackbox/rot13" $
         QC.assert $ txt == rot13 doc
 
 
-withSock :: Int -> (Socket -> IO a) -> IO a
-withSock port go = do
-    addr <- liftM (addrAddress . Prelude.head) $
-            getAddrInfo (Just myHints)
-                        (Just "127.0.0.1")
-                        (Just $ show port)
-
-    sock <- socket AF_INET Stream defaultProtocol
-    connect sock addr
-
-    go sock `finally` sClose sock
-
-  where
-    myHints = defaultHints { addrFlags = [ AI_NUMERICHOST ] }
-
-
 testSlowLoris :: Int -> Test
 testSlowLoris port = testCase "blackbox/slowloris" $ withSock port go
 
@@ -151,26 +135,6 @@ testSlowLoris port = testCase "blackbox/slowloris" $ withSock port go
         N.sendAll sock "."
         waitabit
         loris sock
-
-
-ditchHeaders :: [ByteString] -> [ByteString]
-ditchHeaders ("":xs)   = xs
-ditchHeaders ("\r":xs) = xs
-ditchHeaders (_:xs)    = ditchHeaders xs
-ditchHeaders []        = []
-
-
-recvAll :: Socket -> IO ByteString
-recvAll sock = do
-    d <- f D.empty sock
-    return $ S.concat $ D.toList d
-
-  where
-    f d sk = do
-        s <- N.recv sk 100000
-        if S.null s
-          then return d
-          else f (D.snoc d s) sk
 
 
 testBlockingRead :: Int -> Test

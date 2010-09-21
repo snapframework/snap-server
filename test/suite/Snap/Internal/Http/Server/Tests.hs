@@ -7,10 +7,10 @@ module Snap.Internal.Http.Server.Tests
   ( tests ) where
 
 import             Control.Concurrent
-import             Control.Exception (try, SomeException)
+import             Control.Exception (try, throwIO, SomeException)
 import             Control.Monad
 import "monads-fd" Control.Monad.Trans
-import qualified   Data.ByteString as S
+import qualified   Data.ByteString.Char8 as S
 import qualified   Data.ByteString.Lazy as L
 import qualified   Data.ByteString.Lazy.Char8 as LC
 import             Data.ByteString (ByteString)
@@ -26,6 +26,7 @@ import             Data.Time.Calendar
 import             Data.Time.Clock
 import             Data.Word
 import qualified   Network.HTTP as HTTP
+import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (take)
 import qualified   Prelude
 import             Test.Framework
@@ -34,9 +35,11 @@ import             Test.HUnit hiding (Test, path)
 
 import qualified   Snap.Http.Server as Svr
 
+import             Snap.Internal.Debug
 import             Snap.Internal.Http.Types
 import             Snap.Internal.Http.Server
 import             Snap.Iteratee
+import             Snap.Test.Common
 import             Snap.Types
 
 #ifdef LIBEV
@@ -63,6 +66,7 @@ tests = [ testHttpRequest1
         , testPartialParse
         , testMethodParsing
         , testServerStartupShutdown
+        , testServerShutdownWithOpenConns
         , testChunkOn1_0
         , testSendFile
         , testTrivials]
@@ -564,7 +568,7 @@ testChunkOn1_0 = testCase "server/transfer-encoding chunked" $ do
     assertBool "connection close" $ S.isInfixOf "connection: close" output
 
   where
-    lower = S.map (c2w . toLower . w2c) . S.concat . L.toChunks
+    lower = S.map toLower . S.concat . L.toChunks
 
     f :: ServerHandler
     f _ req = do
@@ -764,4 +768,49 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
   where
     waitabit = threadDelay $ 2*((10::Int)^(6::Int))
     port = 8145
+
+
+testServerShutdownWithOpenConns :: Test
+testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
+    tid <- forkIO $
+           httpServe "*"
+                     port
+                     "localhost"
+                     Nothing
+                     Nothing
+                     (runSnap pongServer)
+
+    waitabit
+
+    result <- newEmptyMVar
+
+    forkIO $ do
+        e <- try $ withSock port $ \sock -> do
+                 N.sendAll sock "GET /"
+                 waitabit
+                 killThread tid
+                 waitabit
+                 N.sendAll sock "pong HTTP/1.1\r\n"
+                 N.sendAll sock "Host: 127.0.0.1\r\n"
+                 N.sendAll sock "Content-Length: 0\r\n"
+                 N.sendAll sock "Connection: close\r\n\r\n"
+
+                 resp <- recvAll sock
+                 when (S.null resp) $ throwIO Backend.BackendTerminatedException
+
+                 let s = S.unpack $ Prelude.head $ ditchHeaders $ S.lines resp
+                 debug $ "got HTTP response " ++ s ++ ", we shouldn't be here...."
+
+        putMVar result e
+
+    r <- takeMVar result
+
+    case r of
+      (Left (_::SomeException)) -> return ()
+      (Right _)                 -> assertFailure "socket didn't get killed"
+
+
+  where
+    waitabit = threadDelay $ 2*((10::Int)^(6::Int))
+    port = 8146
 

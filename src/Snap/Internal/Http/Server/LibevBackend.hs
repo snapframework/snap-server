@@ -79,7 +79,7 @@ data Backend = Backend
     , _asyncObj          :: !EvAsyncPtr
     , _killCb            :: !(FunPtr AsyncCallback)
     , _killObj           :: !EvAsyncPtr
-    , _connectionThreads :: !(HashMap ThreadId ())
+    , _connectionThreads :: !(HashMap ThreadId Connection)
     , _backendCPU        :: !Int
     , _backendFreed      :: !(MVar ())
     }
@@ -362,40 +362,29 @@ timerCallback loop tmr ioref tmv _ _ _ = do
           evTimerAgain loop tmr
 
 
-freeConnection :: Connection -> IO ()
-freeConnection conn = ignoreException $ do
-    withMVar loopLock $ \_ -> block $ do
-        debug $ "freeConnection (" ++ show fd ++ ")"
+-- if you already hold the loop lock, you are entitled to destroy a connection
+destroyConnection :: Connection -> IO ()
+destroyConnection conn = do
+    debug "Backend.destroyConnection: closing socket and killing connection"
+    c_close fd
 
-        c_close fd
+    -- stop and free timer object
+    evTimerStop loop timerObj
+    freeEvTimer timerObj
+    freeTimerCallback timerCb
 
-        -- stop and free timer object
-        evTimerStop loop timerObj
-        freeEvTimer timerObj
-        freeTimerCallback timerCb
+    -- stop and free i/o objects
+    evIoStop loop ioWrObj
+    freeEvIo ioWrObj
+    freeIoCallback ioWrCb
 
-        -- stop and free i/o objects
-        evIoStop loop ioWrObj
-        freeEvIo ioWrObj
-        freeIoCallback ioWrCb
-
-        evIoStop loop ioRdObj
-        freeEvIo ioRdObj
-        freeIoCallback ioRdCb
-
-        tid <- readMVar $ _connThread conn
-
-        -- removal the thread id from the backend set
-        H.delete tid $ _connectionThreads backend
-
-        -- wake up the event loop so it can be apprised of the changes
-        evAsyncSend loop asyncObj
+    evIoStop loop ioRdObj
+    freeEvIo ioRdObj
+    freeIoCallback ioRdCb
 
   where
     backend    = _backend conn
     loop       = _evLoop backend
-    loopLock   = _loopLock backend
-    asyncObj   = _asyncObj backend
 
     fd         = _socketFd conn
     ioWrObj    = _connWriteIOObj conn
@@ -406,19 +395,53 @@ freeConnection conn = ignoreException $ do
     timerCb    = _timerCallback conn
 
 
+freeConnection :: Connection -> IO ()
+freeConnection conn = ignoreException $ do
+    withMVar loopLock $ \_ -> block $ do
+        debug $ "freeConnection (" ++ show fd ++ ")"
+        destroyConnection conn
+        tid <- readMVar $ _connThread conn
+
+        -- remove the thread id from the backend set
+        H.delete tid $ _connectionThreads backend
+
+        -- wake up the event loop so it can be apprised of the changes
+        evAsyncSend loop asyncObj
+
+  where
+    backend    = _backend conn
+    loop       = _evLoop backend
+    loopLock   = _loopLock backend
+    asyncObj   = _asyncObj backend
+    fd         = _socketFd conn
+
+
 ignoreException :: IO () -> IO ()
 ignoreException = handle (\(_::SomeException) -> return ())
 
 
 freeBackend :: Backend -> IO ()
 freeBackend backend = ignoreException $ block $ do
-    -- note: we only get here after an unloop
+    -- note: we only get here after an unloop, so we have the loop lock
+    -- here. (?)
+
     -- kill everything in thread table
     tset <- H.toList $ _connectionThreads backend
+
+    let nthreads = Prelude.length tset
+
+    debug $ "Backend.freeBackend: killing active connection threads"
+
+    Prelude.mapM_ (destroyConnection . snd) tset
+
+    -- kill the threads twice, they're probably getting stuck in the
+    -- freeConnection 'finally' handler
+    Prelude.mapM_ (killThread . fst) tset
     Prelude.mapM_ (killThread . fst) tset
 
-    debug $ "Backend.freeBackend: all threads killed"
-    debug $ "Backend.freeBackend: destroying resources"
+    debug $ "Backend.freeBackend: " ++ show nthreads ++ " thread(s) killed"
+    debug $ "Backend.freeBackend: destroying libev resources"
+
     freeEvIo acceptObj
     freeIoCallback acceptCb
     c_close fd
@@ -453,7 +476,10 @@ freeBackend backend = ignoreException $ block $ do
 withConnection :: Backend -> Int -> (Connection -> IO ()) -> IO ()
 withConnection backend cpu proc = go
   where
-    threadProc conn = ignoreException (proc conn) `finally` freeConnection conn
+    threadProc conn = (do
+        x <- blocked
+        debug $ "withConnection/threadProc: we are blocked? " ++ show x
+        proc conn) `finally` freeConnection conn
 
     go = do
         debug $ "withConnection: reading from chan"
@@ -542,7 +568,7 @@ withConnection backend cpu proc = go
 
         tid <- forkOnIO cpu $ threadProc conn
 
-        H.update tid () (_connectionThreads backend)
+        H.update tid conn (_connectionThreads backend)
         putMVar thrmv tid
 
 

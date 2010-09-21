@@ -1,4 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 
 
@@ -7,16 +9,19 @@ module Snap.Test.Common where
 import           Control.Exception (SomeException)
 import           Control.Monad
 import           Control.Monad.CatchIO
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w)
+import qualified Data.DList as D
+import           Network.Socket
+import qualified Network.Socket.ByteString as N
 import           Prelude hiding (catch)
 import           Test.QuickCheck
 import           System.Timeout
 
 import           Snap.Internal.Iteratee.Debug ()
 
-import System.IO
 
 instance Arbitrary S.ByteString where
     arbitrary = liftM (S.pack . map c2w) arbitrary
@@ -45,3 +50,39 @@ expectExceptionBeforeTimeout act nsecs = do
                then return False
                else return True
                    
+
+withSock :: Int -> (Socket -> IO a) -> IO a
+withSock port go = do
+    addr <- liftM (addrAddress . Prelude.head) $
+            getAddrInfo (Just myHints)
+                        (Just "127.0.0.1")
+                        (Just $ show port)
+
+    sock <- socket AF_INET Stream defaultProtocol
+    connect sock addr
+
+    go sock `finally` sClose sock
+
+  where
+    myHints = defaultHints { addrFlags = [ AI_NUMERICHOST ] }
+
+
+recvAll :: Socket -> IO ByteString
+recvAll sock = do
+    d <- f D.empty sock
+    return $ S.concat $ D.toList d
+
+  where
+    f d sk = do
+        s <- N.recv sk 100000
+        if S.null s
+          then return d
+          else f (D.snoc d s) sk
+
+
+ditchHeaders :: [ByteString] -> [ByteString]
+ditchHeaders ("":xs)   = xs
+ditchHeaders ("\r":xs) = xs
+ditchHeaders (_:xs)    = ditchHeaders xs
+ditchHeaders []        = []
+
