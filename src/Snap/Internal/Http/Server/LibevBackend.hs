@@ -9,9 +9,9 @@
 
 module Snap.Internal.Http.Server.LibevBackend
   ( Backend
-  , BackendTerminatedException
+  , BackendTerminatedException(..)
   , Connection
-  , TimeoutException
+  , TimeoutException(..)
   , name
   , debug
   , bindIt

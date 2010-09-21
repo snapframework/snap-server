@@ -9,9 +9,9 @@
 
 module Snap.Internal.Http.Server.SimpleBackend
   ( Backend
-  , BackendTerminatedException
+  , BackendTerminatedException(..)
   , Connection
-  , TimeoutException
+  , TimeoutException(..)
   , name
   , debug
   , bindIt

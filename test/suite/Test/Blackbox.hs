@@ -41,6 +41,7 @@ tests port = map ($ port) [ testPong
                           , testRot13
                           , testSlowLoris
                           , testBlockingRead
+                          , testBigResponse
                           , testPartial ]
 
 
@@ -159,6 +160,18 @@ ditchHeaders (_:xs)    = ditchHeaders xs
 ditchHeaders []        = []
 
 
+recvAll :: Socket -> IO ByteString
+recvAll sock = do
+    d <- f D.empty sock
+    return $ S.concat $ D.toList d
+
+  where
+    f d sk = do
+        s <- N.recv sk 100000
+        if S.null s
+          then return d
+          else f (D.snoc d s) sk
+
 
 testBlockingRead :: Int -> Test
 testBlockingRead port = testCase "blackbox/testBlockingRead" $
@@ -177,19 +190,6 @@ testBlockingRead port = testCase "blackbox/testBlockingRead" $
     assertEqual "pong response" "PONG" s
 
 
-  where
-    recvAll sock = do
-        d <- f D.empty sock
-        return $ S.concat $ D.toList d
-
-      where
-        f d sk = do
-            s <- N.recv sk 8192
-            if S.null s
-              then return d
-              else f (D.snoc d s) sk
-
-
 -- test server's ability to trap/recover from IO errors
 testPartial :: Int -> Test
 testPartial port = testCase "blackbox/testPartial" $ do
@@ -199,7 +199,21 @@ testPartial port = testCase "blackbox/testPartial" $ do
     doc <- doPong port
     assertEqual "pong response" "PONG" doc
 
-    
+
+testBigResponse :: Int -> Test
+testBigResponse port = testCase "blackbox/testBigResponse" $
+                       withSock port $ \sock -> do
+    N.sendAll sock "GET /bigresponse HTTP/1.1\r\n"
+    N.sendAll sock "Host: 127.0.0.1\r\n"
+    N.sendAll sock "Content-Length: 0\r\n"
+    N.sendAll sock "Connection: close\r\n\r\n"
+
+    let body = S.replicate 4000000 '.'
+    resp <- recvAll sock
+
+    let s = head $ ditchHeaders $ S.lines resp
+
+    assertBool "big response" $ body == s
 
 
 ------------------------------------------------------------------------------

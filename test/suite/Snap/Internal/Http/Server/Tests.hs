@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PackageImports #-}
@@ -38,6 +39,12 @@ import             Snap.Internal.Http.Server
 import             Snap.Iteratee
 import             Snap.Types
 
+#ifdef LIBEV
+import qualified Snap.Internal.Http.Server.LibevBackend as Backend
+#else
+import qualified Snap.Internal.Http.Server.SimpleBackend as Backend
+#endif
+
 
 tests :: [Test]
 tests = [ testHttpRequest1
@@ -62,8 +69,12 @@ tests = [ testHttpRequest1
 
 
 testTrivials :: Test
-testTrivials = testCase "server/trivials" $
-               let !x = Svr.snapServerVersion in return $! x `seq` ()
+testTrivials = testCase "server/trivials" $ do
+    let !v = Svr.snapServerVersion
+    let !s1 = show Backend.BackendTerminatedException
+    let !s2 = show Backend.TimeoutException
+
+    return $! v `seq` s1 `seq` s2 `seq` ()
 
 ------------------------------------------------------------------------------
 -- HTTP request tests

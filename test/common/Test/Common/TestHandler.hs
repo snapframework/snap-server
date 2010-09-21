@@ -7,6 +7,7 @@ module Test.Common.TestHandler (testHandler) where
 import           Control.Monad
 
 import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.Iteratee.WrappedByteString
 import           Data.Maybe
 
@@ -44,6 +45,14 @@ rot13Handler = transformRequestBody $ return . f
                         return $ Cont (f i') Nothing
 
 
+bigResponseHandler :: Snap ()
+bigResponseHandler = do
+    let sz = 4000000
+    let s = L.take sz $ L.cycle $ L.replicate 4096 '.'
+    modifyResponse $ setContentLength sz
+    writeLBS s
+
+
 responseHandler :: Snap ()
 responseHandler = do
     !code <- liftM (read . B.unpack . fromMaybe "503") $ getParam "code"
@@ -58,6 +67,7 @@ testHandler =
           , ("rot13"          , rot13Handler                 )
           , ("echoUri"        , echoUriHandler               )
           , ("fileserve"      , fileServe "testserver/static")
+          , ("bigresponse"    , bigResponseHandler           )
           , ("respcode/:code" , responseHandler              )
           ]
 
