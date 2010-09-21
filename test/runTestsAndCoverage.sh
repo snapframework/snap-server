@@ -2,6 +2,7 @@
 
 set -e
 
+export DEBUG=testsuite
 SUITE=./dist/build/testsuite/testsuite
 
 rm -f *.tix
