@@ -33,6 +33,7 @@ import "monads-fd" Control.Monad.Trans
 
 import           Control.Concurrent
 import           Control.Exception
+import           Control.Monad
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
@@ -72,10 +73,15 @@ instance Exception BackendTerminatedException
 
 type TimeoutTable = PSQ ThreadId CTime
 
+type QueueElem = Maybe (Socket,SockAddr)
+
 data Backend = Backend
-    { _acceptSocket  :: !Socket
-    , _timeoutEdits  :: !(IORef (DList (TimeoutTable -> TimeoutTable)))
-    , _timeoutThread :: !(MVar ThreadId) }
+    { _acceptSocket    :: !Socket
+    , _acceptThread    :: !ThreadId
+    , _timeoutEdits    :: !(IORef (DList (TimeoutTable -> TimeoutTable)))
+    , _timeoutThread   :: !(MVar ThreadId)
+    , _connectionQueue :: !(Chan QueueElem)
+    }
 
 data Connection = Connection 
     { _backend     :: Backend
@@ -127,16 +133,37 @@ bindIt bindAddress bindPort = do
     return sock
 
 
+acceptThread :: Socket -> Chan QueueElem -> IO ()
+acceptThread sock connq = loop `finally` cleanup
+  where
+    loop = do
+        debug $ "acceptThread: calling accept()"
+        s@(_,addr) <- accept sock
+        debug $ "acceptThread: accepted connection from remote: " ++ show addr
+        debug $ "acceptThread: queueing"
+        writeChan connq $ Just s
+        loop
+
+    cleanup = block $ do
+        debug $ "acceptThread: cleanup, closing socket and notifying "
+                  ++ "chan listeners"
+        sClose sock
+        replicateM 10 $ writeChan connq Nothing
+
+
 new :: Socket   -- ^ value you got from bindIt
     -> Int
     -> IO Backend
-new sock _ = do
+new sock cpu = do
     debug $ "Backend.new: listening"
 
-    ed  <- newIORef D.empty
-    t   <- newEmptyMVar
+    ed        <- newIORef D.empty
+    t         <- newEmptyMVar
 
-    let b = Backend sock ed t
+    connq     <- newChan
+    accThread <- forkOnIO cpu $ acceptThread sock connq
+
+    let b = Backend sock accThread ed t connq
 
     tid <- forkIO $ timeoutThread b
     putMVar t tid
@@ -155,14 +182,16 @@ timeoutThread backend = do
     loop `catch` (\(_::SomeException) -> killAll tref)
 
   where
+    applyEdits table = do
+        edits <- atomicModifyIORef tedits $ \t -> (D.empty, D.toList t)
+        return $ foldl' (flip ($)) table edits
+
     killTooOld tref = do
         !table <- readIORef tref
         -- atomic swap edit list
-        now   <- getCurrentDateTime
-        edits <- atomicModifyIORef tedits $ \t -> (D.empty, D.toList t)
-
-        let table' = foldl' (flip ($)) table edits
-        !t'   <- killOlderThan now table'
+        now    <- getCurrentDateTime
+        table' <- applyEdits table
+        !t'    <- killOlderThan now table'
         writeIORef tref t'
 
 
@@ -171,13 +200,14 @@ timeoutThread backend = do
 
     killAll !tref = do
         debug "Backend.timeoutThread: shutdown, killing all connections"
-        !table <- readIORef tref
-        go table
+        !table  <- readIORef tref
+        !table' <- applyEdits table
+        go table'
       where
-        go t = maybe (return ())
-                     (\m -> (killThread $ PSQ.key m) >>
-                            (go $ PSQ.deleteMin t))
-                     (PSQ.findMin t)
+        go !t = maybe (return ())
+                      (\m -> (killThread $ PSQ.key m) >>
+                             (go $ PSQ.deleteMin t))
+                      (PSQ.findMin t)
 
     killOlderThan now !table = do
         debug "Backend.timeoutThread: killing old connections"
@@ -199,14 +229,20 @@ timeoutThread backend = do
 
 
 stop :: Backend -> IO ()
-stop (Backend s _ t) = do
-    debug $ "Backend.stop"
-    sClose s
+stop backend = do
+    debug $ "Backend.stop: killing accept thread"
+    killThread acthr
 
-    -- kill timeout thread and current thread; timeout thread handler will stop
-    -- all of the running connection threads
-    readMVar t >>= killThread
-    myThreadId >>= killThread
+    debug $ "Backend.stop: killing timeout thread"
+
+    -- kill timeout thread; timeout thread handler will stop all of the running
+    -- connection threads
+    readMVar tthr >>= killThread
+    debug $ "Backend.stop: exiting.."
+
+  where
+    acthr = _acceptThread  backend
+    tthr  = _timeoutThread backend
 
 
 data AddressNotSupportedException = AddressNotSupportedException String
@@ -220,14 +256,19 @@ instance Exception AddressNotSupportedException
 
 withConnection :: Backend -> Int -> (Connection -> IO ()) -> IO ()
 withConnection backend cpu proc = do
-    debug $ "Backend.withConnection: calling accept()"
-    let asock = _acceptSocket backend
-    (sock,addr) <- accept asock
+    debug $ "Backend.withConnection: reading from chan"
 
+    qelem <- readChan $ _connectionQueue backend
+    when (qelem == Nothing) $ do
+        debug $ "Backend.withConnection: channel terminated, throwing "
+                  ++ "BackendTerminatedException"
+        throwIO BackendTerminatedException
+
+    let (Just (sock,addr)) = qelem
     let fd = fdSocket sock
 
-    debug $ "Backend.withConnection: accepted connection"
-    debug $ "Backend.withConnection: remote: " ++ show addr
+    debug $ "Backend.withConnection: dequeued connection from remote: "
+              ++ show addr
 
     (port,host) <-
         case addr of
@@ -253,7 +294,7 @@ withConnection backend cpu proc = do
         labelMe $ "connHndl " ++ show fd
         bracket (return c)
                 (\_ -> block $ do
-                     debug "sClose sock"
+                     debug "thread killed, closing socket"
                      thr <- readMVar tmvar
 
                      -- remove thread from timeout table

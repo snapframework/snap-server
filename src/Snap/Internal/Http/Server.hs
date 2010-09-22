@@ -206,7 +206,7 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
         , Handler $ \(e :: AsyncException) -> do
               logE elog $
                    S.concat [ "Server.httpServe.go: got async exception, "
-                            , "terminating:\n", bshow e ]
+                            , "terminating: ", bshow e ]
               throwIO e
 
         , Handler $ \(e :: Backend.BackendTerminatedException) -> do
