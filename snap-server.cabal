@@ -57,10 +57,11 @@ extra-source-files:
   README.SNAP.md,
   test/benchmark/Benchmark.hs,
   test/benchmark/Snap/Internal/Http/Parser/Benchmark.hs,
+  test/benchmark/Snap/Internal/Http/Parser/Data.hs,
   test/common/Paths_snap_server.hs,
-  test/common/Test/Common/TestHandler.hs
-  test/common/Test/Common/Rot13.hs
-  test/common/Snap/Test/Common.hs
+  test/common/Snap/Test/Common.hs,
+  test/common/Test/Common/TestHandler.hs,
+  test/common/Test/Common/Rot13.hs,
   test/data/fileServe/foo.bin,
   test/data/fileServe/foo.bin.bin.bin,
   test/data/fileServe/foo.html,
@@ -71,6 +72,7 @@ extra-source-files:
   test/suite/Data/Concurrent/HashMap/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
+  test/suite/Test/Blackbox.hs,
   test/suite/TestSuite.hs,
   test/testserver/Main.hs,
   test/testserver/static/hello.txt
