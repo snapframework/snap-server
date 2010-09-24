@@ -7,7 +7,7 @@ module Snap.Internal.Http.Server.Tests
   ( tests ) where
 
 import             Control.Concurrent
-import             Control.Exception (try, throwIO, SomeException)
+import             Control.Exception (try, throwIO, bracket, SomeException)
 import             Control.Monad
 import "monads-fd" Control.Monad.Trans
 import qualified   Data.ByteString.Char8 as S
@@ -29,6 +29,7 @@ import qualified   Network.HTTP as HTTP
 import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (take)
 import qualified   Prelude
+import             System.Timeout
 import             Test.Framework
 import             Test.Framework.Providers.HUnit
 import             Test.HUnit hiding (Test, path)
@@ -726,47 +727,68 @@ sendFileFoo = sendFile "data/fileServe/foo.html"
 
 testSendFile :: Test
 testSendFile = testCase "server/sendFile" $ do
-    tid <- forkIO $ httpServe "*" port "localhost"
-           Nothing Nothing $
-           runSnap sendFileFoo
-    waitabit
-
-    rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
-    doc <- HTTP.getResponseBody rsp
-
-    killThread tid
-    waitabit
-
-    assertEqual "sendFile" "FOO\n" doc
+    bracket (forkIO $ httpServe "*" port "localhost"
+                                Nothing Nothing
+                    $ runSnap sendFileFoo)
+            (killThread)
+            (\tid -> do
+                 m <- timeout (120 * seconds) $ go tid 
+                 maybe (assertFailure "timeout")
+                       (const $ return ())
+                       m)
 
   where
+    go tid = do
+        waitabit
+        
+        rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
+        doc <- HTTP.getResponseBody rsp
+        
+        killThread tid
+        waitabit
+        
+        assertEqual "sendFile" "FOO\n" doc
+
+
     waitabit = threadDelay $ ((10::Int)^(6::Int))
+
     port     = 8123
     
 
 testServerStartupShutdown :: Test
 testServerStartupShutdown = testCase "server/startup/shutdown" $ do
-    tid <- forkIO $
-           httpServe "*"
-                     port
-                     "localhost"
-                     (Just "test-access.log")
-                     (Just "test-error.log")
-                     (runSnap pongServer)
-    waitabit
+    bracket (forkIO $
+             httpServe "*"
+                       port
+                       "localhost"
+                       (Just "test-access.log")
+                       (Just "test-error.log")
+                       (runSnap pongServer))
+            (killThread)
+            (\tid -> do
+                 m <- timeout (120 * seconds) $ go tid 
+                 maybe (assertFailure "timeout")
+                       (const $ return ())
+                       m)
 
-    rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")
-    doc <- HTTP.getResponseBody rsp
-    assertEqual "server" "PONG" doc
 
-    killThread tid
-    waitabit
-
-    expectException $ HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")
-
-    return ()
   where
+    go tid = do
+        waitabit
+
+        rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")
+        doc <- HTTP.getResponseBody rsp
+        assertEqual "server" "PONG" doc
+
+        killThread tid
+        waitabit
+
+        expectException $ HTTP.simpleHTTP
+                        $ HTTP.getRequest "http://localhost:8145/"
+        return ()
+
     waitabit = threadDelay $ 2*((10::Int)^(6::Int))
+
     port = 8145
 
 
@@ -803,14 +825,21 @@ testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
 
         putMVar result e
 
-    r <- takeMVar result
+    e <- timeout (75*seconds) $ takeMVar result
 
-    case r of
-      (Left (_::SomeException)) -> return ()
-      (Right _)                 -> assertFailure "socket didn't get killed"
+    case e of
+      Nothing  -> killThread tid >> assertFailure "timeout"
+      (Just r) ->
+          case r of
+            (Left (_::SomeException)) -> return ()
+            (Right _)                 -> assertFailure "socket didn't get killed"
 
 
   where
     waitabit = threadDelay $ 2*((10::Int)^(6::Int))
     port = 8146
 
+
+
+seconds :: Int
+seconds = (10::Int) ^ (6::Int)

@@ -20,6 +20,7 @@ import qualified   Network.URI as URI
 import             Network.Socket
 import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (take)
+import             System.Timeout
 import             Test.Framework
 import             Test.Framework.Providers.HUnit
 import             Test.Framework.Providers.QuickCheck2
@@ -122,6 +123,12 @@ testSlowLoris port = testCase "blackbox/slowloris" $ withSock port go
 
   where
     go sock = do
+        m <- timeout (120*seconds) $ go' sock
+        maybe (assertFailure "slowloris: timeout")
+              (const $ return ())
+              m
+
+    go' sock = do
         N.sendAll sock "POST /echo HTTP/1.1\r\n"
         N.sendAll sock "Host: 127.0.0.1\r\n"
         N.sendAll sock "Content-Length: 2500000\r\n"
@@ -140,46 +147,72 @@ testSlowLoris port = testCase "blackbox/slowloris" $ withSock port go
 testBlockingRead :: Int -> Test
 testBlockingRead port = testCase "blackbox/testBlockingRead" $
                         withSock port $ \sock -> do
-    N.sendAll sock "GET /"
-    waitabit
-    N.sendAll sock "pong HTTP/1.1\r\n"
-    N.sendAll sock "Host: 127.0.0.1\r\n"
-    N.sendAll sock "Content-Length: 0\r\n"
-    N.sendAll sock "Connection: close\r\n\r\n"
+    m <- timeout (60*seconds) $ go sock
+    maybe (assertFailure "timeout")
+          (const $ return ())
+          m
 
-    resp <- recvAll sock
+  where
+    go sock = do
+        N.sendAll sock "GET /"
+        waitabit
+        N.sendAll sock "pong HTTP/1.1\r\n"
+        N.sendAll sock "Host: 127.0.0.1\r\n"
+        N.sendAll sock "Content-Length: 0\r\n"
+        N.sendAll sock "Connection: close\r\n\r\n"
 
-    let s = head $ ditchHeaders $ S.lines resp
+        resp <- recvAll sock
 
-    assertEqual "pong response" "PONG" s
+        let s = head $ ditchHeaders $ S.lines resp
+
+        assertEqual "pong response" "PONG" s
 
 
 -- test server's ability to trap/recover from IO errors
 testPartial :: Int -> Test
 testPartial port = testCase "blackbox/testPartial" $ do
-    withSock port $ \sock ->
-        N.sendAll sock "GET /pong HTTP/1.1\r\n"
+    m <- timeout (60*seconds) go
+    maybe (assertFailure "timeout")
+          (const $ return ())
+          m
 
-    doc <- doPong port
-    assertEqual "pong response" "PONG" doc
+
+  where
+    go = do
+        withSock port $ \sock ->
+            N.sendAll sock "GET /pong HTTP/1.1\r\n"
+
+        doc <- doPong port
+        assertEqual "pong response" "PONG" doc
 
 
 testBigResponse :: Int -> Test
 testBigResponse port = testCase "blackbox/testBigResponse" $
                        withSock port $ \sock -> do
-    N.sendAll sock "GET /bigresponse HTTP/1.1\r\n"
-    N.sendAll sock "Host: 127.0.0.1\r\n"
-    N.sendAll sock "Content-Length: 0\r\n"
-    N.sendAll sock "Connection: close\r\n\r\n"
+    m <- timeout (120*seconds) $ go sock
+    maybe (assertFailure "timeout")
+          (const $ return ())
+          m
+    
+  where
+    go sock = do
+        N.sendAll sock "GET /bigresponse HTTP/1.1\r\n"
+        N.sendAll sock "Host: 127.0.0.1\r\n"
+        N.sendAll sock "Content-Length: 0\r\n"
+        N.sendAll sock "Connection: close\r\n\r\n"
 
-    let body = S.replicate 4000000 '.'
-    resp <- recvAll sock
+        let body = S.replicate 4000000 '.'
+        resp <- recvAll sock
 
-    let s = head $ ditchHeaders $ S.lines resp
+        let s = head $ ditchHeaders $ S.lines resp
 
-    assertBool "big response" $ body == s
+        assertBool "big response" $ body == s
 
 
 ------------------------------------------------------------------------------
 waitabit :: IO ()
-waitabit = threadDelay $ 2*((10::Int)^(6::Int))
+waitabit = threadDelay $ 2*seconds
+
+
+seconds :: Int
+seconds = (10::Int) ^ (6::Int)
