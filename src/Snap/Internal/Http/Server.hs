@@ -384,7 +384,7 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
           date <- liftIO getDateString
           let ins = Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER
           let rsp' = updateHeaders ins rsp
-          (bytesSent,_) <- sendResponse rsp' writeEnd onSendFile
+          (bytesSent,_) <- sendResponse req rsp' writeEnd onSendFile
 
           liftIO . debug $ "Server.httpSession: sent " ++
                            (Prelude.show bytesSent) ++ " bytes"
@@ -604,11 +604,12 @@ receiveRequest = do
 
 ------------------------------------------------------------------------------
 -- Response must be well-formed here
-sendResponse :: forall a . Response
+sendResponse :: forall a . Request
+             -> Response
              -> Iteratee IO a
              -> (FilePath -> Int64 -> IO a)
              -> ServerMonad (Int64, a)
-sendResponse rsp' writeEnd onSendFile = do
+sendResponse req rsp' writeEnd onSendFile = do
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
 
@@ -720,23 +721,29 @@ sendResponse rsp' writeEnd onSendFile = do
 
     --------------------------------------------------------------------------
     fixupResponse :: Response -> ServerMonad Response
-    fixupResponse r =
-        {-# SCC "fixupResponse" #-}
-        do
-            let r' = updateHeaders (Map.delete "Content-Length") r
+    fixupResponse r = {-# SCC "fixupResponse" #-} do
+        let r' = deleteHeader "Content-Length" r
 
-            let code = rspStatus r'
+        let code = rspStatus r'
 
-            let r'' = if code == 204 || code == 304
-                       then handle304 r'
-                       else r'
+        let r'' = if code == 204 || code == 304
+                   then handle304 r'
+                   else r'
 
-            r''' <- case (rspBody r'') of
-                     (Enum _)     -> return r''
-                     (SendFile f) -> setFileSize f r''
-            case (rspContentLength r''') of
-              Nothing   -> noCL r'''
-              (Just sz) -> hasCL sz r'''
+        r''' <- do
+            z <- case (rspBody r'') of
+                   (Enum _)     -> return r''
+                   (SendFile f) -> setFileSize f r''
+
+            case (rspContentLength z) of
+              Nothing   -> noCL z
+              (Just sz) -> hasCL sz z
+
+        -- HEAD requests cannot have bodies
+        if rqMethod req == HEAD
+          then return $ deleteHeader "Transfer-Encoding"
+                      $ r''' { rspBody = Enum $ enumBS "" }
+          else return r'''
 
 
     --------------------------------------------------------------------------

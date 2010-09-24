@@ -38,6 +38,7 @@ import             Test.Common.TestHandler
 
 tests :: Int -> [Test]
 tests port = map ($ port) [ testPong
+                          , testHeadPong
                           , testEcho
                           , testRot13
                           , testSlowLoris
@@ -72,10 +73,27 @@ doPong port = do
     HTTP.getResponseBody rsp
 
 
+headPong :: Int -> IO String
+headPong port = do
+    let req = (HTTP.getRequest $ 
+               "http://localhost:" ++ show port ++ "/pong")
+                { HTTP.rqMethod = HTTP.HEAD }
+
+    rsp <- HTTP.simpleHTTP req
+
+    HTTP.getResponseBody rsp
+
+
 testPong :: Int -> Test
 testPong port = testCase "blackbox/pong" $ do
     doc <- doPong port
     assertEqual "pong response" "PONG" doc
+
+
+testHeadPong :: Int -> Test
+testHeadPong port = testCase "blackbox/pong/HEAD" $ do
+    doc <- headPong port
+    assertEqual "pong HEAD response" "" doc
 
 
 testEcho :: Int -> Test

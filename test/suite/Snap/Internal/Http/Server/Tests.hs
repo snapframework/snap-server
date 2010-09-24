@@ -14,7 +14,7 @@ import qualified   Data.ByteString.Char8 as S
 import qualified   Data.ByteString.Lazy as L
 import qualified   Data.ByteString.Lazy.Char8 as LC
 import             Data.ByteString (ByteString)
-import             Data.ByteString.Internal (c2w, w2c)
+import             Data.ByteString.Internal (c2w)
 import             Data.Char
 import             Data.Int
 import             Data.IORef
@@ -149,6 +149,12 @@ copyingStream2stream = IterateeG (step mempty)
   step acc str        = return $ Done acc str
 
 
+mkRequest :: ByteString -> IO Request
+mkRequest s = do
+    iter <- enumBS s $ liftM fromJust $ rsm receiveRequest
+    run iter
+
+
 testHttpRequest1 :: Test
 testHttpRequest1 =
     testCase "server/HttpRequest1" $ do
@@ -240,7 +246,7 @@ expectException :: IO a -> IO ()
 expectException m = do
     e <- try m
     case e of
-      Left (z::SomeException)  -> return ()
+      Left (_::SomeException)  -> return ()
       Right _ -> assertFailure "expected exception, didn't get it"
 
 
@@ -384,8 +390,10 @@ testHttpResponse1 :: Test
 testHttpResponse1 = testCase "server/HttpResponse1" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
+    req <- mkRequest sampleRequest
+
     b <- run $ rsm $
-         sendResponse rsp1 copyingStream2stream onSendFile >>=
+         sendResponse req rsp1 copyingStream2stream onSendFile >>=
                       return . fromWrap . snd
 
     assertEqual "http response" (L.concat [
@@ -408,8 +416,10 @@ testHttpResponse2 :: Test
 testHttpResponse2 = testCase "server/HttpResponse2" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
+    req <- mkRequest sampleRequest
+
     b2 <- run $ rsm $
-          sendResponse rsp2 copyingStream2stream onSendFile >>=
+          sendResponse req rsp2 copyingStream2stream onSendFile >>=
                        return . fromWrap . snd
 
     assertEqual "http response" (L.concat [
@@ -432,8 +442,10 @@ testHttpResponse3 :: Test
 testHttpResponse3 = testCase "server/HttpResponse3" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
+    req <- mkRequest sampleRequest
+
     b3 <- run $ rsm $
-          sendResponse rsp3 copyingStream2stream onSendFile >>=
+          sendResponse req rsp3 copyingStream2stream onSendFile >>=
                        return . fromWrap . snd
 
     assertEqual "http response" b3 $ L.concat [
@@ -462,8 +474,10 @@ testHttpResponse4 :: Test
 testHttpResponse4 = testCase "server/HttpResponse4" $ do
     let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
 
+    req <- mkRequest sampleRequest
+
     b <- run $ rsm $
-         sendResponse rsp1 copyingStream2stream onSendFile >>=
+         sendResponse req rsp1 copyingStream2stream onSendFile >>=
                       return . fromWrap . snd
 
     assertEqual "http response" (L.concat [
