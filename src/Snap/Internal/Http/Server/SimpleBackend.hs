@@ -97,12 +97,12 @@ name :: ByteString
 name = "simple"
 
 
-sendFile :: Connection -> FilePath -> Int64 -> IO ()
+sendFile :: Connection -> FilePath -> Int64 -> Int64 -> IO ()
 #if defined(HAS_SENDFILE)
-sendFile c fp sz = do
+sendFile c fp start sz = do
     bracket (openFd fp ReadOnly Nothing defaultFileFlags)
             (closeFd)
-            (go 0 sz)
+            (go start sz)
   where
     go off bytes fd
       | bytes == 0 = return ()
@@ -114,9 +114,9 @@ sendFile c fp sz = do
 
     sfd = Fd . fdSocket $ _socket c
 #else
-sendFile c fp _ = do
+sendFile c fp start sz = do
     -- no need to count bytes
-    enumFile fp (getWriteEnd c) >>= run
+    enumFilePartial fp (start,start+sz) (getWriteEnd c) >>= run
     return ()
 #endif
 

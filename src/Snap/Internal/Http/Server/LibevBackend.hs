@@ -112,12 +112,8 @@ name :: ByteString
 name = "libev"
 
 
-sendFile :: Connection -> FilePath -> Int64 -> IO ()
-#if defined(HAS_SENDFILE)
-sendFile c fp sz = do
-#else
-sendFile c fp _ = do
-#endif
+sendFile :: Connection -> FilePath -> Int64 -> Int64 -> IO ()
+sendFile c fp start sz = do
     withMVar lock $ \_ -> do
       act <- readIORef $ _writeActive c
       when act $ evIoStop loop io
@@ -127,10 +123,9 @@ sendFile c fp _ = do
 #if defined(HAS_SENDFILE)
     bracket (openFd fp ReadOnly Nothing defaultFileFlags)
             (closeFd)
-            (go 0 sz)
+            (go start sz)
 #else
-    -- no need to count bytes
-    enumFile fp (getWriteEnd c) >>= run
+    enumFilePartial fp (start,start+sz) (getWriteEnd c) >>= run
     return ()
 #endif
 

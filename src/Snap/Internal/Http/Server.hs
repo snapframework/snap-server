@@ -280,7 +280,8 @@ runHTTP :: ByteString                    -- ^ local host name
         -> Maybe Logger                  -- ^ error logger
         -> Enumerator IO ()              -- ^ read end of socket
         -> Iteratee IO ()                -- ^ write end of socket
-        -> (FilePath -> Int64 -> IO ())  -- ^ sendfile end
+        -> (FilePath -> Int64 -> Int64 -> IO ())
+                                         -- ^ sendfile end
         -> IO ()                         -- ^ timeout tickler
         -> ServerHandler                 -- ^ handler procedure
         -> IO ()
@@ -330,7 +331,8 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 -- | Runs an HTTP session.
 httpSession :: Iteratee IO ()                -- ^ write end of socket
             -> ForeignPtr CChar              -- ^ iteratee buffer
-            -> (FilePath -> Int64 -> IO ())  -- ^ sendfile continuation
+            -> (FilePath -> Int64 -> Int64 -> IO ())
+                                             -- ^ sendfile continuation
             -> IO ()                         -- ^ timeout tickler
             -> ServerHandler                 -- ^ handler procedure
             -> ServerMonad ()
@@ -607,15 +609,18 @@ receiveRequest = do
 sendResponse :: forall a . Request
              -> Response
              -> Iteratee IO a
-             -> (FilePath -> Int64 -> IO a)
+             -> (FilePath -> Int64 -> Int64 -> IO a)
              -> ServerMonad (Int64, a)
 sendResponse req rsp' writeEnd onSendFile = do
     rsp <- fixupResponse rsp'
     let !headerString = mkHeaderString rsp
 
     (!x,!bs) <- case (rspBody rsp) of
-                  (Enum e)     -> lift $ whenEnum headerString rsp e
-                  (SendFile f) -> lift $ whenSendFile headerString rsp f
+                  (Enum e)             -> lift $ whenEnum headerString rsp e
+                  (SendFile f Nothing) -> lift $
+                                          whenSendFile headerString rsp f 0
+                  (SendFile f (Just (st,_))) ->
+                      lift $ whenSendFile headerString rsp f st
 
     return $! (bs,x)
 
@@ -637,12 +642,12 @@ sendResponse req rsp' writeEnd onSendFile = do
 
 
     --------------------------------------------------------------------------
-    whenSendFile hs r f = do
+    whenSendFile hs r f start = do
         -- guaranteed to have a content length here.
         joinIM $ (enumBS hs >. enumEof) writeEnd
 
         let !cl = fromJust $ rspContentLength r
-        x <- liftIO $ onSendFile f cl
+        x <- liftIO $ onSendFile f start cl
         return (x, cl)
 
 
@@ -693,8 +698,8 @@ sendResponse req rsp' writeEnd onSendFile = do
             -- set the content-length header
             let r' = setHeader "Content-Length" (l2s $ show cl) r
             let b = case (rspBody r') of
-                      (Enum e)     -> Enum (i e)
-                      (SendFile f) -> SendFile f
+                      (Enum e)       -> Enum (i e)
+                      (SendFile f m) -> SendFile f m
 
             return $ r' { rspBody = b }
 
@@ -732,14 +737,16 @@ sendResponse req rsp' writeEnd onSendFile = do
 
         r''' <- do
             z <- case (rspBody r'') of
-                   (Enum _)     -> return r''
-                   (SendFile f) -> setFileSize f r''
+                   (Enum _)                  -> return r''
+                   (SendFile f Nothing)      -> setFileSize f r''
+                   (SendFile _ (Just (s,e))) -> return $
+                                                setContentLength (e-s) r''
 
             case (rspContentLength z) of
               Nothing   -> noCL z
               (Just sz) -> hasCL sz z
 
-        -- HEAD requests cannot have bodies
+        -- HEAD requests cannot have bodies per RFC 2616 sec. 9.4
         if rqMethod req == HEAD
           then return $ deleteHeader "Transfer-Encoding"
                       $ r''' { rspBody = Enum $ enumBS "" }

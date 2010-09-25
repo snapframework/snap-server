@@ -388,7 +388,9 @@ rsm = runServerMonad "localhost" "127.0.0.1" 80 "127.0.0.1" 58382 alog elog
 
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "server/HttpResponse1" $ do
-    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
+    let onSendFile = \f start sz ->
+                     enumFilePartial f (start,start+sz) copyingStream2stream
+                                         >>= run
 
     req <- mkRequest sampleRequest
 
@@ -414,7 +416,8 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
 
 testHttpResponse2 :: Test
 testHttpResponse2 = testCase "server/HttpResponse2" $ do
-    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
+    let onSendFile = \f st sz ->
+                     enumFilePartial f (st,st+sz) copyingStream2stream >>= run
 
     req <- mkRequest sampleRequest
 
@@ -440,7 +443,8 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
 
 testHttpResponse3 :: Test
 testHttpResponse3 = testCase "server/HttpResponse3" $ do
-    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
+    let onSendFile = \f st sz ->
+                     enumFilePartial f (st,st+sz) copyingStream2stream >>= run
 
     req <- mkRequest sampleRequest
 
@@ -472,7 +476,8 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
 
 testHttpResponse4 :: Test
 testHttpResponse4 = testCase "server/HttpResponse4" $ do
-    let onSendFile = \f _ -> enumFile f copyingStream2stream >>= run
+    let onSendFile = \f st sz ->
+                     enumFilePartial f (st,st+sz) copyingStream2stream >>= run
 
     req <- mkRequest sampleRequest
 
@@ -555,14 +560,15 @@ testHttp1 = testCase "server/http session" $ do
     assertBool "pipelined responses" ok
 
 
-mkIter :: IORef L.ByteString -> (Iteratee IO (), FilePath -> Int64 -> IO ())
-mkIter ref = (iter, \f _ -> onF f iter)
+mkIter :: IORef L.ByteString
+       -> (Iteratee IO (), FilePath -> Int64 -> Int64 -> IO ())
+mkIter ref = (iter, \f st sz -> onF f st sz iter)
   where
     iter = do
         x <- copyingStream2stream
         liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
 
-    onF f i = enumFile f i >>= run
+    onF f st sz i = enumFilePartial f (st,st+sz) i >>= run
 
 
 testChunkOn1_0 :: Test
