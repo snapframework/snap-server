@@ -2,7 +2,7 @@
 
 set -e
 
-if [ "x$DEBUG" == "x" ]; then
+if [ -n "$DEBUG" ]; then
     export DEBUG=testsuite
 fi
 
