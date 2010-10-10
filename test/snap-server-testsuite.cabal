@@ -40,13 +40,14 @@ Executable testsuite
      old-locale,
      parallel > 2,
      iteratee >= 0.3.1 && < 0.4,
-     snap-core >= 0.2.12 && <0.3,
+     snap-core >= 0.3 && <0.4,
      template-haskell,
      test-framework >= 0.3.1 && <0.4,
      test-framework-hunit >= 0.2.5 && < 0.3,
      test-framework-quickcheck2 >= 0.2.6 && < 0.3,
      time,
      transformers,
+     utf8-string >= 0.3.6 && <0.4,
      vector >= 0.6.0.1 && < 0.7
 
    if !os(windows)
@@ -98,11 +99,12 @@ Executable pongserver
      murmur-hash >= 0.1 && < 0.2,
      network == 2.2.1.7,
      network-bytestring >= 0.1.2 && < 0.2,
-     snap-core >= 0.2.12 && <0.3,
+     snap-core >= 0.3 && <0.4,
      template-haskell,
      time,
      transformers,
      unix-compat,
+     utf8-string >= 0.3.6 && <0.4,
      vector >= 0.6.0.1 && < 0.7
 
    if flag(portable) || os(windows)
@@ -175,13 +177,14 @@ Executable testserver
      old-locale,
      parallel > 2,
      iteratee >= 0.3.1 && < 0.4,
-     snap-core >= 0.2.12 && <0.3,
+     snap-core >= 0.3 && <0.4,
      template-haskell,
      test-framework >= 0.3.1 && <0.4,
      test-framework-hunit >= 0.2.5 && < 0.3,
      test-framework-quickcheck2 >= 0.2.6 && < 0.3,
      time,
      transformers,
+     utf8-string >= 0.3.6 && <0.4,
      vector >= 0.6.0.1 && < 0.7
 
    if !os(windows)

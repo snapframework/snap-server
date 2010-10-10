@@ -95,21 +95,21 @@ quickHttpServe m = commandLineConfig emptyConfig >>= \c -> httpServe c m
 setUnicodeLocale :: String -> IO ()
 setUnicodeLocale lang =
 #ifndef PORTABLE
-    mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
-          [ "LANG"
-          , "LC_CTYPE"
-          , "LC_NUMERIC"
-          , "LC_TIME"
-          , "LC_COLLATE"
-          , "LC_MONETARY"
-          , "LC_MESSAGES"
-          , "LC_PAPER"
-          , "LC_NAME"
-          , "LC_ADDRESS"
-          , "LC_TELEPHONE"
-          , "LC_MEASUREMENT"
-          , "LC_IDENTIFICATION"
-          , "LC_ALL" ]
+    mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
+          [ "LANG"
+          , "LC_CTYPE"
+          , "LC_NUMERIC"
+          , "LC_TIME"
+          , "LC_COLLATE"
+          , "LC_MONETARY"
+          , "LC_MESSAGES"
+          , "LC_PAPER"
+          , "LC_NAME"
+          , "LC_ADDRESS"
+          , "LC_TELEPHONE"
+          , "LC_MEASUREMENT"
+          , "LC_IDENTIFICATION"
+          , "LC_ALL" ]
 #else
     return ()
 #endif

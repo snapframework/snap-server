@@ -49,13 +49,15 @@ tests port = map ($ port) [ testPong
 
 startTestServer :: IO (ThreadId,Int)
 startTestServer = do
+    let cfg = setAccessLog (Just "ts-access.log") .
+              setErrorLog  (Just "ts-error.log")  .
+              setPort      port                   .
+              setVerbose   False                  .
+              setAddress   "*"                    $
+              defaultConfig
+              
     tid <- forkIO $
-           httpServe "*"
-                     port
-                     "localhost"
-                     (Just "ts-access.log")
-                     (Just "ts-error.log")
-                     testHandler
+           httpServe cfg testHandler
     waitabit
 
     return $ (tid, port)

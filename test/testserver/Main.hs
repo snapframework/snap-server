@@ -5,6 +5,7 @@
 module Main where
 
 import           Control.Concurrent
+import           Control.Exception (finally)
 
 import           Snap.Http.Server
 import           Test.Common.TestHandler
@@ -31,8 +32,5 @@ main = do
     return ()
 
   where
-    go m = do
-        httpServe "*" 3000 "localhost" (Just "ts-access.log")
-                  (Just "ts-error.log") testHandler 
-        putMVar m ()
+    go m = quickHttpServe testHandler `finally` putMVar m ()
 

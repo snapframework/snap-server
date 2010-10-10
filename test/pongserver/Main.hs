@@ -2,6 +2,7 @@
 module Main where
 
 import           Control.Concurrent
+import           Control.Exception (finally)
 
 import           Snap.Iteratee
 import           Snap.Types
@@ -25,6 +26,4 @@ main = do
     return ()
 
   where
-    go m = do
-        httpServe "*" 3000 "localhost" Nothing Nothing pongServer 
-        putMVar m ()
+    go m = quickHttpServe pongServer `finally` putMVar m ()
