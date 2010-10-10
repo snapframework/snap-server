@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.2.14
+version:        0.3.0
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   This is the first developer prerelease of the Snap framework.  Snap is a
@@ -101,7 +101,7 @@ Library
     Data.Concurrent.HashMap.Internal,
     Paths_snap_server,
     Snap.Internal.Http.Parser,
-    Snap.Internal.Http.Server,  
+    Snap.Internal.Http.Server,
     Snap.Internal.Http.Server.Date
 
   build-depends:
@@ -118,14 +118,21 @@ Library
     dlist >= 0.5 && < 0.6,
     filepath,
     iteratee >= 0.3.1 && <0.4,
+    MonadCatchIO-transformers >= 0.2.1 && < 0.3,
     monads-fd,
     murmur-hash >= 0.1 && < 0.2,
     network == 2.2.1.*,
     old-locale,
+<<<<<<< HEAD
     snap-core == 0.2.14,
+=======
+    snap-core >= 0.3 && <0.4,
+    snap-core >= 0.2.12 && <0.3,
+>>>>>>> b56dbddec26af37aac066b40abdb3551e26ec71b
     template-haskell,
     time,
     transformers,
+    utf8-string,
     unix-compat,
     vector >= 0.6 && <0.7
 
