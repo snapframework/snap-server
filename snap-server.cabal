@@ -123,12 +123,7 @@ Library
     murmur-hash >= 0.1 && < 0.2,
     network == 2.2.1.*,
     old-locale,
-<<<<<<< HEAD
-    snap-core == 0.2.14,
-=======
     snap-core >= 0.3 && <0.4,
-    snap-core >= 0.2.12 && <0.3,
->>>>>>> b56dbddec26af37aac066b40abdb3551e26ec71b
     template-haskell,
     time,
     transformers,
