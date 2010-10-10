@@ -305,6 +305,7 @@ runHTTP lh lip lp rip rp alog elog
                                    handler
         let iter = iterateeDebugWrapper "httpSession iteratee" iter1
         readEnd iter >>= run
+        debug "runHTTP/go: finished"
 
 
 ------------------------------------------------------------------------------
@@ -344,8 +345,6 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
 
     liftIO $ debug "Server.httpSession: entered"
     mreq  <- receiveRequest
-
-    
 
     -- successfully got a request, so restart timer
     liftIO tickle
@@ -396,7 +395,9 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
                 (rspContentLength rsp')
 
           if cc
-             then return ()
+             then do
+                 debug $ "httpSession: Connection: Close, harikari"
+                 liftIO $ myThreadId >>= killThread
              else httpSession writeEnd' ibuf onSendFile tickle handler
 
       Nothing -> do
@@ -423,7 +424,7 @@ checkExpect100Continue req writeEnd = do
                  , bsshow major
                  , "."
                  , bsshow minor
-                 , " 100 Continue\r\n\r\n" ] 
+                 , " 100 Continue\r\n\r\n" ]
         iter <- liftIO $ enumBS (S.concat hl) writeEnd
         liftIO $ run iter
 
@@ -636,7 +637,10 @@ sendResponse req rsp' writeEnd onSendFile = do
                      else enumBS hs >. e >. enumEof
 
         let hl = fromIntegral $ S.length hs
+
+        debug $ "sendResponse: whenEnum: enumerating bytes"
         (x,bs) <- joinIM $ enum (countBytes writeEnd)
+        debug $ "sendResponse: whenEnum: " ++ Prelude.show bs ++ " bytes enumerated"
 
         return (x, bs-hl)
 

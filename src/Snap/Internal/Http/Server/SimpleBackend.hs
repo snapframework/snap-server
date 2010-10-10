@@ -392,8 +392,11 @@ timeoutRecv conn n = do
 
 timeoutSend :: Connection -> ByteString -> IO ()
 timeoutSend conn s = do
+    let len = B.length s
+    debug $ "Backend.timeoutSend: entered w/ " ++ show len ++ " bytes"
     let sock = _socket conn
     SB.sendAll sock s
+    debug $ "Backend.timeoutSend: sent all"
     tickleTimeout conn
 
 
@@ -405,7 +408,10 @@ enumerate :: (MonadIO m) => Connection -> Enumerator m a
 enumerate = loop
   where
     loop conn f = do
+        debug $ "Backend.enumerate: reading from socket"
         s <- liftIO $ timeoutRecv conn bLOCKSIZE
+        debug $ "Backend.enumerate: got " ++ Prelude.show (B.length s)
+                ++ " bytes from read end"
         sendOne conn f s
 
     sendOne conn f s = do

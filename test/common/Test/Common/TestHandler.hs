@@ -15,6 +15,7 @@ import           Snap.Iteratee hiding (Enumerator)
 import           Snap.Types
 import           Snap.Http.Server
 import           Snap.Util.FileServe
+import           Snap.Util.GZip
 import           Snap.Internal.Iteratee.Debug
 import           Test.Common.Rot13 (rot13)
 
@@ -61,7 +62,7 @@ responseHandler = do
 
 
 testHandler :: Snap ()
-testHandler =
+testHandler = withCompression $
     route [ ("pong"           , pongHandler                  )
           , ("echo"           , echoHandler                  )
           , ("rot13"          , rot13Handler                 )

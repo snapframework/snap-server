@@ -6,10 +6,11 @@ import           Control.Concurrent
 import           Snap.Iteratee
 import           Snap.Types
 import           Snap.Http.Server
-
+import Snap.Util.GZip
 -- FIXME: need better primitives for output
 pongServer :: Snap ()
-pongServer = modifyResponse $ setResponseBody (enumBS "PONG") .
+pongServer = withCompression $
+             modifyResponse $ setResponseBody (enumBS "PONG") .
                               setContentType "text/plain" .
                               setContentLength 4
 
@@ -25,5 +26,5 @@ main = do
 
   where
     go m = do
-        httpServe "*" 8000 "localhost" Nothing Nothing pongServer 
+        httpServe "*" 3000 "localhost" Nothing Nothing pongServer 
         putMVar m ()
