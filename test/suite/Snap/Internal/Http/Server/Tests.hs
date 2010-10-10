@@ -7,7 +7,11 @@ module Snap.Internal.Http.Server.Tests
   ( tests ) where
 
 import             Control.Concurrent
-import             Control.Exception (try, throwIO, bracket, SomeException)
+import             Control.Exception ( try
+                                     , throwIO
+                                     , bracket
+                                     , finally
+                                     , SomeException )
 import             Control.Monad
 import "monads-fd" Control.Monad.Trans
 import qualified   Data.ByteString.Char8 as S
@@ -578,8 +582,12 @@ testChunkOn1_0 = testCase "server/transfer-encoding chunked" $ do
     ref <- newIORef ""
     let (iter,onSendFile) = mkIter ref
 
-    runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
-            Nothing Nothing enumBody iter onSendFile (return ()) f
+    done <- newEmptyMVar
+    forkIO (runHTTP "localhost" "127.0.0.1" 80 "127.0.0.1" 58384
+                Nothing Nothing enumBody iter onSendFile (return ()) f
+            `finally` putMVar done ())
+
+    takeMVar done
 
     -- this is a pretty lame way of checking whether the output was chunked,
     -- but "whatever"
@@ -618,18 +626,22 @@ testHttp2 = testCase "server/connection: close" $ do
 
     let (iter,onSendFile) = mkIter ref
 
-    runHTTP "localhost"
-            "127.0.0.1"
-            80
-            "127.0.0.1"
-            58384
-            Nothing
-            Nothing
-            enumBody
-            iter
-            onSendFile
-            (return ())
-            echoServer2
+    done <- newEmptyMVar
+
+    forkIO (runHTTP "localhost"
+                    "127.0.0.1"
+                    80
+                    "127.0.0.1"
+                    58384
+                    Nothing
+                    Nothing
+                    enumBody
+                    iter
+                    onSendFile
+                    (return ())
+                    echoServer2 `finally` putMVar done ())
+
+    takeMVar done
 
     s <- readIORef ref
 
