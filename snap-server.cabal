@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.2.13.2
+version:        0.2.14
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   This is the first developer prerelease of the Snap framework.  Snap is a
