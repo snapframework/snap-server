@@ -14,12 +14,7 @@ import           Data.IORef
 import           Data.Maybe
 import           Foreign.C.Types
 import           System.IO.Unsafe
-
-#ifndef PORTABLE
-import           System.Posix.Time
-#else
-import           Data.Time.Clock.POSIX
-#endif
+import           System.PosixCompat.Time
 
 import           Snap.Internal.Http.Types (formatHttpTime, formatLogTime)
 
@@ -60,15 +55,6 @@ dateState = unsafePerformIO $ do
     putMVar th t
 
     return d
-
-
-#ifdef PORTABLE
-------------------------------------------------------------------------------
-epochTime :: IO CTime
-epochTime = do
-    t <- getPOSIXTime
-    return $ fromInteger $ truncate t
-#endif
 
 
 ------------------------------------------------------------------------------

@@ -103,7 +103,7 @@ Executable pongserver
      template-haskell,
      time,
      transformers,
-     unix-compat,
+     unix-compat == 0.2.*,
      utf8-string >= 0.3.6 && <0.4,
      vector >= 0.6.0.1 && < 0.7
 

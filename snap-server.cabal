@@ -128,7 +128,7 @@ Library
     time,
     transformers,
     utf8-string,
-    unix-compat,
+    unix-compat == 0.2.*,
     vector >= 0.6 && <0.7
 
   if flag(portable) || os(windows)
