@@ -129,7 +129,7 @@ Library
     transformers,
     utf8-string,
     unix-compat == 0.2.*,
-    vector >= 0.6 && <0.7
+    vector >= 0.7 && <0.8
 
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
