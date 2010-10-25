@@ -47,7 +47,7 @@ Executable testsuite
      test-framework-quickcheck2 >= 0.2.6 && < 0.3,
      time,
      transformers,
-     vector >= 0.6.0.1 && < 0.7
+     vector >= 0.7 && <0.8
 
    if !os(windows)
      build-depends: unix
@@ -103,7 +103,7 @@ Executable pongserver
      time,
      transformers,
      unix-compat,
-     vector >= 0.6.0.1 && < 0.7
+     vector >= 0.7 && <0.8
 
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
@@ -182,7 +182,7 @@ Executable testserver
      test-framework-quickcheck2 >= 0.2.6 && < 0.3,
      time,
      transformers,
-     vector >= 0.6.0.1 && < 0.7
+     vector >= 0.7 && <0.8
 
    if !os(windows)
      build-depends: unix
