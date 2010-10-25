@@ -17,7 +17,8 @@ module Data.Concurrent.HashMap
   , toList
   , hashString
   , hashBS
-  , hashInt ) where
+  , hashInt
+  , nextHighestPowerOf2 ) where
 
 ------------------------------------------------------------------------------
 
