@@ -1,11 +1,11 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE DeriveDataTypeable       #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE PackageImports           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 
 module Snap.Internal.Http.Server.SimpleBackend
   ( Backend
@@ -37,23 +37,20 @@ import           Control.Monad
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString as B
-import           Data.DList (DList)
-import qualified Data.DList as D
-import           Data.IORef
 import           Data.Iteratee.WrappedByteString
-import           Data.List (foldl')
-import qualified Data.PSQueue as PSQ
-import           Data.PSQueue (PSQ)
 import           Data.Typeable
+import           Data.Word
 import           Foreign hiding (new)
-import           Foreign.C.Types (CTime)
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
 import qualified Network.Socket.ByteString as SB
 import           Prelude hiding (catch)
 ------------------------------------------------------------------------------
+import           Data.Concurrent.HashMap (hashString)
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Date
+import qualified Snap.Internal.Http.Server.TimeoutTable as TT
+import           Snap.Internal.Http.Server.TimeoutTable (TimeoutTable)
 import           Snap.Iteratee hiding (foldl')
 
 #if defined(HAS_SENDFILE)
@@ -71,26 +68,29 @@ instance Show BackendTerminatedException where
 
 instance Exception BackendTerminatedException
 
-type TimeoutTable = PSQ ThreadId CTime
 
+------------------------------------------------------------------------------
 type QueueElem = Maybe (Socket,SockAddr)
 
 data Backend = Backend
     { _acceptSocket    :: !Socket
     , _acceptThread    :: !ThreadId
-    , _timeoutEdits    :: !(IORef (DList (TimeoutTable -> TimeoutTable)))
+    , _timeoutTable    :: TimeoutTable
     , _timeoutThread   :: !(MVar ThreadId)
     , _connectionQueue :: !(Chan QueueElem)
     }
 
-data Connection = Connection 
+data Connection = Connection
     { _backend     :: Backend
     , _socket      :: Socket
     , _remoteAddr  :: ByteString
     , _remotePort  :: Int
     , _localAddr   :: ByteString
     , _localPort   :: Int
-    , _connTid     :: MVar ThreadId }
+    , _connTid     :: MVar ThreadId
+    , _threadHash  :: MVar Word
+    }
+
 
 {-# INLINE name #-}
 name :: ByteString
@@ -157,13 +157,12 @@ new :: Socket   -- ^ value you got from bindIt
 new sock cpu = do
     debug $ "Backend.new: listening"
 
-    ed        <- newIORef D.empty
+    tt        <- TT.new
     t         <- newEmptyMVar
-
     connq     <- newChan
     accThread <- forkOnIO cpu $ acceptThread sock connq
 
-    let b = Backend sock accThread ed t connq
+    let b = Backend sock accThread tt t connq
 
     tid <- forkIO $ timeoutThread b
     putMVar t tid
@@ -173,59 +172,29 @@ new sock cpu = do
 
 timeoutThread :: Backend -> IO ()
 timeoutThread backend = do
-    tref <- newIORef $ PSQ.empty
-    let loop = do
-        killTooOld tref
-        threadDelay (5000000)
-        loop
-
-    loop `catch` (\(_::SomeException) -> killAll tref)
+    loop `catch` (\(_::SomeException) -> killAll)
 
   where
-    applyEdits table = do
-        edits <- atomicModifyIORef tedits $ \t -> (D.empty, D.toList t)
-        return $ foldl' (flip ($)) table edits
+    table = _timeoutTable backend
 
-    killTooOld tref = do
-        !table <- readIORef tref
-        -- atomic swap edit list
+    loop = do
+        debug "timeoutThread: waiting for activity on thread table"
+        TT.waitForActivity table
+        debug "timeoutThread: woke up, killing old connections"
+        killTooOld
+        loop
+
+
+    killTooOld = do
         now    <- getCurrentDateTime
-        table' <- applyEdits table
-        !t'    <- killOlderThan now table'
-        writeIORef tref t'
-
+        TT.killOlderThan (now - tIMEOUT) table
 
     -- timeout = 30 seconds
     tIMEOUT = 30
 
-    killAll !tref = do
+    killAll = do
         debug "Backend.timeoutThread: shutdown, killing all connections"
-        !table  <- readIORef tref
-        !table' <- applyEdits table
-        go table'
-      where
-        go !t = maybe (return ())
-                      (\m -> (killThread $ PSQ.key m) >>
-                             (go $ PSQ.deleteMin t))
-                      (PSQ.findMin t)
-
-    killOlderThan now !table = do
-        debug "Backend.timeoutThread: killing old connections"
-        let mmin = PSQ.findMin table
-        maybe (return table)
-              (\m -> do
-                   debug $ "Backend.timeoutThread: minimum value "
-                            ++ show (PSQ.prio m) ++ ", cutoff="
-                            ++ show (now - tIMEOUT)
-
-                   if now - PSQ.prio m >= tIMEOUT
-                       then do
-                           killThread $ PSQ.key m
-                           killOlderThan now $ PSQ.deleteMin table
-                       else return table)
-              mmin
-
-    tedits = _timeoutEdits backend
+        TT.killAll table
 
 
 stop :: Backend -> IO ()
@@ -286,26 +255,29 @@ withConnection backend cpu proc = do
              return (fromIntegral p, B.pack $ map c2w h')
           x -> throwIO $ AddressNotSupportedException $ show x
 
-    tmvar <- newEmptyMVar
+    tmvar   <- newEmptyMVar
+    thrhash <- newEmptyMVar
 
-    let c = Connection backend sock host port lhost lport tmvar
+    let c = Connection backend sock host port lhost lport tmvar thrhash
 
     tid <- forkOnIO cpu $ do
         labelMe $ "connHndl " ++ show fd
         bracket (return c)
                 (\_ -> block $ do
                      debug "thread killed, closing socket"
-                     thr <- readMVar tmvar
+                     thr   <- readMVar tmvar
+                     thash <- readMVar thrhash
 
                      -- remove thread from timeout table
-                     atomicModifyIORef (_timeoutEdits backend) $
-                         \es -> (D.snoc es (PSQ.delete thr), ())
+                     TT.delete thash thr $ _timeoutTable backend
+
                      eatException $ shutdown sock ShutdownBoth
                      eatException $ sClose sock
                 )
                 proc
 
     putMVar tmvar tid
+    putMVar thrhash $ hashString $ show tid
     tickleTimeout c
     return ()
 
@@ -364,24 +336,27 @@ instance Exception TimeoutException
 tickleTimeout :: Connection -> IO ()
 tickleTimeout conn = do
     debug "Backend.tickleTimeout"
-    now <- getCurrentDateTime
-    tid <- readMVar $ _connTid conn
+    now   <- getCurrentDateTime
+    tid   <- readMVar $ _connTid conn
+    thash <- readMVar $ _threadHash conn
 
-    atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.insert tid now), ())
+    TT.insert thash tid now table
 
   where
-    tedits = _timeoutEdits $ _backend conn
+    table = _timeoutTable $ _backend conn
 
 
 _cancelTimeout :: Connection -> IO ()
 _cancelTimeout conn = do
     debug "Backend.cancelTimeout"
-    tid <- readMVar $ _connTid conn
 
-    atomicModifyIORef tedits $ \es -> (D.snoc es (PSQ.delete tid), ())
+    tid   <- readMVar $ _connTid conn
+    thash <- readMVar $ _threadHash conn
+
+    TT.delete thash tid table
 
   where
-    tedits = _timeoutEdits $ _backend conn
+    table = _timeoutTable $ _backend conn
 
 
 timeoutRecv :: Connection -> Int -> IO ByteString
