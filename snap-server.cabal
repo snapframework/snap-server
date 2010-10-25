@@ -102,8 +102,7 @@ Library
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,  
-    Snap.Internal.Http.Server.Date,
-    Snap.Internal.Http.Server.TimeoutTable
+    Snap.Internal.Http.Server.Date
 
   build-depends:
     array >= 0.2 && <0.4,
@@ -140,6 +139,7 @@ Library
     other-modules: Snap.Internal.Http.Server.LibevBackend
     cpp-options: -DLIBEV
   else
+    other-modules: Snap.Internal.Http.Server.TimeoutTable
     build-depends: network-bytestring >= 0.1.2 && < 0.2,
                    PSQueue >= 1.1 && <1.2
 
