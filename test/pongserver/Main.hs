@@ -8,10 +8,10 @@ import           Snap.Iteratee
 import           Snap.Types
 import           Snap.Http.Server
 import Snap.Util.GZip
+
 -- FIXME: need better primitives for output
 pongServer :: Snap ()
-pongServer = withCompression $
-             modifyResponse $ setResponseBody (enumBS "PONG") .
+pongServer = modifyResponse $ setResponseBody (enumBS "PONG") .
                               setContentType "text/plain" .
                               setContentLength 4
 
@@ -26,4 +26,8 @@ main = do
     return ()
 
   where
-    go m = quickHttpServe pongServer `finally` putMVar m ()
+    go m   = httpServe config pongServer `finally` putMVar m ()
+    config = setPort 8000 $
+             setErrorLog Nothing $
+             setAccessLog Nothing $ 
+             setCompression False $ emptyConfig
