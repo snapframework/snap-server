@@ -48,7 +48,8 @@ Executable testsuite
      time,
      transformers,
      utf8-string >= 0.3.6 && <0.4,
-     vector >= 0.7 && <0.8
+     vector >= 0.7 && <0.8,
+     vector-algorithms >= 0.3.4 && <0.4
 
    if !os(windows)
      build-depends: unix
@@ -105,7 +106,8 @@ Executable pongserver
      transformers,
      unix-compat == 0.2.*,
      utf8-string >= 0.3.6 && <0.4,
-     vector >= 0.7 && <0.8
+     vector >= 0.7 && <0.8,
+     vector-algorithms >= 0.3.4 && <0.4
 
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
@@ -185,7 +187,8 @@ Executable testserver
      time,
      transformers,
      utf8-string >= 0.3.6 && <0.4,
-     vector >= 0.7 && <0.8
+     vector >= 0.7 && <0.8,
+     vector-algorithms >= 0.3.4 && <0.4
 
    if !os(windows)
      build-depends: unix
