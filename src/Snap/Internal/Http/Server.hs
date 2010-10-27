@@ -13,7 +13,6 @@ import           Control.Concurrent.MVar
 import           Control.Exception
 import           Data.Char
 import           Data.CIByteString
-import           Data.Binary.Put
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as SC
@@ -42,7 +41,7 @@ import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Server.Date
 import           Snap.Internal.Iteratee.Debug
-import           Snap.Iteratee hiding (foldl', head, take, mapM_, FileOffset)
+import           Snap.Iteratee hiding (foldl', head, take, FileOffset)
 import qualified Snap.Iteratee as I
 
 #ifdef LIBEV
@@ -421,13 +420,12 @@ checkExpect100Continue req writeEnd = do
   where
     go = do
         let (major,minor) = rqVersion req
-        let hl = runPut $ do
-                     putByteString "HTTP/"
-                     showp major
-                     putAscii '.'
-                     showp minor
-                     putByteString " 100 Continue\r\n\r\n"
-        iter <- liftIO $ enumLBS hl writeEnd
+        let hl = [ "HTTP/"
+                 , bsshow major
+                 , "."
+                 , bsshow minor
+                 , " 100 Continue\r\n\r\n" ]
+        iter <- liftIO $ enumBS (S.concat hl) writeEnd
         liftIO $ run iter
 
 
@@ -662,17 +660,15 @@ sendResponse req rsp' writeEnd onSendFile = do
 
 
     --------------------------------------------------------------------------
-    putHdrs hdrs =
-        {-# SCC "putHdrs" #-}
-        mapM_ putHeader $ Map.toList hdrs
+    fmtHdrs hdrs =
+        {-# SCC "fmtHdrs" #-}
+        concat xs
       where
-        putHeader (k, ys) = mapM_ (putOne k) ys
+        xs = map f $ Map.toList hdrs
 
-        putOne k y = do
-            putByteString $ unCI k
-            putByteString ": "
-            putByteString y
-            putByteString "\r\n"
+        f (k, ys) = map (g k) ys
+
+        g k y = S.concat [ unCI k, ": ", y, "\r\n" ]
 
 
     --------------------------------------------------------------------------
@@ -763,22 +759,24 @@ sendResponse req rsp' writeEnd onSendFile = do
 
     --------------------------------------------------------------------------
     mkHeaderString :: Response -> ByteString
-    mkHeaderString r = out
+    mkHeaderString r =
+        {-# SCC "mkHeaderString" #-}
+        S.concat $ concat [hl, hdr, eol]
       where
-        !out = {-# SCC "mkHeaderString" #-}
-               S.concat $ L.toChunks $ runPut $ do
-                   putByteString "HTTP/"
-                   showp major
-                   putAscii '.'
-                   showp minor
-                   putAscii ' '
-                   showp $ rspStatus r
-                   putAscii ' '
-                   putByteString $ rspStatusReason r
-                   putByteString "\r\n"
-                   putHdrs $ headers r
-                   putByteString "\r\n"
-                   
+        hl = [ "HTTP/"
+             , bsshow major
+             , "."
+             , bsshow minor
+             , " "
+             , bsshow $ rspStatus r
+             , " "
+             , rspStatusReason r
+             , "\r\n" ]
+
+        hdr = fmtHdrs $ headers r
+
+        eol = ["\r\n"]
+
 
 ------------------------------------------------------------------------------
 checkConnectionClose :: (Int, Int) -> Headers -> ServerMonad ()
@@ -818,5 +816,10 @@ l2s = S.concat . L.toChunks
 ------------------------------------------------------------------------------
 toBS :: String -> ByteString
 toBS = S.pack . map c2w
+
+
+--------------------------------------------------------------------------
+bsshow :: (Show a) => a -> ByteString
+bsshow = l2s . show
 
 
