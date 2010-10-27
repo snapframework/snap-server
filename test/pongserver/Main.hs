@@ -26,5 +26,6 @@ main = do
 
   where
     go m = do
-        httpServe "*" 3000 "localhost" Nothing Nothing pongServer 
+        httpServe "*" 3000 "localhost" (Just "foo.log") Nothing pongServer 
+        --httpServe "*" 3000 "localhost" Nothing Nothing pongServer 
         putMVar m ()
