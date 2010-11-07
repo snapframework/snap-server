@@ -112,7 +112,8 @@ Library
     Snap.Internal.Http.Server.GnuTLS,
     Snap.Internal.Http.Server.HttpPort,
     Snap.Internal.Http.Server.TimeoutTable,
-    Snap.Internal.Http.Server.SimpleBackend
+    Snap.Internal.Http.Server.SimpleBackend,
+    Snap.Internal.Http.Server.LibevBackend
 
   build-depends:
     array >= 0.2 && <0.4,
@@ -151,7 +152,6 @@ Library
 
   if flag(libev)
     build-depends: hlibev >= 0.2.8 && < 0.3
-    other-modules: Snap.Internal.Http.Server.LibevBackend
     cpp-options: -DLIBEV
 
   if flag(gnutls)

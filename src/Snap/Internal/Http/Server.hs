@@ -46,6 +46,7 @@ import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Server.HttpPort
 import qualified Snap.Internal.Http.Server.GnuTLS as TLS
 import           Snap.Internal.Http.Server.SimpleBackend
+import           Snap.Internal.Http.Server.LibevBackend
 
 import           Snap.Internal.Iteratee.Debug
 import           Snap.Iteratee hiding (foldl', head, take, FileOffset)
@@ -76,7 +77,11 @@ data EventLoopType = EventLoopSimple
   deriving (Prelude.Show)
 
 defaultEvType :: EventLoopType
+#ifdef LIBEV
+defaultEvType = EventLoopLibEv
+#else
 defaultEvType = EventLoopSimple
+#endif
 
 data ServerState = ServerState
     { _forceConnectionClose  :: Bool
@@ -150,7 +155,7 @@ httpServe ports mevType localHostname alogPath elogPath handler =
 
     --------------------------------------------------------------------------
     runEventLoop EventLoopSimple       = simpleEventLoop
-    runEventLoop e = \_ _ _ _ -> throwIO $ PatternMatchFail $ Prelude.show e ++ " is not a supported backend"
+    runEventLoop EventLoopLibEv        = libEvEventLoop
 
 
     --------------------------------------------------------------------------
