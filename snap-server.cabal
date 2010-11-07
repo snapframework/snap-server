@@ -120,7 +120,7 @@ Library
     filepath,
     iteratee >= 0.3.1 && <0.4,
     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
-    monads-fd,
+    monads-fd < 0.1.0.3,
     murmur-hash >= 0.1 && < 0.2,
     network == 2.2.1.*,
     old-locale,
