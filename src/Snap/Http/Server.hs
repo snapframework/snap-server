@@ -52,8 +52,8 @@ snapServerVersion = Int.snapServerVersion
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
     setUnicodeLocale $ fromJust $ getLocale conf
-    Int.httpServe (fromJust $ getAddress   conf)
-                  (fromJust $ getPort      conf)
+    Int.httpServe [Int.HttpPort (fromJust $ getAddress conf) (fromJust $ getPort conf)]
+                  Nothing
                   (fromJust $ getHostname  conf)
                   (fromJust $ getAccessLog conf)
                   (fromJust $ getErrorLog  conf)
