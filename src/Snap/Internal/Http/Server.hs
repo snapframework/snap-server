@@ -42,7 +42,7 @@ import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Server.Date
 import           Snap.Internal.Iteratee.Debug
-import           Snap.Iteratee hiding (foldl', head, take, mapM_, FileOffset)
+import           Snap.Iteratee hiding (foldl', head, take, FileOffset)
 import qualified Snap.Iteratee as I
 
 #ifdef LIBEV
@@ -664,9 +664,9 @@ sendResponse req rsp' writeEnd onSendFile = do
     --------------------------------------------------------------------------
     putHdrs hdrs =
         {-# SCC "putHdrs" #-}
-        mapM_ putHeader $ Map.toList hdrs
+        Prelude.mapM_ putHeader $ Map.toList hdrs
       where
-        putHeader (k, ys) = mapM_ (putOne k) ys
+        putHeader (k, ys) = Prelude.mapM_ (putOne k) ys
 
         putOne k y = do
             putByteString $ unCI k
