@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.2.16.1
+version:        0.2.16.2
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   This is the first developer prerelease of the Snap framework.  Snap is a
@@ -123,7 +123,7 @@ Library
     murmur-hash >= 0.1 && < 0.2,
     network == 2.2.1.*,
     old-locale,
-    snap-core == 0.2.17,
+    snap-core == 0.2.16.*,
     template-haskell,
     time,
     transformers,
