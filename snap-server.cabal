@@ -157,6 +157,7 @@ Library
   if flag(gnutls)
     extra-libraries: gnutls
     cpp-options: -DGNUTLS
+    c-sources: src/Snap/Internal/Http/Server/gnutls_helpers.c
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE

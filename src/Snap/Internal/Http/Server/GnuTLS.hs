@@ -73,7 +73,7 @@ recv _ _ = throwIO $ GnuTLSException "TLS is not supported"
 -------------------------------------------------------------------------------
 --- Init
 initTLS :: IO ()
-initTLS = throwErrorIf "TLS init" gnutls_global_init
+initTLS = gnutls_set_threading_helper >> throwErrorIf "TLS init" gnutls_global_init
 
 setLogging :: Int -> (Int -> String -> IO ()) -> IO ()
 setLogging level func = do
@@ -236,6 +236,9 @@ data GnuTLSSession
 data GnuTLSDHParam
 
 -- Global init/errors
+
+foreign import ccall safe "gnutls_set_threading_helper"
+   gnutls_set_threading_helper :: IO ()
 
 foreign import ccall safe "gnutls/gnutls.h gnutls_global_init"
     gnutls_global_init :: IO ReturnCode
