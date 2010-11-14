@@ -4,20 +4,19 @@
 
 module Test.Blackbox
   ( tests
+  , spawnStunnel
+  , killStunnel
+  , ssltests
   , startTestServer ) where
 
 
 import             Control.Concurrent
 import             Control.Monad
-import             Control.Monad.CatchIO
-import             Data.ByteString.Char8 (ByteString)
 import qualified   Data.ByteString.Char8 as S
-import qualified   Data.DList as D
 import             Data.Int
 import             Data.Maybe (fromJust)
 import qualified   Network.HTTP as HTTP
 import qualified   Network.URI as URI
-import             Network.Socket
 import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (take)
 import             System.Timeout
@@ -28,6 +27,10 @@ import             Test.HUnit hiding (Test, path)
 import             Test.QuickCheck
 import qualified   Test.QuickCheck.Monadic as QC
 import             Test.QuickCheck.Monadic hiding (run, assert)
+import             System.Directory (getCurrentDirectory)
+import             System.Posix.Signals (signalProcess, sigINT)
+import             System.Posix.Types (ProcessID)
+import             System.Process (runCommand)
 
 import             Snap.Http.Server
 import             Snap.Test.Common
@@ -35,36 +38,67 @@ import             Snap.Test.Common
 import             Test.Common.Rot13
 import             Test.Common.TestHandler
 
+testFunctions :: [Int -> Test]
+testFunctions = [ testPong
+                , testHeadPong
+                , testEcho
+                , testRot13
+                , testSlowLoris
+                , testBlockingRead
+                , testBigResponse
+                , testPartial
+                ]
+
 
 tests :: Int -> [Test]
-tests port = map ($ port) [ testPong
-                          , testHeadPong
-                          , testEcho
-                          , testRot13
-                          , testSlowLoris
-                          , testBlockingRead
-                          , testBigResponse
-                          , testPartial ]
+tests port = map ($ port) testFunctions
 
 
-startTestServer :: IO (ThreadId,Int)
-startTestServer = do
-    let cfg = setAccessLog (Just "ts-access.log") .
-              setErrorLog  (Just "ts-error.log")  .
-              setPort      port                   .
-              setVerbose   False                  .
-              setAddress   "*"                    $
+ssltests :: Maybe (Int,Int) -> [Test]
+ssltests = maybe [] httpsTests
+    where httpsTests (_,port) = map ($ port) testFunctions
+
+
+startTestServer :: Int -> Maybe (Int,Int) -> ConfigBackend -> IO ThreadId
+startTestServer port sslport backend = do
+    let cfg = setAccessLog (Just $ "ts-access.log." ++ show backend)  .
+              setErrorLog  (Just $ "ts-error.log." ++ show backend)   . 
+              addListen    (ListenHttp "*" port)                      .
+              setBackend   backend                                    .
+              setVerbose   False                                      $
               defaultConfig
+
+    let cfg' = case sslport of
+                Nothing    -> cfg
+                Just (p,_) -> addListen (ListenHttps "*" p "cert.pem" "key.pem") cfg
               
     tid <- forkIO $
-           httpServe cfg testHandler
+           httpServe cfg' testHandler
     waitabit
 
-    return $ (tid, port)
+    return tid
 
-  where
-    port = 8199
+{- stunnel needs the SIGINT signal to properly shutdown, but
+   System.Process can currently only send SIGKILL.  A future
+   version of System.Process will have the ability to send SIGINT
+   (http://hackage.haskell.org/trac/ghc/ticket/3994)
+   so perhaps in the future we can simplify the code below. -}
+spawnStunnel :: Maybe (Int, Int) -> IO (Maybe ProcessID)
+spawnStunnel Nothing = return Nothing
+spawnStunnel (Just (sport, lport)) = do
+    tdir <- getCurrentDirectory
+    let pidfile = tdir ++ "/snap.stunnel.pid"
+    runCommand $ "stunnel -f -P " ++ pidfile ++
+                        " -D 0 -c -d " ++ show lport ++
+                        " -r " ++ show sport 
 
+    waitabit
+    str <- readFile pidfile
+    return $ Just $ read str
+
+killStunnel :: Maybe ProcessID -> IO ()
+killStunnel Nothing = return ()
+killStunnel (Just pid) = signalProcess sigINT pid 
 
 doPong :: Int -> IO String
 doPong port = do
