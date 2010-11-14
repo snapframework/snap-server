@@ -131,8 +131,7 @@ httpServe ports mevType localHostname alogPath elogPath handler =
         let initHttps = foldr (\p b -> b || case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}) False ports
 
         if initHttps
-            then do TLS.initTLS
-                    TLS.setLogging 1 $ \_ s -> logE elog $ toBS s
+            then TLS.initTLS
             else return ()
             
         nports <- mapM bindPort ports

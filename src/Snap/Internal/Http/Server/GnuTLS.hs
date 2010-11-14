@@ -8,7 +8,6 @@
 module Snap.Internal.Http.Server.GnuTLS
   ( GnuTLSException(..)
   , initTLS
-  , setLogging
   , stopTLS
   , bindHttps
   , freePort
@@ -43,9 +42,6 @@ instance Exception GnuTLSException
 initTLS :: IO ()
 initTLS = throwIO $ GnuTLSException "TLS is not supported"
 
-setLogging :: Int -> (Int -> String -> IO ()) -> IO ()
-setLogging _ _ = return ()
-
 stopTLS :: IO ()
 stopTLS = return ()
 
@@ -74,14 +70,6 @@ recv _ _ = throwIO $ GnuTLSException "TLS is not supported"
 --- Init
 initTLS :: IO ()
 initTLS = gnutls_set_threading_helper >> throwErrorIf "TLS init" gnutls_global_init
-
-setLogging :: Int -> (Int -> String -> IO ()) -> IO ()
-setLogging level func = do
-    gnutls_global_set_log_level $ fromIntegral level
-    wrapFunc <- gnutls_create_log_function $ \l cstr -> do
-        str <- peekCString cstr
-        func (fromIntegral l) str
-    gnutls_global_set_log_function wrapFunc
 
 stopTLS :: IO ()
 stopTLS = gnutls_global_deinit
@@ -237,95 +225,84 @@ data GnuTLSDHParam
 
 -- Global init/errors
 
-foreign import ccall safe "gnutls_set_threading_helper"
+foreign import ccall unsafe "gnutls_set_threading_helper"
    gnutls_set_threading_helper :: IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_global_init"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_global_init"
     gnutls_global_init :: IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_global_deinit"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_global_deinit"
     gnutls_global_deinit :: IO ()
 
-type LogFunction = CInt -> CString -> IO ()
-
-foreign import ccall safe "gnutls/gnutls.h gnutls_global_set_log_function"
-    gnutls_global_set_log_function :: FunPtr LogFunction -> IO ()
-
-foreign import ccall safe "wrapper"
-    gnutls_create_log_function :: LogFunction -> IO (FunPtr LogFunction)
-
-foreign import ccall safe "gnutls/gnutls.h gnutls_global_set_log_level"
-    gnutls_global_set_log_level :: CInt -> IO ()
-
-foreign import ccall safe "gnutls/gnutls.h gnutls_strerror"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_strerror"
     gnutls_strerror :: ReturnCode -> IO CString
 
 -- Sessions
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_init"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_init"
     gnutls_init :: Ptr (Ptr GnuTLSSession) -> CInt -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_deinit"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_deinit"
     gnutls_deinit :: Ptr GnuTLSSession -> IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_handshake"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_handshake"
     gnutls_handshake :: Ptr GnuTLSSession -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_bye"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_bye"
     gnutls_bye :: Ptr GnuTLSSession -> CInt -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_set_default_priority"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_set_default_priority"
     gnutls_set_default_priority :: Ptr GnuTLSSession -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_session_enable_compatibility_mode"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_session_enable_compatibility_mode"
     gnutls_session_enable_compatibility_mode :: Ptr GnuTLSSession -> IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_send_x509_rdn_sequence"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_send_x509_rdn_sequence"
     gnutls_certificate_send_x509_rdn_sequence :: Ptr GnuTLSSession -> CInt -> IO ()
 
 -- Certificates
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_allocate_credentials"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_allocate_credentials"
     gnutls_certificate_allocate_credentials :: Ptr (Ptr GnuTLSCredentials) -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_free_credentials"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_free_credentials"
     gnutls_certificate_free_credentials :: Ptr GnuTLSCredentials -> IO ()
 
 gnutls_x509_fmt_pem :: CInt
 gnutls_x509_fmt_pem = 1
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_set_x509_key_file"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_set_x509_key_file"
     gnutls_certificate_set_x509_key_file :: Ptr GnuTLSCredentials -> CString -> CString -> CInt -> IO ReturnCode
 
 
 -- Credentials
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_credentials_set"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_credentials_set"
     gnutls_credentials_set :: Ptr GnuTLSSession -> CInt -> Ptr a -> IO ReturnCode
 
 -- Records
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_transport_set_ptr"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_transport_set_ptr"
     gnutls_transport_set_ptr :: Ptr GnuTLSSession -> Ptr a -> IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_record_recv"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_record_recv"
     gnutls_record_recv :: Ptr GnuTLSSession -> Ptr a -> CSize -> IO CSize
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_record_send"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_record_send"
     gnutls_record_send :: Ptr GnuTLSSession -> Ptr a -> CSize -> IO CSize
 
 -- DHParam
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_init"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_dh_params_init"
     gnutls_dh_params_init :: Ptr (Ptr GnuTLSDHParam) -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_deinit"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_dh_params_deinit"
     gnutls_dh_params_deinit :: Ptr GnuTLSDHParam -> IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_generate2"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_dh_params_generate2"
     gnutls_dh_params_generate2 :: Ptr GnuTLSDHParam -> CUInt -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_set_dh_params"
+foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_set_dh_params"
     gnutls_certificate_set_dh_params :: Ptr GnuTLSCredentials -> Ptr GnuTLSDHParam -> IO ()
 
 #endif

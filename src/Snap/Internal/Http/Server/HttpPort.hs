@@ -71,5 +71,5 @@ getHostAddr p s = do
 
     return $ SockAddrInet (fromIntegral p) h
 
-foreign import ccall safe "unistd.h read" c_read :: CInt -> Ptr a -> CSize -> IO (CSize)
-foreign import ccall safe "unistd.h write" c_write :: CInt -> Ptr a -> CSize -> IO (CSize)
+foreign import ccall unsafe "unistd.h read" c_read :: CInt -> Ptr a -> CSize -> IO (CSize)
+foreign import ccall unsafe "unistd.h write" c_write :: CInt -> Ptr a -> CSize -> IO (CSize)
