@@ -186,9 +186,9 @@ runSession handler tt lsock sock addr = do
                  eatException $ shutdown sock ShutdownBoth
                  eatException $ sClose sock
             )
-            (\s -> let writeEnd = writeOut lsock s fd timeout
+            (\s -> let writeEnd = writeOut lsock s sock timeout
                    in handler sinfo 
-                              (enumerate lsock s fd)
+                              (enumerate lsock s sock)
                               writeEnd
                               (sendFile lsock timeout fd writeEnd)
                               timeout
@@ -229,8 +229,8 @@ tickleTimeout table tid thash = do
     now   <- getCurrentDateTime
     TT.insert thash tid now table
 
-enumerate :: (MonadIO m) => ListenSocket -> NetworkSession -> CInt -> Enumerator m a
-enumerate port session fd = loop
+enumerate :: (MonadIO m) => ListenSocket -> NetworkSession -> Socket -> Enumerator m a
+enumerate port session sock = loop
   where
     loop f = do
         debug $ "Backend.enumerate: reading from socket"
@@ -250,11 +250,16 @@ enumerate port session fd = loop
           (Cont k Nothing)  -> loop k
           (Cont _ (Just e)) -> return $ throwErr e
 
+    fd = fdSocket sock
+#ifdef PORTABLE
+    timeoutRecv = Listen.recv port sock (threadWaitRead $ fromIntegral fd) session
+#else
     timeoutRecv = Listen.recv port (threadWaitRead $ fromIntegral fd) session
+#endif
 
 
-writeOut :: (MonadIO m) => ListenSocket -> NetworkSession -> CInt -> IO () -> Iteratee m ()
-writeOut port session fd tickle = iteratee
+writeOut :: (MonadIO m) => ListenSocket -> NetworkSession -> Socket -> IO () -> Iteratee m ()
+writeOut port session sock tickle = iteratee
   where
     iteratee = IterateeG out
 
@@ -273,4 +278,9 @@ writeOut port session fd tickle = iteratee
           (Right _) -> do debug "Backend.writeOut: successfully sent data"
                           return $ Cont iteratee Nothing
 
+    fd = fdSocket sock
+#ifdef PORTABLE
+    timeoutSend = Listen.send port sock tickle (threadWaitWrite $ fromIntegral fd) session
+#else
     timeoutSend = Listen.send port tickle (threadWaitWrite $ fromIntegral fd) session
+#endif

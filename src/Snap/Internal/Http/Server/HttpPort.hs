@@ -1,5 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
 
 module Snap.Internal.Http.Server.HttpPort
   ( bindHttp
@@ -9,14 +10,19 @@ module Snap.Internal.Http.Server.HttpPort
   , send
   ) where
 
-import           Control.Monad (liftM)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import           Data.ByteString.Internal (w2c)
-import           Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 import           Foreign
 import           Foreign.C
 import           Network.Socket hiding (recv, send)
+
+#ifdef PORTABLE
+import qualified Network.Socket.ByteString as SB
+#else
+import           Control.Monad (liftM)
+import           Data.ByteString.Unsafe (unsafeUseAsCStringLen)
+#endif
 
 import           Snap.Internal.Http.Server.Backend
 
@@ -29,6 +35,16 @@ bindHttp bindAddr bindPort = do
     listen sock 150
     return $ ListenHttp sock
 
+getHostAddr :: Int
+            -> ByteString
+            -> IO SockAddr
+getHostAddr p s = do
+    h <- if s == "*"
+          then return iNADDR_ANY
+          else inet_addr (map w2c . B.unpack $ s)
+
+    return $ SockAddrInet (fromIntegral p) h
+
 createSession :: Int -> CInt -> IO () -> IO NetworkSession
 createSession buffSize s _ = do
     buffer <- mallocBytes $ fromIntegral buffSize
@@ -36,6 +52,20 @@ createSession buffSize s _ = do
 
 endSession :: NetworkSession -> IO ()
 endSession (NetworkSession {_recvBuffer = buff}) = free buff
+
+#ifdef PORTABLE
+
+recv :: Socket -> IO () -> NetworkSession -> IO (Maybe ByteString)
+recv sock _ (NetworkSession { _recvLen = s }) = do
+    bs <- SB.recv sock (fromIntegral s)
+    if B.null bs
+        then return Nothing
+        else return $ Just bs
+
+send :: Socket -> IO () -> IO () -> NetworkSession -> ByteString -> IO ()
+send sock tickle _ _ bs = SB.sendAll sock bs >> tickle
+
+#else
 
 recv :: IO () -> NetworkSession -> IO (Maybe ByteString)
 recv onBlock (NetworkSession s _ buff buffSize) = do
@@ -61,15 +91,8 @@ send tickleTimeout onBlock (NetworkSession s _ _ _) bs =
              then tickleTimeout >> loop (plusPtr ptr sent') (len - sent')
              else return ()
 
-getHostAddr :: Int
-            -> ByteString
-            -> IO SockAddr
-getHostAddr p s = do
-    h <- if s == "*"
-          then return iNADDR_ANY
-          else inet_addr (map w2c . B.unpack $ s)
-
-    return $ SockAddrInet (fromIntegral p) h
 
 foreign import ccall unsafe "unistd.h read" c_read :: CInt -> Ptr a -> CSize -> IO (CSize)
 foreign import ccall unsafe "unistd.h write" c_write :: CInt -> Ptr a -> CSize -> IO (CSize)
+
+#endif
