@@ -225,19 +225,21 @@ data GnuTLSDHParam
 
 -- Global init/errors
 
-foreign import ccall unsafe "gnutls_set_threading_helper"
+foreign import ccall safe "gnutls_set_threading_helper"
    gnutls_set_threading_helper :: IO ()
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_global_init"
+foreign import ccall safe "gnutls/gnutls.h gnutls_global_init"
     gnutls_global_init :: IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_global_deinit"
+foreign import ccall safe "gnutls/gnutls.h gnutls_global_deinit"
     gnutls_global_deinit :: IO ()
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_strerror"
+foreign import ccall safe "gnutls/gnutls.h gnutls_strerror"
     gnutls_strerror :: ReturnCode -> IO CString
 
--- Sessions
+-- Sessions.  All functions here except handshake and bye just
+-- allocate memory or update members of structures, so they are ok with
+-- unsafe ccall.
 
 foreign import ccall unsafe "gnutls/gnutls.h gnutls_init"
     gnutls_init :: Ptr (Ptr GnuTLSSession) -> CInt -> IO ReturnCode
@@ -245,10 +247,10 @@ foreign import ccall unsafe "gnutls/gnutls.h gnutls_init"
 foreign import ccall unsafe "gnutls/gnutls.h gnutls_deinit"
     gnutls_deinit :: Ptr GnuTLSSession -> IO ()
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_handshake"
+foreign import ccall safe "gnutls/gnutls.h gnutls_handshake"
     gnutls_handshake :: Ptr GnuTLSSession -> IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_bye"
+foreign import ccall safe "gnutls/gnutls.h gnutls_bye"
     gnutls_bye :: Ptr GnuTLSSession -> CInt -> IO ReturnCode
 
 foreign import ccall unsafe "gnutls/gnutls.h gnutls_set_default_priority"
@@ -260,27 +262,29 @@ foreign import ccall unsafe "gnutls/gnutls.h gnutls_session_enable_compatibility
 foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_send_x509_rdn_sequence"
     gnutls_certificate_send_x509_rdn_sequence :: Ptr GnuTLSSession -> CInt -> IO ()
 
--- Certificates
+-- Certificates.  Perhaps these could be unsafe but they are not performance critical,
+-- since they are called only once during server startup.
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_allocate_credentials"
+foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_allocate_credentials"
     gnutls_certificate_allocate_credentials :: Ptr (Ptr GnuTLSCredentials) -> IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_free_credentials"
+foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_free_credentials"
     gnutls_certificate_free_credentials :: Ptr GnuTLSCredentials -> IO ()
 
 gnutls_x509_fmt_pem :: CInt
 gnutls_x509_fmt_pem = 1
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_set_x509_key_file"
+foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_set_x509_key_file"
     gnutls_certificate_set_x509_key_file :: Ptr GnuTLSCredentials -> CString -> CString -> CInt -> IO ReturnCode
 
 
--- Credentials
+-- Credentials.  This is ok as unsafe because it just sets members in the session structure.
 
 foreign import ccall unsafe "gnutls/gnutls.h gnutls_credentials_set"
     gnutls_credentials_set :: Ptr GnuTLSSession -> CInt -> Ptr a -> IO ReturnCode
 
--- Records
+-- Records.  These are marked unsafe because they are very performance critical.  Since
+-- we are using non-blocking sockets send and recv will not block.
 
 foreign import ccall unsafe "gnutls/gnutls.h gnutls_transport_set_ptr"
     gnutls_transport_set_ptr :: Ptr GnuTLSSession -> Ptr a -> IO ()
@@ -291,18 +295,18 @@ foreign import ccall unsafe "gnutls/gnutls.h gnutls_record_recv"
 foreign import ccall unsafe "gnutls/gnutls.h gnutls_record_send"
     gnutls_record_send :: Ptr GnuTLSSession -> Ptr a -> CSize -> IO CSize
 
--- DHParam
+-- DHParam.  Perhaps these could be unsafe but they are not performance critical.
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_dh_params_init"
+foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_init"
     gnutls_dh_params_init :: Ptr (Ptr GnuTLSDHParam) -> IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_dh_params_deinit"
+foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_deinit"
     gnutls_dh_params_deinit :: Ptr GnuTLSDHParam -> IO ()
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_dh_params_generate2"
+foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_generate2"
     gnutls_dh_params_generate2 :: Ptr GnuTLSDHParam -> CUInt -> IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_set_dh_params"
+foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_set_dh_params"
     gnutls_certificate_set_dh_params :: Ptr GnuTLSCredentials -> Ptr GnuTLSDHParam -> IO ()
 
 #endif
