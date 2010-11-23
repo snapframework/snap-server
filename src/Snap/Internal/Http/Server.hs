@@ -9,7 +9,6 @@ module Snap.Internal.Http.Server where
 ------------------------------------------------------------------------------
 import           Control.Arrow (first, second)
 import           Control.Monad.State.Strict
-import           Control.Concurrent.MVar
 import           Control.Exception
 import           Data.Char
 import           Data.CIByteString
@@ -38,20 +37,20 @@ import           System.Posix.Types (FileOffset)
 import           Text.Show.ByteString hiding (runPut)
 ------------------------------------------------------------------------------
 import           System.FastLogger
+import           Snap.Internal.Debug
 import           Snap.Internal.Http.Types hiding (Enumerator)
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Server.Date
+
+import           Snap.Internal.Http.Server.Backend
+import           Snap.Internal.Http.Server.HttpPort
+import qualified Snap.Internal.Http.Server.GnuTLS as TLS
+import           Snap.Internal.Http.Server.SimpleBackend
+import           Snap.Internal.Http.Server.LibevBackend
+
 import           Snap.Internal.Iteratee.Debug
 import           Snap.Iteratee hiding (foldl', head, take, FileOffset)
 import qualified Snap.Iteratee as I
-
-#ifdef LIBEV
-import qualified Snap.Internal.Http.Server.LibevBackend as Backend
-import           Snap.Internal.Http.Server.LibevBackend (debug)
-#else
-import qualified Snap.Internal.Http.Server.SimpleBackend as Backend
-import           Snap.Internal.Http.Server.SimpleBackend (debug)
-#endif
 
 import qualified Paths_snap_server as V
 
@@ -70,31 +69,38 @@ type ServerHandler = (ByteString -> IO ())
 
 type ServerMonad = StateT ServerState (Iteratee IO)
 
+data ListenPort = HttpPort  ByteString Int                   -- (bind address, port)
+                | HttpsPort ByteString Int FilePath FilePath -- (bind address, port, path to certificate, path to key)
+
+data EventLoopType = EventLoopSimple
+                   | EventLoopLibEv
+  deriving (Prelude.Show)
+
+defaultEvType :: EventLoopType
+#ifdef LIBEV
+defaultEvType = EventLoopLibEv
+#else
+defaultEvType = EventLoopSimple
+#endif
+
 data ServerState = ServerState
     { _forceConnectionClose  :: Bool
     , _localHostname         :: ByteString
-    , _localAddress          :: ByteString
-    , _localPort             :: Int
-    , _remoteAddr            :: ByteString
-    , _remotePort            :: Int
+    , _sessionPort           :: SessionInfo
     , _logAccess             :: Request -> Response -> IO ()
     , _logError              :: ByteString -> IO ()
     }
 
-
 ------------------------------------------------------------------------------
 runServerMonad :: ByteString                     -- ^ local host name
-               -> ByteString                     -- ^ local ip address
-               -> Int                            -- ^ local port
-               -> ByteString                     -- ^ remote ip address
-               -> Int                            -- ^ remote port
+               -> SessionInfo                    -- ^ session port information
                -> (Request -> Response -> IO ()) -- ^ access log function
                -> (ByteString -> IO ())          -- ^ error log function
                -> ServerMonad a                  -- ^ monadic action to run
                -> Iteratee IO a
-runServerMonad lh lip lp rip rp la le m = evalStateT m st
+runServerMonad lh s la le m = evalStateT m st
   where
-    st = ServerState False lh lip lp rip rp la le
+    st = ServerState False lh s la le
 
 
 ------------------------------------------------------------------------------
@@ -102,50 +108,53 @@ runServerMonad lh lip lp rip rp la le m = evalStateT m st
 
 
 ------------------------------------------------------------------------------
-httpServe :: ByteString         -- ^ bind address, or \"*\" for all
-          -> Int                -- ^ port to bind to
-          -> ByteString         -- ^ local hostname (server name)
-          -> Maybe FilePath     -- ^ path to the access log
-          -> Maybe FilePath     -- ^ path to the error log
-          -> ServerHandler      -- ^ handler procedure
+httpServe :: [ListenPort]        -- ^ ports to listen on
+          -> Maybe EventLoopType -- ^ Specify a given event loop, otherwise a default is picked
+          -> ByteString          -- ^ local hostname (server name)
+          -> Maybe FilePath      -- ^ path to the access log
+          -> Maybe FilePath      -- ^ path to the error log
+          -> ServerHandler       -- ^ handler procedure
           -> IO ()
-httpServe bindAddress bindPort localHostname alogPath elogPath handler =
+httpServe ports mevType localHostname alogPath elogPath handler =
     withLoggers alogPath elogPath
                 (\(alog, elog) -> spawnAll alog elog)
 
   where
     --------------------------------------------------------------------------
     spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
+
+        let evType = maybe defaultEvType id mevType
+
         logE elog $ S.concat [ "Server.httpServe: START ("
-                             , Backend.name, ")"]
-        let n = numCapabilities
-        bracket (spawn n)
-                (\xs -> do
-                     logE elog "Server.httpServe: SHUTDOWN"
-                     Prelude.mapM_ (Backend.stop . fst) xs
-                     logE elog "Server.httpServe: BACKEND STOPPED")
-                (runAll alog elog)
+                             , toBS $ Prelude.show evType, ")"]
+
+        let initHttps = foldr (\p b -> b || case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}) False ports
+
+        if initHttps
+            then TLS.initTLS
+            else return ()
+            
+        nports <- mapM bindPort ports
+            
+        (runEventLoop evType nports numCapabilities (logE elog) $
+                      runHTTP alog elog handler localHostname) `finally` do
+
+            logE elog "Server.httpServe: SHUTDOWN"
+
+            if initHttps
+                then TLS.stopTLS
+                else return ()
+
+            logE elog "Server.httpServe: BACKEND STOPPED"
+
+    --------------------------------------------------------------------------
+    bindPort (HttpPort  baddr port)          = bindHttp  baddr port
+    bindPort (HttpsPort baddr port cert key) = TLS.bindHttps baddr port cert key
 
 
     --------------------------------------------------------------------------
-    runAll alog elog xs = {-# SCC "httpServe/runAll" #-} do
-        tids <- Prelude.mapM f $ xs `zip` [0..]
-        Prelude.mapM_ (takeMVar . snd) xs `catch` \ (e::SomeException) -> do
-            mapM killThread tids
-            throwIO e
-      where
-        f ((backend,mvar),cpu) = forkOnIO cpu $ do
-            labelMe $ map w2c $ S.unpack $
-                      S.concat ["accThread ", l2s $ show cpu]
-            (try $ goooo alog elog backend cpu) :: IO (Either SomeException ())
-            putMVar mvar ()
-
-
-    --------------------------------------------------------------------------
-    goooo alog elog backend cpu =
-        {-# SCC "httpServe/goooo" #-}
-        let loop = go alog elog backend cpu >> loop
-        in loop
+    runEventLoop EventLoopSimple       = simpleEventLoop
+    runEventLoop EventLoopLibEv        = libEvEventLoop
 
 
     --------------------------------------------------------------------------
@@ -160,71 +169,6 @@ httpServe bindAddress bindPort localHostname alogPath elogPath handler =
                 (\(alog, elog) -> do
                     maybe (return ()) stopLogger alog
                     maybe (return ()) stopLogger elog)
-
-
-    --------------------------------------------------------------------------
-    labelMe :: String -> IO ()
-    labelMe s = do
-        tid <- myThreadId
-        labelThread tid s
-
-
-    --------------------------------------------------------------------------
-    spawn n = do
-        sock <- Backend.bindIt bindAddress bindPort
-        backends <- mapM (Backend.new sock) $ [0..(n-1)]
-        mvars <- replicateM n newEmptyMVar
-
-        return (backends `zip` mvars)
-
-
-    --------------------------------------------------------------------------
-    runOne alog elog backend cpu =
-        Backend.withConnection backend cpu $ \conn ->
-          {-# SCC "httpServe/runOne" #-} do
-            debug "Server.httpServe.runOne: entered"
-            let readEnd = Backend.getReadEnd conn
-            let writeEnd = Backend.getWriteEnd conn
-
-            let raddr = Backend.getRemoteAddr conn
-            let rport = Backend.getRemotePort conn
-            let laddr = Backend.getLocalAddr conn
-            let lport = Backend.getLocalPort conn
-
-            runHTTP localHostname laddr lport raddr rport
-                    alog elog readEnd writeEnd
-                    (Backend.sendFile conn)
-                    (Backend.tickleTimeout conn) handler
-
-            debug "Server.httpServe.runHTTP: finished"
-
-
-    --------------------------------------------------------------------------
-    go alog elog backend cpu = runOne alog elog backend cpu
-        `catches`
-        [ Handler $ \(_ :: Backend.TimeoutException) -> return ()
-
-        , Handler $ \(e :: AsyncException) -> do
-              logE elog $
-                   S.concat [ "Server.httpServe.go: got async exception, "
-                            , "terminating: ", bshow e ]
-              throwIO e
-
-        , Handler $ \(e :: Backend.BackendTerminatedException) -> do
-              logE elog $
-                   S.concat ["Server.httpServe.go: got backend terminated, "
-                            , "waiting for cleanup" ]
-              throwIO e
-
-        , Handler $ \(e :: IOException) -> do
-              logE elog $
-                S.concat [ "Server.httpServe.go: got io exception: "
-                         , bshow e ]
-
-        , Handler $ \(e :: SomeException) -> do
-              logE elog $
-                S.concat [ "Server.httpServe.go: got someexception: "
-                         , bshow e ] ]
 
 
 ------------------------------------------------------------------------------
@@ -272,36 +216,30 @@ logA' logger req rsp = do
 
 
 ------------------------------------------------------------------------------
-runHTTP :: ByteString                    -- ^ local host name
-        -> ByteString                    -- ^ local ip address
-        -> Int                           -- ^ local port
-        -> ByteString                    -- ^ remote ip address
-        -> Int                           -- ^ remote port
-        -> Maybe Logger                  -- ^ access logger
+runHTTP :: Maybe Logger                  -- ^ access logger
         -> Maybe Logger                  -- ^ error logger
+        -> ServerHandler                 -- ^ handler procedure
+        -> ByteString                    -- ^ local host name
+        -> SessionInfo                   -- ^ session port information
         -> Enumerator IO ()              -- ^ read end of socket
         -> Iteratee IO ()                -- ^ write end of socket
         -> (FilePath -> Int64 -> Int64 -> IO ())
                                          -- ^ sendfile end
         -> IO ()                         -- ^ timeout tickler
-        -> ServerHandler                 -- ^ handler procedure
         -> IO ()
-runHTTP lh lip lp rip rp alog elog
-        readEnd writeEnd onSendFile tickle handler =
+runHTTP alog elog handler lh sinfo readEnd writeEnd onSendFile tickle =
     go `catches` [ Handler $ \(e :: AsyncException) -> do
                        throwIO e
-
-                 , Handler $ \(_ :: Backend.TimeoutException) -> return ()
 
                  , Handler $ \(e :: SomeException) ->
                        logE elog $ S.concat [ logPrefix , bshow e ] ]
 
   where
-    logPrefix = S.concat [ "[", rip, "]: error: " ]
+    logPrefix = S.concat [ "[", remoteAddress sinfo, "]: error: " ]
 
     go = do
         buf <- mkIterateeBuffer
-        let iter1 = runServerMonad lh lip lp rip rp (logA alog) (logE elog) $
+        let iter1 = runServerMonad lh sinfo (logA alog) (logE elog) $
                                    httpSession writeEnd buf onSendFile tickle
                                    handler
         let iter = iterateeDebugWrapper "httpSession iteratee" iter1
@@ -539,14 +477,15 @@ receiveRequest = do
     --------------------------------------------------------------------------
     toRequest (IRequest method uri version kvps) =
         {-# SCC "receiveRequest/toRequest" #-} do
-            localAddr     <- gets _localAddress
-            localPort     <- gets _localPort
-            remoteAddr    <- gets _remoteAddr
-            remotePort    <- gets _remotePort
-            localHostname <- gets _localHostname
+            localAddr     <- gets $ localAddress . _sessionPort
+            lport         <- gets $ localPort . _sessionPort
+            remoteAddr    <- gets $ remoteAddress . _sessionPort
+            rport         <- gets $ remotePort . _sessionPort
+            localHostname <- gets $ _localHostname
+            secure        <- gets $ isSecure . _sessionPort
 
             let (serverName, serverPort) = fromMaybe
-                                             (localHostname, localPort)
+                                             (localHostname, lport)
                                              (liftM (parseHost . head)
                                                     (Map.lookup "host" hdrs))
 
@@ -557,11 +496,11 @@ receiveRequest = do
             return $ Request serverName
                              serverPort
                              remoteAddr
-                             remotePort
+                             rport
                              localAddr
-                             localPort
+                             lport
                              localHostname
-                             isSecure
+                             secure
                              hdrs
                              enum
                              mbContentLength
@@ -582,8 +521,6 @@ receiveRequest = do
           where
             f (a,s') = if a == c2w '/' then s' else s
             mbS = S.uncons s
-
-        isSecure        = False
 
         hdrs            = toHeaders kvps
 

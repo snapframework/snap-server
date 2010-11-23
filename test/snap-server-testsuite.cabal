@@ -12,6 +12,10 @@ Flag portable
                optimizations such as C routines will be used.
   Default: False
 
+Flag gnutls
+  Description: Enable https support using the libgnutls library.
+  Default: False
+
 Executable testsuite
    hs-source-dirs:  suite common ../src
    main-is:         TestSuite.hs
@@ -27,6 +31,7 @@ Executable testsuite
      bytestring-nums >= 0.3.1 && < 0.4,
      bytestring-show >= 0.3.2 && < 0.4,
      containers,
+     directory,
      directory-tree,
      dlist >= 0.5 && < 0.6,
      filepath,
@@ -39,6 +44,7 @@ Executable testsuite
      network-bytestring >= 0.1.2 && < 0.2,
      old-locale,
      parallel > 2,
+     process,
      iteratee >= 0.3.1 && < 0.4,
      snap-core >= 0.3 && <0.4,
      template-haskell,
@@ -49,20 +55,20 @@ Executable testsuite
      transformers,
      utf8-string >= 0.3.6 && <0.4,
      vector >= 0.7 && <0.8,
-     vector-algorithms >= 0.3.4 && <0.4
+     vector-algorithms >= 0.3.4 && <0.4,
+     PSQueue >= 1.1 && <1.2
 
    if !os(windows)
      build-depends: unix
 
    if flag(libev)
      build-depends: hlibev >= 0.2.5 && < 0.3
-     other-modules: Snap.Internal.Http.Server.LibevBackend
      cpp-options: -DLIBEV
-   else
-     build-depends: network-bytestring >= 0.1.2 && < 0.2,
-                    PSQueue >= 1.1 && <1.2
 
-     other-modules: Snap.Internal.Http.Server.SimpleBackend
+   if flag(gnutls)
+     extra-libraries: gnutls
+     cpp-options: -DGNUTLS
+     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
@@ -107,7 +113,8 @@ Executable pongserver
      unix-compat == 0.2.*,
      utf8-string >= 0.3.6 && <0.4,
      vector >= 0.7 && <0.8,
-     vector-algorithms >= 0.3.4 && <0.4
+     vector-algorithms >= 0.3.4 && <0.4,
+     PSQueue >= 1.1 && <1.2
 
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
@@ -116,13 +123,12 @@ Executable pongserver
 
    if flag(libev)
      build-depends: hlibev >= 0.2.5 && < 0.3
-     other-modules: Snap.Internal.Http.Server.LibevBackend
      cpp-options: -DLIBEV
-   else
-     build-depends: network-bytestring >= 0.1.2 && < 0.2,
-                    PSQueue >= 1.1 && <1.2
 
-     other-modules: Snap.Internal.Http.Server.SimpleBackend
+   if flag(gnutls)
+     extra-libraries: gnutls
+     cpp-options: -DGNUTLS
+     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
    if os(linux) && !flag(portable)
      cpp-options: -DLINUX -DHAS_SENDFILE
@@ -188,20 +194,20 @@ Executable testserver
      transformers,
      utf8-string >= 0.3.6 && <0.4,
      vector >= 0.7 && <0.8,
-     vector-algorithms >= 0.3.4 && <0.4
+     vector-algorithms >= 0.3.4 && <0.4,
+     PSQueue >= 1.1 && <1.2
 
    if !os(windows)
      build-depends: unix
 
    if flag(libev)
      build-depends: hlibev >= 0.2.5 && < 0.3
-     other-modules: Snap.Internal.Http.Server.LibevBackend
      cpp-options: -DLIBEV
-   else
-     build-depends: network-bytestring >= 0.1.2 && < 0.2,
-                    PSQueue >= 1.1 && <1.2
 
-     other-modules: Snap.Internal.Http.Server.SimpleBackend
+   if flag(gnutls)
+     extra-libraries: gnutls
+     cpp-options: -DGNUTLS
+     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE

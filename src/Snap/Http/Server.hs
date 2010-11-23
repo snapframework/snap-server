@@ -19,10 +19,8 @@ module Snap.Http.Server
   , module Snap.Http.Server.Config
   ) where
 
-import           Control.Exception (SomeException)
 import           Control.Monad
 import           Control.Monad.CatchIO
-import qualified Data.ByteString.UTF8 as U
 import           Data.ByteString (ByteString)
 import           Data.Char
 import           Data.List
@@ -52,14 +50,18 @@ snapServerVersion = Int.snapServerVersion
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
     setUnicodeLocale $ fromJust $ getLocale conf
-    Int.httpServe (fromJust $ getAddress   conf)
-                  (fromJust $ getPort      conf)
+    Int.httpServe (map listenToInt $ getListen conf)
+                  (fmap backendToInt $ getBackend conf)
                   (fromJust $ getHostname  conf)
                   (fromJust $ getAccessLog conf)
                   (fromJust $ getErrorLog  conf)
                   (runSnap handler)
   where
     conf = completeConfig config
+    listenToInt (ListenHttp b p) = Int.HttpPort b p
+    listenToInt (ListenHttps b p c k) = Int.HttpsPort b p c k
+    backendToInt ConfigSimpleBackend = Int.EventLoopSimple
+    backendToInt ConfigLibEvBackend  = Int.EventLoopLibEv
 
 
 ------------------------------------------------------------------------------
@@ -68,10 +70,8 @@ simpleHttpServe config handler = do
 -- server, kill the controlling thread.
 httpServe :: Config Snap () -> Snap () -> IO ()
 httpServe config handler = do
-    output $ "Listening on " ++ (U.toString $ fromJust $ getAddress conf) ++
-        ":" ++ (show $ fromJust $ getPort conf)
-    _ <- try $ serve handler :: IO (Either SomeException ())
-    output "\nShutting down..."
+    mapM_ (output . ("Listening on "++) . show) $ getListen conf
+    serve handler `finally` output "\nShutting down..."
   where
     conf     = completeConfig config
     output   = when (fromJust $ getVerbose conf) . hPutStrLn stderr

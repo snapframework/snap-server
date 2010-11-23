@@ -87,6 +87,10 @@ Flag portable
                optimizations such as C routines will be used.
   Default: False
 
+Flag gnutls
+  Description: Enable https support using the libgnutls library.
+  Default: False
+
 
 Library
   hs-source-dirs: src
@@ -102,7 +106,14 @@ Library
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,
-    Snap.Internal.Http.Server.Date
+    Snap.Internal.Http.Server.Date,
+    Snap.Internal.Http.Server.Backend,
+    Snap.Internal.Http.Server.ListenHelpers,
+    Snap.Internal.Http.Server.GnuTLS,
+    Snap.Internal.Http.Server.HttpPort,
+    Snap.Internal.Http.Server.TimeoutTable,
+    Snap.Internal.Http.Server.SimpleBackend,
+    Snap.Internal.Http.Server.LibevBackend
 
   build-depends:
     array >= 0.2 && <0.4,
@@ -131,23 +142,23 @@ Library
     utf8-string,
     unix-compat == 0.2.*,
     vector >= 0.7 && <0.8,
-    vector-algorithms >= 0.3.4 && <0.4
+    vector-algorithms >= 0.3.4 && <0.4,
+    PSQueue >= 1.1 && <1.2
 
   if flag(portable) || os(windows)
+    build-depends: network-bytestring >= 0.1.2 && < 0.2
     cpp-options: -DPORTABLE
   else
     build-depends: unix
 
   if flag(libev)
     build-depends: hlibev >= 0.2.8 && < 0.3
-    other-modules: Snap.Internal.Http.Server.LibevBackend
     cpp-options: -DLIBEV
-  else
-    other-modules: Snap.Internal.Http.Server.TimeoutTable
-    build-depends: network-bytestring >= 0.1.2 && < 0.2,
-                   PSQueue >= 1.1 && <1.2
 
-    other-modules: Snap.Internal.Http.Server.SimpleBackend
+  if flag(gnutls)
+    extra-libraries: gnutls
+    cpp-options: -DGNUTLS
+    c-sources: src/Snap/Internal/Http/Server/gnutls_helpers.c
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE

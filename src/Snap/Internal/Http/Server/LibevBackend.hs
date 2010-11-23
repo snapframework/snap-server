@@ -8,25 +8,23 @@
 {-# LANGUAGE PackageImports #-}
 
 module Snap.Internal.Http.Server.LibevBackend
-  ( Backend
-  , BackendTerminatedException(..)
-  , Connection
-  , TimeoutException(..)
-  , name
-  , debug
-  , bindIt
-  , new
-  , stop
-  , withConnection
-  , sendFile
-  , tickleTimeout
-  , getReadEnd
-  , getWriteEnd
-  , getRemoteAddr
-  , getRemotePort
-  , getLocalAddr
-  , getLocalPort
+  ( libEvEventLoop
   ) where
+
+#ifndef LIBEV
+
+import Control.Exception
+import Data.Typeable
+import Snap.Internal.Http.Server.Backend
+
+data LibevException = LibevException String
+  deriving (Show, Typeable)
+instance Exception LibevException
+
+libEvEventLoop :: EventLoop
+libEvEventLoop _ _ _ _ = throwIO $ LibevException "libev event loop is not supported"
+
+#else
 
 ---------------------------
 -- TODO: document module --
@@ -38,16 +36,15 @@ import             Control.Exception
 import             Control.Monad
 import "monads-fd" Control.Monad.Trans
 import             Data.ByteString (ByteString)
-import             Data.ByteString.Internal (c2w, w2c)
-import qualified   Data.ByteString.Unsafe as B
+import             Data.ByteString.Internal (c2w)
 import qualified   Data.ByteString as B
+import             Data.Maybe
 import             Data.IORef
 import             Data.Iteratee.WrappedByteString
 import             Data.Typeable
 import             Foreign hiding (new)
-import             Foreign.C.Error
 import             Foreign.C.Types
-import             GHC.Conc (forkOnIO, numCapabilities)
+import             GHC.Conc (forkOnIO)
 import             Network.Libev
 import             Network.Socket
 import             Prelude hiding (catch)
@@ -59,6 +56,8 @@ import             Data.Concurrent.HashMap (HashMap)
 import             Snap.Iteratee
 import             Snap.Internal.Debug
 import             Snap.Internal.Http.Server.Date
+import             Snap.Internal.Http.Server.Backend
+import qualified   Snap.Internal.Http.Server.ListenHelpers as Listen
 
 #if defined(HAS_SENDFILE)
 import qualified   System.SendFile as SF
@@ -67,12 +66,10 @@ import             System.Posix.Types (Fd(..))
 #endif
 
 data Backend = Backend
-    { _acceptSocket      :: !Socket
-    , _acceptFd          :: !CInt
-    , _connectionQueue   :: !(Chan CInt)
+    { _acceptSockets     :: [ListenSocket]
     , _evLoop            :: !EvLoopPtr
-    , _acceptIOCallback  :: !(FunPtr IoCallback)
-    , _acceptIOObj       :: !EvIoPtr
+    , _acceptIOCallbacks :: ![MVar (FunPtr IoCallback)]
+    , _acceptIOObjs      :: ![EvIoPtr]
     , _mutexCallbacks    :: !(FunPtr MutexCallback, FunPtr MutexCallback)
     , _loopLock          :: !(MVar ())
     , _asyncCb           :: !(FunPtr AsyncCallback)
@@ -81,18 +78,15 @@ data Backend = Backend
     , _killObj           :: !EvAsyncPtr
     , _connectionThreads :: !(HashMap ThreadId Connection)
     , _backendCPU        :: !Int
-    , _backendFreed      :: !(MVar ())
+    , _loopExit          :: !(MVar ())
     }
 
 
 data Connection = Connection
     { _backend             :: !Backend
-    , _socket              :: !Socket
-    , _socketFd            :: !CInt
-    , _remoteAddr          :: !ByteString
-    , _remotePort          :: !Int
-    , _localAddr           :: !ByteString
-    , _localPort           :: !Int
+    , _listenSocket        :: !ListenSocket
+    , _rawSocket           :: !CInt
+    , _sessionInfo         :: !SessionInfo
     , _readAvailable       :: !(MVar ())
     , _writeAvailable      :: !(MVar ())
     , _timerObj            :: !EvTimerPtr
@@ -104,75 +98,25 @@ data Connection = Connection
     , _connReadIOCallback  :: !(FunPtr IoCallback)
     , _connWriteIOObj      :: !EvIoPtr
     , _connWriteIOCallback :: !(FunPtr IoCallback)
-    , _connThread          :: !(MVar ThreadId)
+    , _connThread          :: !(ThreadId)
     }
 
-{-# INLINE name #-}
-name :: ByteString
-name = "libev"
+libEvEventLoop :: EventLoop
+libEvEventLoop sockets cap elog handler = do
+    backends <- Prelude.mapM (newLoop sockets handler elog) [0..(cap-1)]
 
+    debug "libevEventLoop: waiting for loop exit"
+    Prelude.mapM_ (takeMVar . _loopExit) backends `finally` do
+        debug "libevEventLoop: stopping all backends"
+        mapM stop backends
+        mapM Listen.closeSocket sockets
 
-sendFile :: Connection -> FilePath -> Int64 -> Int64 -> IO ()
-sendFile c fp start sz = do
-    withMVar lock $ \_ -> do
-      act <- readIORef $ _writeActive c
-      when act $ evIoStop loop io
-      writeIORef (_writeActive c) False
-      evAsyncSend loop asy
-
-#if defined(HAS_SENDFILE)
-    bracket (openFd fp ReadOnly Nothing defaultFileFlags)
-            (closeFd)
-            (go start sz)
-#else
-    enumFilePartial fp (start,start+sz) (getWriteEnd c) >>= run
-    return ()
-#endif
-
-    withMVar lock $ \_ -> do
-      tryTakeMVar $ _readAvailable c
-      tryTakeMVar $ _writeAvailable c
-      evAsyncSend loop asy
-
-  where
-#if defined(HAS_SENDFILE)
-    go off bytes fd
-      | bytes == 0 = return ()
-      | otherwise  = do
-            sent <- SF.sendFile sfd fd off bytes
-            if sent < bytes
-              then tickleTimeout c >> go (off+sent) (bytes-sent) fd
-              else return ()
-
-    sfd  = Fd $ _socketFd c
-#endif
-    io   = _connWriteIOObj c
-    b    = _backend c
-    loop = _evLoop b
-    lock = _loopLock b
-    asy  = _asyncObj b
-
-
-bindIt :: ByteString         -- ^ bind address, or \"*\" for all
-       -> Int                -- ^ port to bind to
-       -> IO (Socket,CInt)
-bindIt bindAddress bindPort = do
-    sock <- socket AF_INET Stream 0
-    addr <- getHostAddr bindPort bindAddress
-    setSocketOption sock ReuseAddr 1
-    bindSocket sock addr
-    listen sock 150
-    let sockFd = fdSocket sock
-    c_setnonblocking sockFd
-    return (sock, sockFd)
-
-
-new :: (Socket,CInt)   -- ^ value you got from bindIt
-    -> Int             -- ^ cpu
-    -> IO Backend
-new (sock,sockFd) cpu = do
-    connq <- newChan
-
+newLoop :: [ListenSocket]        -- ^ value you got from bindIt
+        -> SessionHandler        -- ^ handler
+        -> (ByteString -> IO ()) -- ^ error logger
+        -> Int                   -- ^ cpu
+        -> IO Backend
+newLoop sockets handler elog cpu = do
     -- We'll try kqueue on OSX even though the libev docs complain that it's
     -- "broken", in the hope that it works as expected for sockets
     f  <- evRecommendedBackends
@@ -201,12 +145,9 @@ new (sock,sockFd) cpu = do
     evAsyncInit killObj killCB
     evAsyncStart lp killObj
 
-    -- setup the accept callback; this watches for read readiness on the listen
-    -- port
-    accCB <- mkIoCallback $ acceptCallback sockFd connq
-    accIO <- mkEvIo
-    evIoInit accIO accCB sockFd ev_read
-    evIoStart lp accIO
+    -- create the ios for the accept callbacks
+    accMVars <- forM sockets $ \_ -> newEmptyMVar
+    accIOs <- forM sockets $ \_ -> mkEvIo
 
     -- thread set stuff
     connSet <- H.new (H.hashString . show)
@@ -214,12 +155,10 @@ new (sock,sockFd) cpu = do
     -- freed gets stuffed with () when all resources are released.
     freed <- newEmptyMVar
 
-    let b = Backend sock
-                    sockFd
-                    connq
+    let b = Backend sockets
                     lp
-                    accCB
-                    accIO
+                    accMVars
+                    accIOs
                     (mc1,mc2)
                     looplock
                     asyncCB
@@ -230,9 +169,17 @@ new (sock,sockFd) cpu = do
                     cpu
                     freed
 
+    -- setup the accept callback; this watches for read readiness on the listen
+    -- port
+    forM_ (zip3 sockets accIOs accMVars) $ \(sock, accIO, x) -> do
+        accCB <- mkIoCallback $ acceptCallback b handler elog cpu sock
+        evIoInit accIO accCB (fdSocket $ Listen.listenSocket sock) ev_read
+        evIoStart lp accIO
+        putMVar x accCB
+
     forkOnIO cpu $ loopThread b
 
-    debug $ "Backend.new: loop spawned"
+    debug $ "Backend.newLoop: loop spawned"
     return b
 
 
@@ -246,17 +193,22 @@ loopThread backend = do
     cleanup = block $ do
         debug $ "loopThread: cleaning up"
         ignoreException $ freeBackend backend
-        putMVar (_backendFreed backend) ()
+        putMVar (_loopExit backend) ()
 
     lock    = _loopLock backend
     loop    = _evLoop backend
     go      = takeMVar lock >> block (evLoop loop 0)
 
 
-acceptCallback :: CInt -> Chan CInt -> IoCallback
-acceptCallback accFd chan _loopPtr _ioPtr _ = do
+acceptCallback :: Backend
+               -> SessionHandler 
+               -> (ByteString -> IO ())
+               -> Int
+               -> ListenSocket 
+               -> IoCallback
+acceptCallback back handler elog cpu sock _loopPtr _ioPtr _ = do
     debug "inside acceptCallback"
-    r <- c_accept accFd
+    r <- c_accept $ fdSocket $ Listen.listenSocket sock
 
     case r of
       -- this (EWOULDBLOCK) shouldn't happen (we just got told it was ready!),
@@ -266,7 +218,13 @@ acceptCallback accFd chan _loopPtr _ioPtr _ = do
       -1 -> debugErrno "Backend.acceptCallback:c_accept()"
       fd -> do
           debug $ "acceptCallback: accept()ed fd, writing to chan " ++ show fd
-          writeChan chan fd
+          forkOnIO cpu $ (go r `catches` cleanup)
+          return ()
+  where
+    go = runSession back handler sock
+    cleanup = [ Handler $ \(_ :: TimeoutException) -> return ()
+              , Handler $ \(e :: SomeException) -> elog $ B.concat [ "libev.acceptCallback: ", B.pack . map c2w $ show e ]
+              ]
 
 
 ioReadCallback :: CInt -> IORef Bool -> MVar () -> IoCallback
@@ -295,31 +253,20 @@ stop b = ignoreException $ do
 
     -- 1. take the loop lock
     -- 2. shut down the accept() callback
-    -- 3. stuff a poison pill (a bunch of -1 values should do) down the
-    --    connection queue so that withConnection knows to throw an exception
-    --    back up to its caller
-    -- 4. call evUnloop and wake up the loop using evAsyncSend
-    -- 5. release the loop lock, the main loop thread should then free/clean
+    -- 3. call evUnloop and wake up the loop using evAsyncSend
+    -- 4. release the loop lock, the main loop thread should then free/clean
     --    everything up (threads, connections, io objects, callbacks, etc)
-    -- 6. wait for the loop thread to signal it has cleaned up and exited
 
     withMVar lock $ \_ -> do
-        evIoStop loop acceptObj
-        replicateM_ (numCapabilities*2) $ writeChan connQ (-1)
+        forM acceptObjs $ evIoStop loop
         evUnloop loop evunloop_all
         evAsyncSend loop killObj
 
-    debug $ "accepting threads killed, unloop sent, waiting for completion"
-    takeMVar $ _backendFreed b
-
   where
     loop           = _evLoop b
-    acceptObj      = _acceptIOObj b
+    acceptObjs     = _acceptIOObjs b
     killObj        = _killObj b
     lock           = _loopLock b
-    connQ          = _connectionQueue b
-
-
 
 getAddr :: SockAddr -> IO (ByteString, Int)
 getAddr addr =
@@ -336,9 +283,9 @@ getAddr addr =
 timerCallback :: EvLoopPtr         -- ^ loop obj
               -> EvTimerPtr        -- ^ timer obj
               -> IORef CTime       -- ^ when to timeout?
-              -> MVar ThreadId     -- ^ thread to kill
+              -> ThreadId          -- ^ thread to kill
               -> TimerCallback
-timerCallback loop tmr ioref tmv _ _ _ = do
+timerCallback loop tmr ioref tid _ _ _ = do
     debug "Backend.timerCallback: entered"
 
     now       <- getCurrentDateTime
@@ -347,7 +294,6 @@ timerCallback loop tmr ioref tmv _ _ _ = do
     if whenToDie <= now
       then do
           debug "Backend.timerCallback: killing thread"
-          tid <- readMVar tmv
           throwTo tid TimeoutException
 
       else do
@@ -381,7 +327,7 @@ destroyConnection conn = do
     backend    = _backend conn
     loop       = _evLoop backend
 
-    fd         = _socketFd conn
+    fd         = _rawSocket conn
     ioWrObj    = _connWriteIOObj conn
     ioWrCb     = _connWriteIOCallback conn
     ioRdObj    = _connReadIOObj conn
@@ -393,9 +339,9 @@ destroyConnection conn = do
 freeConnection :: Connection -> IO ()
 freeConnection conn = ignoreException $ do
     withMVar loopLock $ \_ -> block $ do
-        debug $ "freeConnection (" ++ show fd ++ ")"
+        debug $ "freeConnection (" ++ show (_rawSocket conn) ++ ")"
         destroyConnection conn
-        tid <- readMVar $ _connThread conn
+        let tid = _connThread conn
 
         -- remove the thread id from the backend set
         H.delete tid $ _connectionThreads backend
@@ -408,7 +354,6 @@ freeConnection conn = ignoreException $ do
     loop       = _evLoop backend
     loopLock   = _loopLock backend
     asyncObj   = _asyncObj backend
-    fd         = _socketFd conn
 
 
 ignoreException :: IO () -> IO ()
@@ -437,9 +382,10 @@ freeBackend backend = ignoreException $ block $ do
     debug $ "Backend.freeBackend: " ++ show nthreads ++ " thread(s) killed"
     debug $ "Backend.freeBackend: destroying libev resources"
 
-    freeEvIo acceptObj
-    freeIoCallback acceptCb
-    c_close fd
+    mapM freeEvIo acceptObjs
+    forM acceptCbs $ \x -> do
+        acceptCb <- readMVar x
+        freeIoCallback acceptCb
 
     evAsyncStop loop asyncObj
     freeEvAsync asyncObj
@@ -456,9 +402,8 @@ freeBackend backend = ignoreException $ block $ do
     debug $ "Backend.freeBackend: resources destroyed"
 
   where
-    fd          = _acceptFd backend
-    acceptObj   = _acceptIOObj backend
-    acceptCb    = _acceptIOCallback backend
+    acceptObjs  = _acceptIOObjs backend
+    acceptCbs   = _acceptIOCallbacks backend
     asyncObj    = _asyncObj backend
     asyncCb     = _asyncCb backend
     killObj     = _killObj backend
@@ -468,32 +413,22 @@ freeBackend backend = ignoreException $ block $ do
 
 
 -- | Note: proc gets run in the background
-withConnection :: Backend -> Int -> (Connection -> IO ()) -> IO ()
-withConnection backend cpu proc = go
-  where
-    threadProc conn = (do
-        x <- blocked
-        debug $ "withConnection/threadProc: we are blocked? " ++ show x
-        proc conn) `finally` freeConnection conn
-
-    go = do
-        debug $ "withConnection: reading from chan"
-        fd   <- readChan $ _connectionQueue backend
-        debug $ "withConnection: got fd " ++ show fd
-
-        -- if fd < 0 throw an exception here (because this only happens if stop
-        -- is called)
-        when (fd < 0) $ throwIO BackendTerminatedException
-
+runSession :: Backend 
+           -> SessionHandler
+           -> ListenSocket
+           -> CInt
+           -> IO ()
+runSession backend handler lsock fd = do
         sock <- mkSocket fd AF_INET Stream 0 Connected
         peerName <- getPeerName sock
         sockName <- getSocketName sock
+        tid <- myThreadId
 
         -- set_linger fd
         c_setnonblocking fd
 
-        (remoteAddr, remotePort) <- getAddr peerName
-        (localAddr, localPort) <- getAddr sockName
+        (raddr, rport) <- getAddr peerName
+        (laddr, lport) <- getAddr sockName
 
         let lp = _evLoop backend
 
@@ -507,13 +442,12 @@ withConnection backend cpu proc = go
         -- setup timer --
         -----------------
         tmr         <- mkEvTimer
-        thrmv       <- newEmptyMVar
         now         <- getCurrentDateTime
         timeoutTime <- newIORef $ now + 20
         tcb         <- mkTimerCallback $ timerCallback lp
                                                       tmr
                                                       timeoutTime
-                                                      thrmv
+                                                      tid
         -- 20 second timeout
         evTimerInit tmr tcb 0 20.0
 
@@ -540,13 +474,11 @@ withConnection backend cpu proc = go
              -- registered next time through the loop
              evAsyncSend lp $ _asyncObj backend
 
+        let sinfo = SessionInfo laddr lport raddr rport $ Listen.isSecure lsock
         let conn = Connection backend
-                              sock
+                              lsock
                               fd
-                              remoteAddr
-                              remotePort
-                              localAddr
-                              localPort
+                              sinfo
                               ra
                               wa
                               tmr
@@ -558,24 +490,25 @@ withConnection backend cpu proc = go
                               ioReadCb
                               evioWrite
                               ioWriteCb
-                              thrmv
+                              tid
 
+        bracket (Listen.createSession lsock bLOCKSIZE fd $ waitForLock True conn)
+                (\session -> block $ do
+                    debug "runSession: thread killed, closing socket"
 
-        tid <- forkOnIO cpu $ threadProc conn
+                    eatException $ Listen.endSession lsock session
+                    eatException $ freeConnection conn
+                )
+                (\session -> do H.update tid conn (_connectionThreads backend)
+                                handler sinfo
+                                        (enumerate conn session)
+                                        (writeOut conn session)
+                                        (sendFile conn session)
+                                        (tickleTimeout conn)
+                )
 
-        H.update tid conn (_connectionThreads backend)
-        putMVar thrmv tid
-
-
-data BackendTerminatedException = BackendTerminatedException
-   deriving (Typeable)
-
-instance Show BackendTerminatedException where
-    show BackendTerminatedException = "Backend terminated"
-
-instance Exception BackendTerminatedException
-
-
+eatException :: IO a -> IO ()
+eatException act = (act >> return ()) `catch` \(_::SomeException) -> return ()
 
 data AddressNotSupportedException = AddressNotSupportedException String
    deriving (Typeable)
@@ -586,32 +519,7 @@ instance Show AddressNotSupportedException where
 instance Exception AddressNotSupportedException
 
 
-getRemoteAddr :: Connection -> ByteString
-getRemoteAddr = _remoteAddr
-
-getRemotePort :: Connection -> Int
-getRemotePort = _remotePort
-
-getLocalAddr :: Connection -> ByteString
-getLocalAddr = _localAddr
-
-getLocalPort :: Connection -> Int
-getLocalPort = _localPort
-
 ------------------------------------------------------------------------------
-
--- fixme: new function name
-getHostAddr :: Int
-            -> ByteString
-            -> IO SockAddr
-getHostAddr p s = do
-    h <- if s == "*"
-          then return iNADDR_ANY
-          else inet_addr (map w2c . B.unpack $ s)
-
-    return $ SockAddrInet (fromIntegral p) h
-
-
 
 bLOCKSIZE :: Int
 bLOCKSIZE = 8192
@@ -638,143 +546,120 @@ tickleTimeout conn = do
     now       <- getCurrentDateTime
     writeIORef (_timerTimeoutTime conn) (now + 30)
 
+waitForLock :: Bool        -- ^ True = wait for read, False = wait for write
+            -> Connection
+            -> IO ()
+waitForLock readLock conn = do
+    dbg "start waitForLock"
 
-recvData :: Connection -> Int -> IO ByteString
-recvData conn n = do
-    dbg "entered"
-    allocaBytes n $ \cstr -> do
-    sz <- throwErrnoIfMinus1RetryMayBlock
-              "recvData"
-              (c_read fd cstr (toEnum n))
-              waitForLock
+    withMVar looplock $ \_ -> do
+        act <- readIORef active
+        if act
+          then dbg "read watcher already active, skipping"
+          else do
+            dbg "starting watcher, sending async"
+            tryTakeMVar lock
+            evIoStart lp io
+            writeIORef active True
+            evAsyncSend lp async
 
-    -- we got activity, but don't do restart timer due to the
-    -- slowloris attack
-
-    dbg $ "sz returned " ++ show sz
-
-    if sz == 0
-      then return ""
-      else B.packCStringLen ((castPtr cstr),(fromEnum sz))
+    dbg "waitForLock: waiting for mvar"
+    takeMVar lock
+    dbg "waitForLock: took mvar"
 
   where
-    io       = _connReadIOObj conn
+    dbg s    = debug $ "Backend.recvData(" ++ show (_rawSocket conn) ++ "): " ++ s
+    io       = if readLock 
+                 then (_connReadIOObj conn)
+                 else (_connWriteIOObj conn)
     bk       = _backend conn
-    active   = _readActive conn
+    active   = if readLock
+                 then (_readActive conn)
+                 else (_writeActive conn)
     lp       = _evLoop bk
     looplock = _loopLock bk
     async    = _asyncObj bk
+    lock     = if readLock
+                 then (_readAvailable conn)
+                 else (_writeAvailable conn)
 
-    dbg s = debug $ "Backend.recvData(" ++ show (_socketFd conn) ++ "): " ++ s
+sendFile :: Connection -> NetworkSession -> FilePath -> Int64 -> Int64 -> IO ()
+sendFile c s fp start sz = do
+    withMVar lock $ \_ -> do
+      act <- readIORef $ _writeActive c
+      when act $ evIoStop loop io
+      writeIORef (_writeActive c) False
+      evAsyncSend loop asy
 
-    fd          = _socketFd conn
-    lock        = _readAvailable conn
-    waitForLock = do
-        dbg "start waitForLock"
+#if defined(HAS_SENDFILE)
+    case (_listenSocket c) of
+        ListenHttp _ -> bracket (openFd fp ReadOnly Nothing defaultFileFlags)
+                                (closeFd)
+                                (go start sz)
+        _            -> enumFilePartial fp (start,start+sz) (writeOut c s) >>= run
+#else
+    enumFilePartial fp (start,start+sz) (writeOut c s) >>= run
+    return ()
+#endif
 
-        withMVar looplock $ \_ -> do
-            act <- readIORef active
-            if act
-              then dbg "read watcher already active, skipping"
-              else do
-                dbg "starting watcher, sending async"
-                tryTakeMVar lock
-                evIoStart lp io
-                writeIORef active True
-                evAsyncSend lp async
-
-        dbg "waitForLock: waiting for mvar"
-        takeMVar lock
-        dbg "waitForLock: took mvar"
-
-
-sendData :: Connection -> ByteString -> IO ()
-sendData conn bs = do
-    let len = B.length bs
-    dbg $ "entered w/ " ++ show len ++ " bytes"
-    written <- B.unsafeUseAsCString bs $ \cstr ->
-        throwErrnoIfMinus1RetryMayBlock
-                   "sendData"
-                   (c_write fd cstr (toEnum len))
-                   waitForLock
-
-    -- we got activity, so restart timer
-    tickleTimeout conn
-
-    let n = fromEnum written
-    let last10 = B.drop (n-10) $ B.take n bs
-
-    dbg $ "wrote " ++ show written ++ " bytes, last 10='" ++ show last10 ++ "'"
-
-    if n < len
-       then do
-         dbg $ "short write, need to write " ++ show (len-n) ++ " more bytes"
-         sendData conn $ B.drop n bs
-       else return ()
+    withMVar lock $ \_ -> do
+      tryTakeMVar $ _readAvailable c
+      tryTakeMVar $ _writeAvailable c
+      evAsyncSend loop asy
 
   where
-    io       = _connWriteIOObj conn
-    bk       = _backend conn
-    active   = _writeActive conn
-    lp       = _evLoop bk
-    looplock = _loopLock bk
-    async    = _asyncObj bk
+#if defined(HAS_SENDFILE)
+    go off bytes fd
+      | bytes == 0 = return ()
+      | otherwise  = do
+            sent <- SF.sendFile sfd fd off bytes
+            if sent < bytes
+              then tickleTimeout c >> go (off+sent) (bytes-sent) fd
+              else return ()
 
-    dbg s = debug $ "Backend.sendData(" ++ show (_socketFd conn) ++ "): " ++ s
-    fd          = _socketFd conn
-    lock        = _writeAvailable conn
-    waitForLock = do
-        dbg "waitForLock: starting"
-        withMVar looplock $ \_ -> do
-            act <- readIORef active
-            if act
-              then dbg "write watcher already running, skipping"
-              else do
-                dbg "starting watcher, sending async event"
-                tryTakeMVar lock
-                evIoStart lp io
-                writeIORef active True
-                evAsyncSend lp async
+    sfd  = Fd $ _rawSocket c
+#endif
+    io   = _connWriteIOObj c
+    b    = _backend c
+    loop = _evLoop b
+    lock = _loopLock b
+    asy  = _asyncObj b
 
-        dbg "waitForLock: taking mvar"
-        takeMVar lock
-        dbg "waitForLock: took mvar"
-
-
-getReadEnd :: Connection -> Enumerator IO a
-getReadEnd = enumerate
-
-
-getWriteEnd :: Connection -> Iteratee IO ()
-getWriteEnd = writeOut
-
-
-enumerate :: (MonadIO m) => Connection -> Enumerator m a
-enumerate = loop
+enumerate :: (MonadIO m) => Connection -> NetworkSession -> Enumerator m a
+enumerate conn session = loop
   where
-    loop conn f = do
-        s <- liftIO $ recvData conn bLOCKSIZE
-        sendOne conn f s
+    loop f = do
+        s <- liftIO $ recvData
+        sendOne f s
 
-    sendOne conn f s = do
-        v <- runIter f (if B.null s
+    sendOne f s = do
+        v <- runIter f (if isNothing s
                          then EOF Nothing
-                         else Chunk $ WrapBS s)
+                         else Chunk $ WrapBS $ fromJust s)
         case v of
           r@(Done _ _)      -> return $ liftI r
-          (Cont k Nothing)  -> loop conn k
+          (Cont k Nothing)  -> loop k
           (Cont _ (Just e)) -> return $ throwErr e
 
+    recvData = Listen.recv (_listenSocket conn) (waitForLock True conn) session
 
-writeOut :: (MonadIO m) => Connection -> Iteratee m ()
-writeOut conn = IterateeG out
+writeOut :: (MonadIO m) => Connection -> NetworkSession -> Iteratee m ()
+writeOut conn session = IterateeG out
   where
+    iteratee = IterateeG out
+
     out c@(EOF _)   = return $ Done () c
 
     out (Chunk s) = do
         let x = unWrap s
 
-        liftIO $ sendData conn x
+        liftIO $ sendData x
 
-        return $ Cont (writeOut conn) Nothing
+        return $ Cont iteratee Nothing
 
+    sendData = Listen.send (_listenSocket conn) 
+                           (tickleTimeout conn)
+                           (waitForLock False conn)
+                           session
+
+#endif
