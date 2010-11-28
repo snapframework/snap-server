@@ -9,8 +9,9 @@ module Test.Blackbox
   , ssltests
   , startTestServer ) where
 
-
+------------------------------------------------------------------------------
 import             Control.Concurrent
+import             Control.Exception (finally)
 import             Control.Monad
 import qualified   Data.ByteString.Char8 as S
 import             Data.Int
@@ -19,7 +20,11 @@ import qualified   Network.HTTP as HTTP
 import qualified   Network.URI as URI
 import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (take)
+import             System.Directory (getCurrentDirectory)
 import             System.Timeout
+import             System.Posix.Signals (signalProcess, sigINT)
+import             System.Posix.Types (ProcessID)
+import             System.Process (runCommand)
 import             Test.Framework
 import             Test.Framework.Providers.HUnit
 import             Test.Framework.Providers.QuickCheck2
@@ -27,18 +32,14 @@ import             Test.HUnit hiding (Test, path)
 import             Test.QuickCheck
 import qualified   Test.QuickCheck.Monadic as QC
 import             Test.QuickCheck.Monadic hiding (run, assert)
-import             System.Directory (getCurrentDirectory)
-import             System.Posix.Signals (signalProcess, sigINT)
-import             System.Posix.Types (ProcessID)
-import             System.Process (runCommand)
-
+------------------------------------------------------------------------------
 import             Snap.Http.Server
 import             Snap.Test.Common
-
 import             Test.Common.Rot13
 import             Test.Common.TestHandler
+------------------------------------------------------------------------------
 
-testFunctions :: [Int -> Test]
+testFunctions :: [Int -> String -> Test]
 testFunctions = [ testPong
                 , testHeadPong
                 , testEcho
@@ -50,16 +51,22 @@ testFunctions = [ testPong
                 ]
 
 
-tests :: Int -> [Test]
-tests port = map ($ port) testFunctions
+------------------------------------------------------------------------------
+tests :: Int -> String -> [Test]
+tests port name = map (\f -> f port name) testFunctions
 
 
-ssltests :: Maybe (Int,Int) -> [Test]
-ssltests = maybe [] httpsTests
-    where httpsTests (_,port) = map ($ port) testFunctions
+------------------------------------------------------------------------------
+ssltests :: String -> Maybe (Int,Int) -> [Test]
+ssltests name = maybe [] httpsTests
+    where httpsTests (_,port) = map (\f -> f port name) testFunctions
+          sslname = "ssl/" ++ name
 
-
-startTestServer :: Int -> Maybe (Int,Int) -> ConfigBackend -> IO ThreadId
+------------------------------------------------------------------------------
+startTestServer :: Int
+                -> Maybe (Int,Int)
+                -> ConfigBackend
+                -> IO (ThreadId, MVar ())
 startTestServer port sslport backend = do
     let cfg = setAccessLog (Just $ "ts-access.log." ++ show backend)  .
               setErrorLog  (Just $ "ts-error.log." ++ show backend)   . 
@@ -71,13 +78,17 @@ startTestServer port sslport backend = do
     let cfg' = case sslport of
                 Nothing    -> cfg
                 Just (p,_) -> addListen (ListenHttps "*" p "cert.pem" "key.pem") cfg
-              
-    tid <- forkIO $
-           httpServe cfg' testHandler
+
+    mvar <- newEmptyMVar
+    tid  <- forkIO $
+            (httpServe cfg' testHandler
+             `finally` putMVar mvar ())
     waitabit
 
-    return tid
+    return (tid,mvar)
 
+
+------------------------------------------------------------------------------
 {- stunnel needs the SIGINT signal to properly shutdown, but
    System.Process can currently only send SIGKILL.  A future
    version of System.Process will have the ability to send SIGINT
@@ -96,45 +107,50 @@ spawnStunnel (Just (sport, lport)) = do
     str <- readFile pidfile
     return $ Just $ read str
 
+
+------------------------------------------------------------------------------
 killStunnel :: Maybe ProcessID -> IO ()
 killStunnel Nothing = return ()
 killStunnel (Just pid) = signalProcess sigINT pid 
 
+
+------------------------------------------------------------------------------
 doPong :: Int -> IO String
 doPong port = do
     rsp <- HTTP.simpleHTTP $
            HTTP.getRequest $
            "http://localhost:" ++ show port ++ "/pong"
-
     HTTP.getResponseBody rsp
 
 
+------------------------------------------------------------------------------
 headPong :: Int -> IO String
 headPong port = do
     let req = (HTTP.getRequest $ 
                "http://localhost:" ++ show port ++ "/pong")
                 { HTTP.rqMethod = HTTP.HEAD }
-
     rsp <- HTTP.simpleHTTP req
-
     HTTP.getResponseBody rsp
 
 
-testPong :: Int -> Test
-testPong port = testCase "blackbox/pong" $ do
+------------------------------------------------------------------------------
+testPong :: Int -> String -> Test
+testPong port name = testCase (name ++ "/blackbox/pong") $ do
     doc <- doPong port
     assertEqual "pong response" "PONG" doc
 
 
-testHeadPong :: Int -> Test
-testHeadPong port = testCase "blackbox/pong/HEAD" $ do
+------------------------------------------------------------------------------
+testHeadPong :: Int -> String -> Test
+testHeadPong port name = testCase (name ++ "/blackbox/pong/HEAD") $ do
     doc <- headPong port
     assertEqual "pong HEAD response" "" doc
 
 
-testEcho :: Int -> Test
-testEcho port = testProperty "blackbox/echo" $
-                monadicIO $ forAllM arbitrary prop
+------------------------------------------------------------------------------
+testEcho :: Int -> String -> Test
+testEcho port name = testProperty (name ++ "/blackbox/echo") $
+                     monadicIO $ forAllM arbitrary prop
   where
     prop txt = do
         let uri = fromJust $
@@ -152,9 +168,10 @@ testEcho port = testProperty "blackbox/echo" $
         QC.assert $ txt == doc
 
 
-testRot13 :: Int -> Test
-testRot13 port = testProperty "blackbox/rot13" $
-                 monadicIO $ forAllM arbitrary prop
+------------------------------------------------------------------------------
+testRot13 :: Int -> String -> Test
+testRot13 port name = testProperty (name ++ "/blackbox/rot13") $
+                      monadicIO $ forAllM arbitrary prop
   where
     prop txt = do
         let uri = fromJust $
@@ -172,8 +189,10 @@ testRot13 port = testProperty "blackbox/rot13" $
         QC.assert $ txt == rot13 doc
 
 
-testSlowLoris :: Int -> Test
-testSlowLoris port = testCase "blackbox/slowloris" $ withSock port go
+------------------------------------------------------------------------------
+testSlowLoris :: Int -> String -> Test
+testSlowLoris port name = testCase (name ++ "/blackbox/slowloris") $
+                          withSock port go
 
   where
     go sock = do
@@ -198,14 +217,17 @@ testSlowLoris port = testCase "blackbox/slowloris" $ withSock port go
         loris sock
 
 
-testBlockingRead :: Int -> Test
-testBlockingRead port = testCase "blackbox/testBlockingRead" $
-                        withSock port $ \sock -> do
-    m <- timeout (60*seconds) $ go sock
-    maybe (assertFailure "timeout")
-          (const $ return ())
-          m
+------------------------------------------------------------------------------
+testBlockingRead :: Int -> String -> Test
+testBlockingRead port name =
+    testCase (name ++ "/blackbox/testBlockingRead") $
+             withSock port $
+             \sock -> do
 
+        m <- timeout (60*seconds) $ go sock
+        maybe (assertFailure "timeout")
+              (const $ return ())
+              m
   where
     go sock = do
         N.sendAll sock "GET /"
@@ -222,9 +244,10 @@ testBlockingRead port = testCase "blackbox/testBlockingRead" $
         assertEqual "pong response" "PONG" s
 
 
+------------------------------------------------------------------------------
 -- test server's ability to trap/recover from IO errors
-testPartial :: Int -> Test
-testPartial port = testCase "blackbox/testPartial" $ do
+testPartial :: Int -> String -> Test
+testPartial port name = testCase (name ++ "/blackbox/testPartial") $ do
     m <- timeout (60*seconds) go
     maybe (assertFailure "timeout")
           (const $ return ())
@@ -240,9 +263,10 @@ testPartial port = testCase "blackbox/testPartial" $ do
         assertEqual "pong response" "PONG" doc
 
 
-testBigResponse :: Int -> Test
-testBigResponse port = testCase "blackbox/testBigResponse" $
-                       withSock port $ \sock -> do
+------------------------------------------------------------------------------
+testBigResponse :: Int -> String -> Test
+testBigResponse port name = testCase (name ++ "/blackbox/testBigResponse") $
+                            withSock port $ \sock -> do
     m <- timeout (120*seconds) $ go sock
     maybe (assertFailure "timeout")
           (const $ return ())
@@ -268,5 +292,6 @@ waitabit :: IO ()
 waitabit = threadDelay $ 2*seconds
 
 
+------------------------------------------------------------------------------
 seconds :: Int
 seconds = (10::Int) ^ (6::Int)

@@ -50,7 +50,7 @@ import           Data.List
 import           Data.Monoid
 import           Prelude hiding (catch)
 import           Snap.Types
-import           Snap.Iteratee ((>.), enumBS)
+import           Snap.Iteratee ((>==>), enumBS)
 import           System.Console.GetOpt
 import           System.Environment hiding (getEnv)
 #ifndef PORTABLE
@@ -195,7 +195,7 @@ defaultConfig = Config
         finishWith $ setContentType "text/plain; charset=utf-8"
                    . setContentLength (fromIntegral $ B.length msg)
                    . setResponseStatus 500 "Internal Server Error"
-                   . modifyResponseBody (>. enumBS msg)
+                   . modifyResponseBody (>==> enumBS msg)
                    $ emptyResponse
     , other        = Nothing
     }

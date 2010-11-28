@@ -4,6 +4,7 @@ module Main where
 
 import           Control.Exception
 import           Control.Concurrent (killThread)
+import           Control.Concurrent.MVar
 import           Control.Monad
 import           Test.Framework (defaultMain, testGroup)
 import           Snap.Http.Server.Config
@@ -35,7 +36,7 @@ backends = zip3 ports sslports [ConfigSimpleBackend]
 
 main :: IO ()
 main = do
-    tids <- forM backends $ \(port,sslport,b) -> do
+    tinfos <- forM backends $ \(port,sslport,b) ->
         Test.Blackbox.startTestServer port sslport b
 
     stunnels <- forM backends $ \(_,sslport,_) -> do
@@ -43,7 +44,8 @@ main = do
 
     defaultMain (tests ++ concatMap blackbox backends) `finally` do
         mapM_ Test.Blackbox.killStunnel stunnels
-        mapM_ killThread tids
+        mapM_ killThread $ map fst tinfos
+        mapM_ takeMVar $ map snd tinfos
 
   where tests =
             [ testGroup "Data.Concurrent.HashMap.Tests"
@@ -54,9 +56,10 @@ main = do
                         Snap.Internal.Http.Server.Tests.tests
             ]
         blackbox (port, sslport, b) =
-            [ testGroup ("Test.Blackbox " ++ show b)
-                        $ Test.Blackbox.tests port
-            , testGroup ("Test.Blackbox SSL " ++ show b)
-                        $ Test.Blackbox.ssltests sslport
+            [ testGroup ("Test.Blackbox " ++ backendName)
+                        $ Test.Blackbox.tests port backendName
+            , testGroup ("Test.Blackbox SSL " ++ backendName)
+                        $ Test.Blackbox.ssltests backendName sslport
             ]
-
+          where
+            backendName = show b

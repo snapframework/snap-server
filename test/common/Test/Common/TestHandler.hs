@@ -5,13 +5,14 @@ module Test.Common.TestHandler (testHandler) where
 
 
 import           Control.Monad
+import           Control.Monad.Trans
 
 import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
-import           Data.Iteratee.WrappedByteString
 import           Data.Maybe
 
 import           Snap.Iteratee hiding (Enumerator)
+import qualified Snap.Iteratee as I
 import           Snap.Types
 import           Snap.Http.Server
 import           Snap.Util.FileServe
@@ -32,18 +33,21 @@ echoUriHandler = do
 
 
 echoHandler :: Snap ()
-echoHandler = transformRequestBody return
+echoHandler = transformRequestBody returnI
 
 
 rot13Handler :: Snap ()
-rot13Handler = transformRequestBody $ return . f
+rot13Handler = transformRequestBody f
   where
-    f i    = IterateeG $ \ch -> do
-                 case ch of
-                   (EOF _)            -> runIter i ch
-                   (Chunk (WrapBS s)) -> do
-                        i' <- liftM liftI $ runIter i $ Chunk $ WrapBS $ rot13 s
-                        return $ Cont (f i') Nothing
+    f origStep = do
+        mbX  <- I.head
+        maybe (enumEOF origStep)
+              (feedStep origStep)
+              mbX
+
+    feedStep origStep x = do
+        step <- lift $ runIteratee $ enumBS (rot13 x) origStep
+        f step
 
 
 bigResponseHandler :: Snap ()

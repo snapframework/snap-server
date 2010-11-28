@@ -31,16 +31,15 @@ libEvEventLoop _ _ _ _ = throwIO $ LibevException "libev event loop is not suppo
 ---------------------------
 
 ------------------------------------------------------------------------------
-import             Control.Concurrent
+import             Control.Concurrent hiding (yield)
 import             Control.Exception
 import             Control.Monad
 import "monads-fd" Control.Monad.Trans
 import             Data.ByteString (ByteString)
 import             Data.ByteString.Internal (c2w)
-import qualified   Data.ByteString as B
+import qualified   Data.ByteString as S
 import             Data.Maybe
 import             Data.IORef
-import             Data.Iteratee.WrappedByteString
 import             Data.Typeable
 import             Foreign hiding (new)
 import             Foreign.C.Types
@@ -53,7 +52,7 @@ import             Prelude hiding (catch)
 -- FIXME: should be HashSet, make that later.
 import qualified   Data.Concurrent.HashMap as H
 import             Data.Concurrent.HashMap (HashMap)
-import             Snap.Iteratee
+import             Snap.Iteratee hiding (map)
 import             Snap.Internal.Debug
 import             Snap.Internal.Http.Server.Date
 import             Snap.Internal.Http.Server.Backend
@@ -223,7 +222,9 @@ acceptCallback back handler elog cpu sock _loopPtr _ioPtr _ = do
   where
     go = runSession back handler sock
     cleanup = [ Handler $ \(_ :: TimeoutException) -> return ()
-              , Handler $ \(e :: SomeException) -> elog $ B.concat [ "libev.acceptCallback: ", B.pack . map c2w $ show e ]
+              , Handler $ \(e :: SomeException) ->
+                  elog $ S.concat [ "libev.acceptCallback: "
+                                  , S.pack . map c2w $ show e ]
               ]
 
 
@@ -272,7 +273,7 @@ getAddr :: SockAddr -> IO (ByteString, Int)
 getAddr addr =
     case addr of
       SockAddrInet p ha -> do
-          s <- liftM (B.pack . map c2w) (inet_ntoa ha)
+          s <- liftM (S.pack . map c2w) (inet_ntoa ha)
           return (s, fromIntegral p)
 
       a -> throwIO $ AddressNotSupportedException (show a)
@@ -492,7 +493,8 @@ runSession backend handler lsock fd = do
                               ioWriteCb
                               tid
 
-        bracket (Listen.createSession lsock bLOCKSIZE fd $ waitForLock True conn)
+        bracket (Listen.createSession lsock bLOCKSIZE fd $
+                       waitForLock True conn)
                 (\session -> block $ do
                     debug "runSession: thread killed, closing socket"
 
@@ -528,8 +530,8 @@ bLOCKSIZE = 8192
 -- About timeouts
 --
 -- It's not good enough to restart the timer from io(Read|Write)Callback,
--- because those seem to be edge-triggered. I've definitely had where after
--- 20 seconds they still weren't being re-awakened.
+-- because those seem to be edge-triggered. I've definitely had where after 20
+-- seconds they still weren't being re-awakened.
 --
 
 data TimeoutException = TimeoutException
@@ -568,7 +570,8 @@ waitForLock readLock conn = do
     dbg "waitForLock: took mvar"
 
   where
-    dbg s    = debug $ "Backend.recvData(" ++ show (_rawSocket conn) ++ "): " ++ s
+    dbg s    = debug $ "Backend.recvData(" ++ show (_rawSocket conn) ++ "): "
+                       ++ s
     io       = if readLock 
                  then (_connReadIOObj conn)
                  else (_connWriteIOObj conn)
@@ -596,9 +599,13 @@ sendFile c s fp start sz = do
         ListenHttp _ -> bracket (openFd fp ReadOnly Nothing defaultFileFlags)
                                 (closeFd)
                                 (go start sz)
-        _            -> enumFilePartial fp (start,start+sz) (writeOut c s) >>= run
+        _            -> do
+            step <- runIteratee $ writeOut c s
+            run_ $ enumFilePartial fp (start,start+sz) step
 #else
-    enumFilePartial fp (start,start+sz) (writeOut c s) >>= run
+    step <- runIteratee $ writeOut c s
+
+    run_ $ enumFilePartial fp (start,start+sz) step
     return ()
 #endif
 
@@ -625,37 +632,52 @@ sendFile c s fp start sz = do
     lock = _loopLock b
     asy  = _asyncObj b
 
-enumerate :: (MonadIO m) => Connection -> NetworkSession -> Enumerator m a
+enumerate :: (MonadIO m)
+          => Connection
+          -> NetworkSession
+          -> Enumerator ByteString m a
 enumerate conn session = loop
   where
-    loop f = do
-        s <- liftIO $ recvData
-        sendOne f s
+    dbg s = debug $ "LibevBackend.enumerate(" ++ show (_socket session)
+                    ++ "): " ++ s
 
-    sendOne f s = do
-        v <- runIter f (if isNothing s
-                         then EOF Nothing
-                         else Chunk $ WrapBS $ fromJust s)
-        case v of
-          r@(Done _ _)      -> return $ liftI r
-          (Cont k Nothing)  -> loop k
-          (Cont _ (Just e)) -> return $ throwErr e
+    loop (Continue k) = do
+        m <- liftIO $ recvData
+        let s = fromMaybe "" m
+        sendOne k s
+    loop x = returnI x
+
+    sendOne k s | S.null s  = do
+        dbg "sending EOF to continuation"
+        enumEOF $ Continue k
+
+                | otherwise = do
+        dbg $ "sending " ++ show s ++ " to continuation"
+        step <- lift $ runIteratee $ k $ Chunks [s]
+        case step of
+          (Yield x st)   -> do
+                      dbg $ "got yield, remainder is " ++ show st
+                      yield x st
+          r@(Continue _) -> do
+                      dbg $ "got continue"
+                      loop r
+          (Error e)      -> throwError e
 
     recvData = Listen.recv (_listenSocket conn) (waitForLock True conn) session
 
-writeOut :: (MonadIO m) => Connection -> NetworkSession -> Iteratee m ()
-writeOut conn session = IterateeG out
+
+writeOut :: (MonadIO m)
+         => Connection
+         -> NetworkSession
+         -> Iteratee ByteString m ()
+writeOut conn session = loop
   where
-    iteratee = IterateeG out
+    loop = continue k
 
-    out c@(EOF _)   = return $ Done () c
-
-    out (Chunk s) = do
-        let x = unWrap s
-
-        liftIO $ sendData x
-
-        return $ Cont iteratee Nothing
+    k EOF = yield () EOF
+    k (Chunks xs) = do
+        liftIO $ sendData $ S.concat xs
+        loop
 
     sendData = Listen.send (_listenSocket conn) 
                            (tickleTimeout conn)

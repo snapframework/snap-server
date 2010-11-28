@@ -14,12 +14,12 @@ module Snap.Internal.Http.Server.SimpleBackend
 ------------------------------------------------------------------------------
 import "monads-fd" Control.Monad.Trans
 
-import           Control.Concurrent
+import           Control.Concurrent hiding (yield)
 import           Control.Exception
 import           Control.Monad
-import qualified Data.ByteString as B
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as S
 import           Data.ByteString.Internal (c2w)
-import           Data.Iteratee.WrappedByteString
 import           Data.Maybe
 import           Data.Typeable
 import           Data.Word
@@ -36,7 +36,7 @@ import qualified Snap.Internal.Http.Server.TimeoutTable as TT
 import           Snap.Internal.Http.Server.TimeoutTable (TimeoutTable)
 import           Snap.Internal.Http.Server.Backend
 import qualified Snap.Internal.Http.Server.ListenHelpers as Listen
-import           Snap.Iteratee hiding (foldl')
+import           Snap.Iteratee hiding (map)
 
 #if defined(HAS_SENDFILE)
 import qualified System.SendFile as SF
@@ -73,7 +73,7 @@ simpleEventLoop sockets cap elog handler = do
 
 newLoop :: [ListenSocket]
         -> SessionHandler
-        -> (B.ByteString -> IO ())
+        -> (S.ByteString -> IO ())
         -> Int
         -> IO EventLoopCpu
 newLoop sockets handler elog cpu = do
@@ -91,7 +91,7 @@ stopLoop loop = block $ do
 
 acceptThread :: SessionHandler 
              -> TimeoutTable 
-             -> (B.ByteString -> IO ()) 
+             -> (S.ByteString -> IO ()) 
              -> Int 
              -> ListenSocket 
              -> IO ()
@@ -107,7 +107,7 @@ acceptThread handler tt elog cpu sock = loop
     go = runSession handler tt sock
  
     cleanup = [
-                Handler $ \(e :: SomeException) -> elog $ B.concat [ "SimpleBackend.acceptThread: ", B.pack . map c2w $ show e]
+                Handler $ \(e :: SomeException) -> elog $ S.concat [ "SimpleBackend.acceptThread: ", S.pack . map c2w $ show e]
               ]
 
 timeoutThread :: TimeoutTable -> MVar () -> IO ()
@@ -157,7 +157,7 @@ runSession handler tt lsock sock addr = do
         case addr of
           SockAddrInet p h -> do
              h' <- inet_ntoa h
-             return (fromIntegral p, B.pack $ map c2w h')
+             return (fromIntegral p, S.pack $ map c2w h')
           x -> throwIO $ AddressNotSupportedException $ show x
 
     laddr <- getSocketName sock
@@ -166,7 +166,7 @@ runSession handler tt lsock sock addr = do
         case laddr of
           SockAddrInet p h -> do
              h' <- inet_ntoa h
-             return (fromIntegral p, B.pack $ map c2w h')
+             return (fromIntegral p, S.pack $ map c2w h')
           x -> throwIO $ AddressNotSupportedException $ show x
 
     let sinfo = SessionInfo lhost lport rhost rport $ Listen.isSecure lsock
@@ -198,14 +198,23 @@ eatException :: IO a -> IO ()
 eatException act = (act >> return ()) `catch` \(_::SomeException) -> return ()
 
 ------------------------------------------------------------------------------
-sendFile :: ListenSocket -> IO () -> CInt -> Iteratee IO () -> FilePath -> Int64 -> Int64 -> IO ()
+sendFile :: ListenSocket
+         -> IO ()
+         -> CInt
+         -> Iteratee ByteString IO ()
+         -> FilePath
+         -> Int64
+         -> Int64
+         -> IO ()
 #if defined(HAS_SENDFILE)
 sendFile lsock tickle sock writeEnd fp start sz =
     case lsock of
         ListenHttp _ -> bracket (openFd fp ReadOnly Nothing defaultFileFlags)
                                 (closeFd)
                                 (go start sz)
-        _            -> enumFilePartial fp (start,start+sz) writeEnd >>= run
+        _            -> do
+                   step <- runIteratee writeEnd
+                   run_ $ enumFilePartial fp (start,start+sz) step
   where
     go off bytes fd
       | bytes == 0 = return ()
@@ -219,7 +228,8 @@ sendFile lsock tickle sock writeEnd fp start sz =
 #else
 sendFile _ _ _ writeEnd fp start sz = do
     -- no need to count bytes
-    enumFilePartial fp (start,start+sz) writeEnd >>= run
+    step <- runIteratee writeEnd
+    run_ $ enumFilePartial fp (start,start+sz) step
     return ()
 #endif
 
@@ -229,26 +239,46 @@ tickleTimeout table tid thash = do
     now   <- getCurrentDateTime
     TT.insert thash tid now table
 
-enumerate :: (MonadIO m) => ListenSocket -> NetworkSession -> Socket -> Enumerator m a
+enumerate :: (MonadIO m)
+          => ListenSocket
+          -> NetworkSession
+          -> Socket
+          -> Enumerator ByteString m a
 enumerate port session sock = loop
   where
-    loop f = do
-        debug $ "Backend.enumerate: reading from socket"
+    dbg s = debug $ "SimpleBackend.enumerate(" ++ show (_socket session)
+            ++ "): " ++ s
+
+    loop (Continue k) = do
+        dbg "reading from socket"
         s <- liftIO $ timeoutRecv
         case s of
-            Nothing -> debug "Backend.enumerate: connection closed"
-            Just s' -> debug $ "Backend.enumerate: got " ++ Prelude.show (B.length s')
-                             ++ " bytes from read end"
-        sendOne f s
+            Nothing -> do
+                   dbg "got EOF from socket"
+                   sendOne k ""
+            Just s' -> do
+                   dbg $ "got " ++ Prelude.show (S.length s')
+                           ++ " bytes from read end"
+                   sendOne k s'
 
-    sendOne f s = do
-        v <- runIter f (if isNothing s
-                         then EOF Nothing
-                         else Chunk $ WrapBS $ fromJust s)
-        case v of
-          r@(Done _ _)      -> return $ liftI r
-          (Cont k Nothing)  -> loop k
-          (Cont _ (Just e)) -> return $ throwErr e
+    loop x = returnI x
+
+
+    sendOne k s | S.null s  = do
+        dbg "sending EOF to continuation"
+        enumEOF $ Continue k
+
+                | otherwise = do
+        dbg $ "sending " ++ show s ++ " to continuation"
+        step <- lift $ runIteratee $ k $ Chunks [s]
+        case step of
+          (Yield x st)   -> do
+                      dbg $ "got yield, remainder is " ++ show st
+                      yield x st
+          r@(Continue _) -> do
+                      dbg $ "got continue"
+                      loop r
+          (Error e)      -> throwError e
 
     fd = fdSocket sock
 #ifdef PORTABLE
@@ -258,25 +288,33 @@ enumerate port session sock = loop
 #endif
 
 
-writeOut :: (MonadIO m) => ListenSocket -> NetworkSession -> Socket -> IO () -> Iteratee m ()
-writeOut port session sock tickle = iteratee
+writeOut :: (MonadIO m)
+         => ListenSocket
+         -> NetworkSession
+         -> Socket
+         -> IO ()
+         -> Iteratee ByteString m ()
+writeOut port session sock tickle = loop
   where
-    iteratee = IterateeG out
+    dbg s = debug $ "SimpleBackend.writeOut(" ++ show (_socket session)
+            ++ "): " ++ s
 
-    out c@(EOF _)   = return $ Done () c
+    loop = continue k
 
-    out (Chunk s) = do
-        let x = unWrap s
-
-        debug $ "Backend.writeOut: writing data " ++ show (B.length x)
-        ee <- liftIO $ ((try $ timeoutSend x)
-                            :: IO (Either SomeException ()))
-
+    k EOF = yield () EOF
+    k (Chunks xs) = do
+        let s = S.concat xs
+        let n = S.length s
+        dbg $ "got chunk with " ++ show n ++ " bytes"
+        ee <- liftIO $ try $ timeoutSend s
         case ee of
-          (Left e)  -> do debug $ "Backend.writeOut: received error " ++ Prelude.show e
-                          return $ Done () (EOF $ Just $ Err $ show e)
-          (Right _) -> do debug "Backend.writeOut: successfully sent data"
-                          return $ Cont iteratee Nothing
+          (Left (e::SomeException)) -> do
+              dbg $ "timeoutSend got error " ++ show e
+              throwError e
+          (Right _) -> do
+              let last10 = S.drop (n-10) s
+              dbg $ "wrote " ++ show n ++ " bytes, last 10=" ++ show last10
+              loop
 
     fd = fdSocket sock
 #ifdef PORTABLE

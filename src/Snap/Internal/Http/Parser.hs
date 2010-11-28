@@ -8,7 +8,7 @@ module Snap.Internal.Http.Parser
   ( IRequest(..)
   , parseRequest
   , readChunkedTransferEncoding
-  , parserToIteratee
+  , iterParser
   , parseCookie
   , parseUrlEncoded
   , writeChunkedTransferEncoding
@@ -22,7 +22,7 @@ import             Control.Arrow (second)
 import             Control.Monad (liftM)
 import "monads-fd" Control.Monad.Trans
 import             Data.Attoparsec hiding (many, Result(..))
-import             Data.Attoparsec.Iteratee
+import             Data.Attoparsec.Enumerator
 import             Data.Bits
 import             Data.ByteString (ByteString)
 import qualified   Data.ByteString as S
@@ -34,17 +34,19 @@ import             Data.DList (DList)
 import qualified   Data.DList as D
 import             Data.List (foldl')
 import             Data.Int
-import             Data.Iteratee.WrappedByteString
 import             Data.Map (Map)
 import qualified   Data.Map as Map
 import             Data.Maybe (catMaybes)
 import qualified   Data.Vector.Unboxed as Vec
 import             Data.Vector.Unboxed (Vector)
 import             Data.Word (Word8, Word64)
-import             Prelude hiding (take, takeWhile)
+import             Prelude hiding (head, take, takeWhile)
+import qualified   Prelude
 ------------------------------------------------------------------------------
-import             Snap.Internal.Http.Types hiding (Enumerator)
-import             Snap.Iteratee hiding (take, foldl', filter)
+import             Snap.Internal.Http.Types
+import             Snap.Internal.Debug
+import             Snap.Internal.Iteratee.Debug
+import             Snap.Iteratee hiding (map, take)
 
 
 ------------------------------------------------------------------------------
@@ -70,18 +72,17 @@ instance Show IRequest where
 
 
 ------------------------------------------------------------------------------
-parseRequest :: (Monad m) => Iteratee m (Maybe IRequest)
-parseRequest = parserToIteratee pRequest
+parseRequest :: (Monad m) => Iteratee ByteString m (Maybe IRequest)
+parseRequest = iterParser pRequest
 
 
 ------------------------------------------------------------------------------
-readChunkedTransferEncoding :: (Monad m) =>
-                               Iteratee m a
-                            -> m (Iteratee m a)
-readChunkedTransferEncoding iter = do
-    i <- chunkParserToEnumerator (parserToIteratee pGetTransferChunk)
-                                 iter
-    return i
+readChunkedTransferEncoding :: (MonadIO m) =>
+                               Enumeratee ByteString ByteString m a
+readChunkedTransferEncoding =
+    chunkParserToEnumeratee $
+    iterateeDebugWrapper "pGetTransferChunk" $
+    iterParser pGetTransferChunk
 
 
 ------------------------------------------------------------------------------
@@ -108,6 +109,8 @@ toHex n' = s
 -- chunked transfer-encoding. Example usage:
 --
 --
+-- > FIXME this text is now wrong
+--
 -- > > (writeChunkedTransferEncoding
 -- >     (enumLBS (L.fromChunks ["foo","bar","quux"]))
 -- >     stream2stream) >>=
@@ -116,98 +119,91 @@ toHex n' = s
 -- >
 -- > Chunk "a\r\nfoobarquux\r\n0\r\n\r\n" Empty
 --
-writeChunkedTransferEncoding :: Enumerator IO a
-writeChunkedTransferEncoding it = do
-    let out = wrap it
-    return out
+writeChunkedTransferEncoding :: Enumeratee ByteString ByteString IO a
+writeChunkedTransferEncoding = checkDone start
 
   where
-    wrap iter = bufIt (0,D.empty) iter
+    start = bufIt 0 D.empty
 
     bufSiz = 16284
 
     sendOut :: DList ByteString
-            -> Iteratee IO a
-            -> IO (Iteratee IO a)
-    sendOut dl iter = do
+            -> (Stream ByteString -> Iteratee ByteString IO a)
+            -> Iteratee ByteString IO (Step ByteString IO a)
+    sendOut dl k = do
         let chunks = D.toList dl
         let bs     = L.fromChunks chunks
         let n      = L.length bs
 
         if n == 0
-          then return iter
+          then return $ Continue k
           else do
             let o = L.concat [ L.fromChunks [ toHex (toEnum . fromEnum $ n)
                                             , "\r\n" ]
                              , bs
                              , "\r\n" ]
 
-            enumLBS o iter
+            lift $ runIteratee $ enumLBS o (Continue k)
 
 
-    bufIt (n,dl) iter = IterateeG $ \s -> do
-        case s of
-          (EOF Nothing) -> do
-               i'  <- sendOut dl iter
-               j   <- liftM liftI $ runIter i' (Chunk (WrapBS "0\r\n\r\n"))
-               runIter j (EOF Nothing)
+    
+    bufIt :: Int
+          -> DList ByteString
+          -> (Stream ByteString -> Iteratee ByteString IO a)
+          -> Iteratee ByteString IO (Step ByteString IO a)
+    bufIt n dl k = do
+        mbS <- head
+        case mbS of
+          Nothing -> do
+              step  <- sendOut dl k
+              step' <- lift $ runIteratee $ enumBS "0\r\n\r\n" step
+              lift $ runIteratee $ enumEOF step'
 
-          (EOF e) -> return $ Cont undefined e
+          (Just s) -> do
+              let m = S.length s
 
-          (Chunk (WrapBS x)) -> do
-               let m   = S.length x
+              if m == 0
+                then bufIt n dl k
+                else do
+                  let n'  = m + n
+                  let dl' = D.snoc dl s
 
-               if m == 0
-                 then return $ Cont (bufIt (n,dl) iter) Nothing
-                 else do
-                   let n'  = m + n
-                   let dl' = D.snoc dl x
-
-                   if n' > bufSiz
-                     then do
-                       i' <- sendOut dl' iter
-                       return $ Cont (bufIt (0,D.empty) i') Nothing
-                     else return $ Cont (bufIt (n',dl') iter) Nothing
+                  if n' > bufSiz
+                    then do
+                      step <- sendOut dl' k
+                      checkDone start step
+                    else bufIt n' dl' k
 
 
 ------------------------------------------------------------------------------
-chunkParserToEnumerator :: (Monad m) =>
-                           Iteratee m (Maybe ByteString)
-                        -> Iteratee m a
-                        -> m (Iteratee m a)
-chunkParserToEnumerator getChunk client = return $ do
+chunkParserToEnumeratee :: (MonadIO m) =>
+                           Iteratee ByteString m (Maybe ByteString)
+                        -> Enumeratee ByteString ByteString m a
+chunkParserToEnumeratee getChunk client = do
+    debug $ "chunkParserToEnumeratee: getting chunk"
     mbB <- getChunk
-    maybe (finishIt client) (sendBS client) mbB
+    debug $ "chunkParserToEnumeratee: getChunk was " ++ show mbB
+    mbX <- peek
+    debug $ "chunkParserToEnumeratee: .. and peek is " ++ show mbX
+
+
+    maybe finishIt sendBS mbB
 
   where
-    sendBS iter s = do
-        v <- lift $ runIter iter (Chunk $ toWrap $ L.fromChunks [s])
+    whatWasReturn (Continue _) = "continue"
+    whatWasReturn (Yield _ z)  = "yield, with remainder " ++ show z
+    whatWasReturn (Error e)    = "error, with " ++ show e
 
-        case v of
-          (Done _ (EOF (Just e))) -> throwErr e
+    sendBS s = do
+        step' <- lift $ runIteratee $ enumBS s client
+        debug $ "chunkParserToEnumeratee: after sending "
+                  ++ show s ++ ", return was "
+                  ++ whatWasReturn step'
+        mbX <- peek
+        debug $ "chunkParserToEnumeratee: .. and peek is " ++ show mbX
+        chunkParserToEnumeratee getChunk step'
 
-          (Done x _) -> return x
-
-          (Cont _ (Just e)) -> throwErr e
-
-          (Cont k Nothing) -> joinIM $
-                              chunkParserToEnumerator getChunk k
-
-    finishIt iter = do
-        e <- lift $ sendEof iter
-
-        case e of
-          Left x  -> throwErr x
-          Right x -> return x
-
-    sendEof iter = do
-        v <- runIter iter (EOF Nothing)
-
-        return $ case v of
-          (Done _ (EOF (Just e))) -> Left e
-          (Done x _)              -> Right x
-          (Cont _ (Just e))       -> Left e
-          (Cont _ _)              -> Left $ Err $ "divergent iteratee"
+    finishIt = lift $ runIteratee $ enumEOF client
 
 
 ------------------------------------------------------------------------------
@@ -252,7 +248,8 @@ pSpaces = takeWhile (isSpace . w2c)
 ------------------------------------------------------------------------------
 -- | Parser for the internal request data type.
 pRequest :: Parser (Maybe IRequest)
-pRequest = (Just <$> pRequest') <|> (endOfInput *> pure Nothing)
+pRequest = (Just <$> pRequest') <|>
+           (option "" crlf *> endOfInput *> pure Nothing)
 
 
 ------------------------------------------------------------------------------
