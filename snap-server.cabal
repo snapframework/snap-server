@@ -131,7 +131,7 @@ Library
     enumerator == 0.4.*,
     filepath,
     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
-    monads-fd >= 0.1.0.4 && <0.2,
+    mtl == 2.0.*,
     murmur-hash >= 0.1 && < 0.2,
     network == 2.2.1.*,
     old-locale,

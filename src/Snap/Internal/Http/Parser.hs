@@ -20,7 +20,7 @@ module Snap.Internal.Http.Parser
 import             Control.Applicative
 import             Control.Arrow (second)
 import             Control.Monad (liftM)
-import "monads-fd" Control.Monad.Trans
+import             Control.Monad.Trans
 import             Data.Attoparsec hiding (many, Result(..))
 import             Data.Attoparsec.Enumerator
 import             Data.Bits
