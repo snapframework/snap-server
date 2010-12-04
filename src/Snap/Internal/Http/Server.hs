@@ -421,7 +421,7 @@ receiveRequest = do
               let e = joinI . readChunkedTransferEncoding
               liftIO $ writeIORef (rqBody req)
                                   (SomeEnumerator e)
-          else maybe noContentLength hasContentLength mbCL
+          else maybe (noContentLength req) hasContentLength mbCL
 
       where
         isChunked = maybe False
@@ -444,11 +444,16 @@ receiveRequest = do
 
                 joinI $ takeExactly len st'
 
-        noContentLength :: ServerMonad ()
-        noContentLength = liftIO $ do
+        noContentLength :: Request -> ServerMonad ()
+        noContentLength req = liftIO $ do
             debug ("receiveRequest/setEnumerator: " ++
                    "request did NOT have content-length")
-            writeIORef (rqBody req) (SomeEnumerator returnI)
+            let enum = SomeEnumerator $
+                       if rqMethod req == POST || rqMethod req == PUT
+                         then returnI
+                         else iterateeDebugWrapper "noContentLength" .
+                              joinI . I.take 0
+            writeIORef (rqBody req) enum
             debug "receiveRequest/setEnumerator: body enumerator set"
 
 

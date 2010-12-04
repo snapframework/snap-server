@@ -68,16 +68,18 @@ startTestServer :: Int
                 -> ConfigBackend
                 -> IO (ThreadId, MVar ())
 startTestServer port sslport backend = do
-    let cfg = setAccessLog (Just $ "ts-access.log." ++ show backend)  .
-              setErrorLog  (Just $ "ts-error.log." ++ show backend)   . 
-              addListen    (ListenHttp "*" port)                      .
-              setBackend   backend                                    .
-              setVerbose   False                                      $
+    let cfg = setAccessLog (Just $ "ts-access." ++ show backend ++ ".log") .
+              setErrorLog  (Just $ "ts-error." ++ show backend ++ ".log")  . 
+              addListen    (ListenHttp "*" port)                           .
+              setBackend   backend                                         .
+              setVerbose   False                                           $
               defaultConfig
 
     let cfg' = case sslport of
                 Nothing    -> cfg
-                Just (p,_) -> addListen (ListenHttps "*" p "cert.pem" "key.pem") cfg
+                Just (p,_) -> addListen
+                              (ListenHttps "*" p "cert.pem" "key.pem")
+                              cfg
 
     mvar <- newEmptyMVar
     tid  <- forkIO $
@@ -162,7 +164,8 @@ testEcho port name = testProperty (name ++ "/blackbox/echo") $
         let req' = (HTTP.mkRequest HTTP.POST uri) :: HTTP.Request S.ByteString
         let req = HTTP.replaceHeader HTTP.HdrContentLength (show len) req'
 
-        rsp <- QC.run $ HTTP.simpleHTTP $ req { HTTP.rqBody = (txt::S.ByteString) }
+        rsp <- QC.run $ HTTP.simpleHTTP
+                      $ req { HTTP.rqBody = (txt::S.ByteString) }
         doc <- QC.run $ HTTP.getResponseBody rsp
 
         QC.assert $ txt == doc
@@ -183,7 +186,8 @@ testRot13 port name = testProperty (name ++ "/blackbox/rot13") $
         let req' = (HTTP.mkRequest HTTP.POST uri) :: HTTP.Request S.ByteString
         let req = HTTP.replaceHeader HTTP.HdrContentLength (show len) req'
 
-        rsp <- QC.run $ HTTP.simpleHTTP $ req { HTTP.rqBody = (txt::S.ByteString) }
+        rsp <- QC.run $ HTTP.simpleHTTP
+                      $ req { HTTP.rqBody = (txt::S.ByteString) }
         doc <- QC.run $ HTTP.getResponseBody rsp
 
         QC.assert $ txt == rot13 doc
