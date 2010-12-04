@@ -34,7 +34,7 @@ libEvEventLoop _ _ _ _ = throwIO $ LibevException "libev event loop is not suppo
 import             Control.Concurrent hiding (yield)
 import             Control.Exception
 import             Control.Monad
-import "monads-fd" Control.Monad.Trans
+import             Control.Monad.Trans
 import             Data.ByteString (ByteString)
 import             Data.ByteString.Internal (c2w)
 import qualified   Data.ByteString as S

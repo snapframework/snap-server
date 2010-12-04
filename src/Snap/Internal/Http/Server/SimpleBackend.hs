@@ -12,7 +12,7 @@ module Snap.Internal.Http.Server.SimpleBackend
   ) where
 
 ------------------------------------------------------------------------------
-import "monads-fd" Control.Monad.Trans
+import           Control.Monad.Trans
 
 import           Control.Concurrent hiding (yield)
 import           Control.Exception
