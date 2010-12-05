@@ -9,6 +9,7 @@ import qualified Control.Exception as E
 import           Control.Exception hiding (try, assert)
 import           Control.Monad
 import           Control.Monad.Identity
+import           Control.Monad.Trans
 import           Control.Parallel.Strategies
 import           Data.Attoparsec hiding (Result(..))
 import           Data.ByteString (ByteString)
@@ -16,12 +17,11 @@ import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w)
 import           Data.IORef
-import           Data.Iteratee.WrappedByteString
 import           Data.List
 import qualified Data.Map as Map
 import           Data.Maybe (isNothing)
 import           Data.Monoid
-import           Test.Framework 
+import           Test.Framework
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
 import           Test.QuickCheck
@@ -31,8 +31,10 @@ import           Test.HUnit hiding (Test, path)
 import           Text.Printf
 
 import           Snap.Internal.Http.Parser
-import           Snap.Internal.Http.Types hiding (Enumerator)
-import           Snap.Iteratee hiding (foldl')
+import           Snap.Internal.Http.Types
+import           Snap.Internal.Debug
+import           Snap.Internal.Iteratee.Debug
+import           Snap.Iteratee hiding (map, sequence)
 import qualified Snap.Iteratee as I
 import           Snap.Test.Common()
 
@@ -42,14 +44,11 @@ tests = [ testShow
         , testCookie
         , testChunked
         , testBothChunked
-        , testBothChunkedBuffered1
         , testBothChunkedPipelined
         , testBothChunkedEmpty
         , testP2I
         , testNull
         , testPartial
-        , testIterateeError
-        , testIterateeError2
         , testParseError
         , testFormEncoded ]
 
@@ -58,16 +57,16 @@ emptyParser :: Parser ByteString
 emptyParser = option "foo" $ string "bar"
 
 testShow :: Test
-testShow = testCase "show" $ do
+testShow = testCase "parser/show" $ do
     let i = IRequest GET "/" (1,1) []
     let !b = show i `using` rdeepseq
     return $ b `seq` ()
 
 
 testP2I :: Test
-testP2I = testCase "parserToIteratee" $ do
-    i <- enumBS "z" (parserToIteratee emptyParser)
-    l <- run i
+testP2I = testCase "parser/iterParser" $ do
+    i <- liftM (enumBS "z") $ runIteratee (iterParser emptyParser)
+    l <- run_ i
 
     assertEqual "should be foo" "foo" l
 
@@ -79,45 +78,25 @@ forceErr e = f `seq` (return ())
 
 
 testNull :: Test
-testNull = testCase "short parse" $ do
-    f <- run (parseRequest)
+testNull = testCase "parser/shortParse" $ do
+    f <- run_ (parseRequest)
     assertBool "should be Nothing" $ isNothing f
 
 
 testPartial :: Test
-testPartial = testCase "partial parse" $ do
-    i <- enumBS "GET / " parseRequest
-    f <- E.try $ run i
+testPartial = testCase "parser/partial" $ do
+    i <- liftM (enumBS "GET / ") $ runIteratee parseRequest
+    f <- E.try $ run_ i
 
     case f of (Left e)  -> forceErr e
               (Right x) -> assertFailure $ "expected exception, got " ++ show x
 
 
 testParseError :: Test
-testParseError = testCase "parse error" $ do
-    i <- enumBS "ZZZZZZZZZZ" parseRequest
-    f <- E.try $ run i
-
-    case f of (Left e)  -> forceErr e
-              (Right x) -> assertFailure $ "expected exception, got " ++ show x
-
-
-introduceError :: (Monad m) => Enumerator m a
-introduceError iter = return $ IterateeG $ \_ ->
-                          runIter iter (EOF (Just (Err "EOF")))
-
-testIterateeError :: Test
-testIterateeError = testCase "iteratee error" $ do
-    i <- liftM liftI $ runIter parseRequest (EOF (Just (Err "foo")))
-    f <- E.try $ run i
-
-    case f of (Left e)  -> forceErr e
-              (Right x) -> assertFailure $ "expected exception, got " ++ show x
-
-testIterateeError2 :: Test
-testIterateeError2 = testCase "iteratee error 2" $ do
-    i <- (enumBS "GET / " >. introduceError) parseRequest
-    f <- E.try $ run i
+testParseError = testCase "parser/error" $ do
+    step <- runIteratee parseRequest
+    let i = enumBS "ZZZZZZZZZZ" step
+    f <- E.try $ run_ i
 
     case f of (Left e)  -> forceErr e
               (Right x) -> assertFailure $ "expected exception, got " ++ show x
@@ -133,103 +112,54 @@ transferEncodingChunked = f . L.toChunks
 
     f l = L.concat $ (map toChunk l ++ ["0\r\n\r\n"])
 
+
 -- | ensure that running the 'readChunkedTransferEncoding' iteratee against
 -- 'transferEncodingChunked' returns the original string
 testChunked :: Test
-testChunked = testProperty "chunked transfer encoding" prop_chunked
+testChunked = testProperty "parser/chunkedTransferEncoding" $
+              monadicIO $ forAllM arbitrary prop_chunked
   where
-    prop_chunked :: L.ByteString -> Bool
-    prop_chunked s = runIdentity (run iter) == s
-      where
-        enum = enumLBS (transferEncodingChunked s)
+    prop_chunked s = do
+        QC.run $ debug "=============================="
+        QC.run $ debug $ "input is " ++ show s
+        QC.run $ debug $ "chunked is " ++ show chunked
+        QC.run $ debug "------------------------------"
+        sstep <- QC.run $ runIteratee $ stream2stream
+        step  <- QC.run $ runIteratee $ 
+                 joinI $ readChunkedTransferEncoding sstep
 
-        iter :: Iteratee Identity L.ByteString
-        iter = runIdentity $ do
-                   i <- (readChunkedTransferEncoding stream2stream) >>= enum 
-                   return $ liftM fromWrap i
+        out   <- QC.run $ run_ $ enum step
+
+        QC.assert $ s == out
+        QC.run $ debug "==============================\n"
+
+      where
+        chunked = (transferEncodingChunked s)
+        enum = enumLBS chunked
+
 
 testBothChunked :: Test
-testBothChunked = testProperty "chunk . unchunk == id" $
+testBothChunked = testProperty "parser/invertChunked" $
                   monadicIO $ forAllM arbitrary prop
   where
     prop s = do
-        it <- QC.run $ writeChunkedTransferEncoding stream2stream
+        sstep <- QC.run $ runIteratee stream2stream
+        let it = joinI $ writeChunkedTransferEncoding sstep
 
-        bs <- QC.run $
-              enumBS s it
-                >>= run >>= return . unWrap
+        bs <- QC.run $ runIteratee it >>= run_ . enumLBS s
 
-        let enum = enumBS bs
+        let enum = enumLBS bs
 
-        iter <- do
-            i <- (readChunkedTransferEncoding stream2stream) >>= enum 
-            return $ liftM unWrap i
+        x <- QC.run $
+             runIteratee (joinI $ readChunkedTransferEncoding sstep) >>=
+             run_ . enum
 
-        x <- run iter
         QC.assert $ s == x
-
-
-testBothChunkedBuffered1 :: Test
-testBothChunkedBuffered1 = testProperty "testBothChunkedBuffered2" $
-                           monadicIO prop
-  where
-    prop = do
-        sz     <- QC.pick (choose (1000,4000))
-        s'     <- QC.pick $ resize sz arbitrary
-        ntimes <- QC.pick (choose (4,7))
-
-        let e = enumLBS s'
-        let n = fromEnum $ L.length s'
-
-        let enum = foldl' (>.) (enumBS "") (replicate ntimes e)
-
-        (bufi,_) <- QC.run $ bufferIteratee stream2stream
-        iter' <- QC.run $ writeChunkedTransferEncoding bufi
-        let iter = I.joinI $ I.take n iter'
-        let iters = replicate ntimes iter
-
-        let mothra = foldM (\s it -> it >>= \t -> return $ s `mappend` t)
-                           mempty
-                           iters
-
-        bs <- QC.run $ enum mothra
-                >>= run >>= return . unWrap
-
-
-        ----------------------------------------------------------------------
-        -- 2nd pass, cancellation
-        let pcrlf = \s -> parserToIteratee $ string "\r\n" >> return s
-        (inputIter2,esc) <- QC.run $ bufferIteratee stream2stream
-        QC.run $ writeIORef esc True
-
-        iter2' <- QC.run $ writeChunkedTransferEncoding inputIter2
-        let iter2 = I.joinI $ I.take n iter2'
-        let iters2 = replicate ntimes iter2
-
-        let mothra2 = foldM (\s it -> it >>= \t -> return $ s `mappend` t)
-                            mempty
-                            iters2
-
-
-        bs2 <- QC.run $ enum mothra2
-                 >>= run >>= return . unWrap
-
-
-        let e2 = enumBS bs2
-        iters' <- QC.run $
-                  replicateM ntimes $
-                    readChunkedTransferEncoding stream2stream
-        let godzilla2 = sequence $ map (>>= pcrlf) iters'
-        outiter2 <- QC.run $ e2 godzilla2
-        x2 <- QC.run $ liftM (map unWrap) $ run outiter2
-
-        QC.assert $
-          (map (L.fromChunks . (:[])) x2) == (replicate ntimes s')
 
 
 
 testBothChunkedPipelined :: Test
-testBothChunkedPipelined = testProperty "testBothChunkedPipelined" $
+testBothChunkedPipelined = testProperty "parser/testBothChunkedPipelined" $
                            monadicIO prop
   where
     prop = do
@@ -241,11 +171,13 @@ testBothChunkedPipelined = testProperty "testBothChunkedPipelined" $
         let e = enumLBS s'
         let n = fromEnum $ L.length s'
 
-        let enum = foldl' (>.) (enumBS "") (replicate ntimes e)
+        let enum = foldl' (>==>) (enumBS "") (replicate ntimes e)
 
-        (bufi,_) <- QC.run $ bufferIteratee stream2stream
+        bufi <- QC.run $
+                unsafeBufferIteratee copyingStream2Stream >>= runIteratee
 
-        iter' <- QC.run $ writeChunkedTransferEncoding bufi
+        iter' <- QC.run $ runIteratee $ joinI $
+                 writeChunkedTransferEncoding bufi
         let iter = I.joinI $ I.take n iter'
 
         let iters = replicate ntimes iter
@@ -253,29 +185,27 @@ testBothChunkedPipelined = testProperty "testBothChunkedPipelined" $
                            mempty
                            iters
 
-        bs <- QC.run $ enum mothra
-                >>= run >>= return . unWrap
+        bs <- QC.run $ runIteratee mothra >>= run_ . enum
 
         let e2 = enumBS bs
 
-        let pcrlf = \s -> parserToIteratee $ string "\r\n" >> return s
+        let pcrlf = \s -> iterParser $ string "\r\n" >> return s
 
-        iters <- QC.run $
-                 replicateM ntimes $
-                   readChunkedTransferEncoding stream2stream
+        sstep <- QC.run $ runIteratee stream2stream
+
+        let iters = replicate ntimes $ joinI $
+                    readChunkedTransferEncoding sstep
         let godzilla = sequence $ map (>>= pcrlf) iters
 
-        iter <- QC.run $ e2 godzilla
-
-        x <- QC.run $ liftM (map unWrap) $ run iter
+        x <- QC.run $ runIteratee godzilla >>= run_ . e2
 
         QC.assert $
-          (map (L.fromChunks . (:[])) x) == (replicate ntimes s')
+          x == (replicate ntimes s')
 
 
 
 testBothChunkedEmpty :: Test
-testBothChunkedEmpty = testCase "testBothChunkedEmpty" prop
+testBothChunkedEmpty = testCase "parser/testBothChunkedEmpty" prop
   where
     prop = do
         let s' = ""
@@ -283,38 +213,40 @@ testBothChunkedEmpty = testCase "testBothChunkedEmpty" prop
         let n = fromEnum $ L.length s'
 
         let ntimes = 5
-        let enum = foldl' (>.) (enumBS "") (replicate ntimes e)
+        let enum = foldl' (>==>) (enumBS "") (replicate ntimes e)
 
-        iter' <- writeChunkedTransferEncoding stream2stream
-        let iter = I.joinI $ I.take n iter'
+        sstep <- runIteratee stream2stream
 
-        let iters = replicate ntimes iter
+        step <- runIteratee $
+                joinI $
+                writeChunkedTransferEncoding sstep
+        iter <- liftM returnI $ runIteratee $ joinI $ I.take n step
+
+        let iters = replicate ntimes (iter :: Iteratee ByteString IO L.ByteString)
         let mothra = foldM (\s it -> it >>= \t -> return $ s `mappend` t)
                            mempty
                            iters
 
-        bs <- enum mothra
-                >>= run >>= return . unWrap
+        mothraStep <- runIteratee mothra
+        bs <- run_ $ enum mothraStep
 
-        let e2 = enumBS bs
+        let e2 = enumLBS bs
 
-        let pcrlf = \s -> parserToIteratee $ string "\r\n" >> return s
+        let pcrlf = \s -> iterParser $ string "\r\n" >> return s
 
-        iters <- replicateM ntimes $
-                   readChunkedTransferEncoding stream2stream
-        let godzilla = sequence $ map (>>= pcrlf) iters
+        let iters = replicate ntimes $ joinI $
+                    readChunkedTransferEncoding sstep
+        godzilla <- runIteratee $ sequence $ map (>>= pcrlf) iters
 
-        iter <- e2 godzilla
-
-        x <- liftM (map unWrap) $ run iter
+        x <- run_ $ e2 godzilla
 
         assertBool "empty chunked transfer" $
-          (map (L.fromChunks . (:[])) x) == (replicate ntimes s')
+          x == (replicate ntimes s')
 
 
 testCookie :: Test
 testCookie =
-    testCase "parseCookie" $ do
+    testCase "parser/parseCookie" $ do
         assertEqual "cookie parsing" (Just [cv]) cv2
 
   where
@@ -330,10 +262,24 @@ testCookie =
 
 
 testFormEncoded :: Test
-testFormEncoded = testCase "formEncoded" $ do
+testFormEncoded = testCase "parser/formEncoded" $ do
     let bs = "foo1=bar1&foo2=bar2+baz2&foo3=foo%20bar"
     let mp = parseUrlEncoded bs
 
     assertEqual "foo1" (Just ["bar1"]     ) $ Map.lookup "foo1" mp
     assertEqual "foo2" (Just ["bar2 baz2"]) $ Map.lookup "foo2" mp
     assertEqual "foo3" (Just ["foo bar"]  ) $ Map.lookup "foo3" mp
+
+
+
+
+copyingStream2Stream = go []
+  where
+    go l = do
+        mbx <- I.head
+        maybe (return $ S.concat $ reverse l)
+              (\x -> let !z = S.copy x in go (z:l))
+              mbx
+
+stream2stream :: (Monad m) => Iteratee ByteString m L.ByteString
+stream2stream = liftM L.fromChunks consume

@@ -24,10 +24,8 @@ import             Data.ByteString.Internal (c2w)
 import             Data.Char
 import             Data.Int
 import             Data.IORef
-import             Data.Iteratee.WrappedByteString
 import qualified   Data.Map as Map
 import             Data.Maybe (fromJust)
-import             Data.Monoid
 import             Data.Time.Calendar
 import             Data.Time.Clock
 import             Data.Typeable
@@ -46,8 +44,9 @@ import qualified   Snap.Http.Server as Svr
 import             Snap.Internal.Debug
 import             Snap.Internal.Http.Types
 import             Snap.Internal.Http.Server
+import qualified   Snap.Iteratee as I
+import             Snap.Iteratee hiding (map)
 import             Snap.Internal.Http.Server.Backend
-import             Snap.Iteratee
 import             Snap.Test.Common
 import             Snap.Types
 
@@ -138,38 +137,36 @@ testMethodParsing =
     ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT ]
 
 
-copyingStream2stream :: Iteratee IO (WrappedByteString Word8)
-copyingStream2stream = IterateeG (step mempty)
-  where
-  step acc (Chunk (WrapBS ls))
-    | S.null ls = return $ Cont (IterateeG (step acc)) Nothing
-    | otherwise = do
-          let !ls' = S.copy ls
-          let !bs' = WrapBS $! ls'
-          return $ Cont (IterateeG (step (acc `mappend` bs')))
-                        Nothing
-
-  step acc str        = return $ Done acc str
-
 
 mkRequest :: ByteString -> IO Request
 mkRequest s = do
-    iter <- enumBS s $ liftM fromJust $ rsm receiveRequest
-    run iter
+    step <- runIteratee $ liftM fromJust $ rsm receiveRequest
+    let iter = enumBS s step
+    run_ iter
+
+
+testReceiveRequest :: Iteratee ByteString IO (Request,L.ByteString)
+testReceiveRequest = do
+    r  <- liftM fromJust $ rsm receiveRequest
+    se <- liftIO $ readIORef (rqBody r)
+    let (SomeEnumerator e) = se
+    it  <- liftM e $ lift $ runIteratee copyingStream2Stream
+    b   <- it
+    return (r,b)
+
+
+testReceiveRequestIter :: ByteString
+                       -> IO (Iteratee ByteString IO (Request,L.ByteString))
+testReceiveRequestIter req =
+    liftM (enumBS req) $ runIteratee testReceiveRequest
 
 
 testHttpRequest1 :: Test
 testHttpRequest1 =
     testCase "server/HttpRequest1" $ do
-        iter <- enumBS sampleRequest $
-                do
-                    r <- liftM fromJust $ rsm receiveRequest
-                    se <- liftIO $ readIORef (rqBody r)
-                    let (SomeEnumerator e) = se
-                    b <- liftM fromWrap $ joinIM $ e copyingStream2stream
-                    return (r,b)
+        iter <- testReceiveRequestIter sampleRequest
 
-        (req,body) <- run iter
+        (req,body) <- run_ iter
 
         assertEqual "not secure" False $ rqIsSecure req
 
@@ -204,19 +201,16 @@ testHttpRequest1 =
 testMultiRequest :: Test
 testMultiRequest =
     testCase "server/MultiRequest" $ do
-        iter <- (enumBS sampleRequest >. enumBS sampleRequest) $
-                do
-                    r1 <- liftM fromJust $ rsm receiveRequest
-                    se1 <- liftIO $ readIORef (rqBody r1)
-                    let (SomeEnumerator e1) = se1
-                    b1 <- liftM fromWrap $ joinIM $ e1 copyingStream2stream
-                    r2 <- liftM fromJust $ rsm receiveRequest
-                    se2 <- liftIO $ readIORef (rqBody r2)
-                    let (SomeEnumerator e2) = se2
-                    b2 <- liftM fromWrap $ joinIM $ e2 copyingStream2stream
-                    return (r1,b1,r2,b2)
+        let clientIter = do
+            (r1,b1) <- testReceiveRequest
+            (r2,b2) <- testReceiveRequest
 
-        (req1,body1,req2,body2) <- run iter
+            return (r1,b1,r2,b2)
+
+        iter <- liftM (enumBS sampleRequest >==> enumBS sampleRequest) $
+                runIteratee clientIter
+
+        (req1,body1,req2,body2) <- run_ iter
 
         assertEqual "parse body 1" "0123456789" body1
         assertEqual "parse body 2" "0123456789" body2
@@ -233,8 +227,9 @@ testMultiRequest =
 
 testOneMethod :: Method -> IO ()
 testOneMethod m = do
-    iter <- enumLBS txt $ liftM fromJust $ rsm receiveRequest
-    req <- run iter
+    step    <- runIteratee $ liftM fromJust $ rsm receiveRequest
+    let iter = enumLBS txt step
+    req     <- run_ iter
 
     assertEqual "method" m $ rqMethod req
 
@@ -255,9 +250,10 @@ expectException m = do
 
 testPartialParse :: Test
 testPartialParse = testCase "server/short" $ do
-    iter <- enumBS sampleShortRequest $ liftM fromJust $ rsm receiveRequest
+    step <- runIteratee $ liftM fromJust $ rsm receiveRequest
+    let iter = enumBS sampleShortRequest step
 
-    expectException $ run iter
+    expectException $ run_ iter
 
 
 methodTestText :: Method -> L.ByteString
@@ -277,19 +273,11 @@ sampleRequest2 =
              , "0123\r\n"
              , "0\r\n\r\n" ]
 
-
 testHttpRequest2 :: Test
 testHttpRequest2 =
     testCase "server/HttpRequest2" $ do
-        iter <- enumBS sampleRequest2 $
-                do
-                    r <- liftM fromJust $ rsm receiveRequest
-                    se <- liftIO $ readIORef (rqBody r)
-                    let (SomeEnumerator e) = se
-                    b <- liftM fromWrap $ joinIM $ e copyingStream2stream
-                    return (r,b)
-
-        (_,body) <- run iter
+        iter     <- testReceiveRequestIter sampleRequest2
+        (_,body) <- run_ iter
 
         assertEqual "parse body" "01234567890123" body
 
@@ -297,15 +285,8 @@ testHttpRequest2 =
 testHttpRequest3 :: Test
 testHttpRequest3 =
     testCase "server/HttpRequest3" $ do
-        iter <- enumBS sampleRequest3 $
-                do
-                    r <- liftM fromJust $ rsm receiveRequest
-                    se <- liftIO $ readIORef (rqBody r)
-                    let (SomeEnumerator e) = se
-                    b <- liftM fromWrap $ joinIM $ e copyingStream2stream
-                    return (r,b)
-
-        (req,body) <- run iter
+        iter       <- testReceiveRequestIter sampleRequest3
+        (req,body) <- run_ iter
 
         assertEqual "no cookies" [] $ rqCookies req
 
@@ -330,15 +311,8 @@ testHttpRequest3 =
 testHttpRequest3' :: Test
 testHttpRequest3' =
     testCase "server/HttpRequest3'" $ do
-        iter <- enumBS sampleRequest3' $
-                do
-                    r <- liftM fromJust $ rsm receiveRequest
-                    se <- liftIO $ readIORef (rqBody r)
-                    let (SomeEnumerator e) = se
-                    b <- liftM fromWrap $ joinIM $ e copyingStream2stream
-                    return (r,b)
-
-        (req,body) <- run iter
+        iter       <- testReceiveRequestIter sampleRequest3'
+        (req,body) <- run_ iter
 
         assertEqual "post param 1"
                     (rqParam "postparam1" req)
@@ -382,7 +356,7 @@ sampleRequest3' =
 
 
 
-rsm :: ServerMonad a -> Iteratee IO a
+rsm :: ServerMonad a -> Iteratee ByteString IO a
 rsm = runServerMonad "localhost" (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58382 False) alog elog
   where
     alog = const . const . return $ ()
@@ -391,15 +365,12 @@ rsm = runServerMonad "localhost" (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58382 F
 
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "server/HttpResponse1" $ do
-    let onSendFile = \f start sz ->
-                     enumFilePartial f (start,start+sz) copyingStream2stream
-                                         >>= run
+    sstep <- runIteratee copyingStream2Stream
+    req   <- mkRequest sampleRequest
 
-    req <- mkRequest sampleRequest
-
-    b <- run $ rsm $
-         sendResponse req rsp1 copyingStream2stream onSendFile >>=
-                      return . fromWrap . snd
+    b     <- run_ $ rsm $
+             sendResponse req rsp1 sstep testOnSendFile >>=
+                          return . snd
 
     assertEqual "http response" (L.concat [
                       "HTTP/1.0 600 Test\r\n"
@@ -412,21 +383,24 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
-           modifyResponseBody (>. (enumBS "0123456789")) $
-           setResponseBody return $
+           modifyResponseBody (>==> (enumBS "0123456789")) $
+           setResponseBody returnI $
            emptyResponse { rspHttpVersion = (1,0) }
 
 
+
+testOnSendFile :: FilePath -> Int64 -> Int64 -> IO L.ByteString
+testOnSendFile f st sz = do
+    sstep <- runIteratee copyingStream2Stream
+    run_ $ enumFilePartial f (st,st+sz) sstep
+
 testHttpResponse2 :: Test
 testHttpResponse2 = testCase "server/HttpResponse2" $ do
-    let onSendFile = \f st sz ->
-                     enumFilePartial f (st,st+sz) copyingStream2stream >>= run
-
-    req <- mkRequest sampleRequest
-
-    b2 <- run $ rsm $
-          sendResponse req rsp2 copyingStream2stream onSendFile >>=
-                       return . fromWrap . snd
+    sstep <- runIteratee copyingStream2Stream
+    req   <- mkRequest sampleRequest
+    b2    <- run_ $ rsm $
+             sendResponse req rsp2 sstep testOnSendFile >>=
+                          return . snd
 
     assertEqual "http response" (L.concat [
                       "HTTP/1.0 600 Test\r\n"
@@ -438,22 +412,20 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
-           modifyResponseBody (>. (enumBS "0123456789")) $
-           setResponseBody return $
+           modifyResponseBody (>==> (enumBS "0123456789")) $
+           setResponseBody returnI $
            emptyResponse { rspHttpVersion = (1,0) }
     rsp2 = rsp1 { rspContentLength = Nothing }
 
 
 testHttpResponse3 :: Test
 testHttpResponse3 = testCase "server/HttpResponse3" $ do
-    let onSendFile = \f st sz ->
-                     enumFilePartial f (st,st+sz) copyingStream2stream >>= run
+    sstep <- runIteratee copyingStream2Stream
+    req   <- mkRequest sampleRequest
 
-    req <- mkRequest sampleRequest
-
-    b3 <- run $ rsm $
-          sendResponse req rsp3 copyingStream2stream onSendFile >>=
-                       return . fromWrap . snd
+    b3 <- run_ $ rsm $
+          sendResponse req rsp3 sstep testOnSendFile >>=
+                       return . snd
 
     assertEqual "http response" b3 $ L.concat [
                       "HTTP/1.1 600 Test\r\n"
@@ -470,8 +442,8 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
-           modifyResponseBody (>. (enumBS "0123456789")) $
-           setResponseBody return $
+           modifyResponseBody (>==> (enumBS "0123456789")) $
+           setResponseBody returnI $
            emptyResponse { rspHttpVersion = (1,0) }
     rsp2 = rsp1 { rspContentLength = Nothing }
     rsp3 = setContentType "text/plain" $ (rsp2 { rspHttpVersion = (1,1) })
@@ -479,14 +451,13 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
 
 testHttpResponse4 :: Test
 testHttpResponse4 = testCase "server/HttpResponse4" $ do
-    let onSendFile = \f st sz ->
-                     enumFilePartial f (st,st+sz) copyingStream2stream >>= run
+    sstep <- runIteratee copyingStream2Stream
 
     req <- mkRequest sampleRequest
 
-    b <- run $ rsm $
-         sendResponse req rsp1 copyingStream2stream onSendFile >>=
-                      return . fromWrap . snd
+    b <- run_ $ rsm $
+         sendResponse req rsp1 sstep testOnSendFile >>=
+                      return . snd
 
     assertEqual "http response" (L.concat [
                       "HTTP/1.0 304 Test\r\n"
@@ -504,14 +475,14 @@ testHttpResponse4 = testCase "server/HttpResponse4" $ do
 
 echoServer :: (ByteString -> IO ())
            -> Request
-           -> Iteratee IO (Request,Response)
+           -> Iteratee ByteString IO (Request,Response)
 echoServer _ req = do
     se <- liftIO $ readIORef (rqBody req)
     let (SomeEnumerator enum) = se
-    let i = joinIM $ enum copyingStream2stream
-    b <- liftM fromWrap i
+    i <- liftM enum $ lift $ runIteratee copyingStream2Stream
+    b <- i
     let cl = L.length b
-    liftIO $ writeIORef (rqBody req) (SomeEnumerator $ return . joinI . take 0)
+    liftIO $ writeIORef (rqBody req) (SomeEnumerator $ joinI . I.take 0)
     return (req, rsp b cl)
   where
     rsp s cl = emptyResponse { rspBody = Enum $ enumLBS s
@@ -528,8 +499,8 @@ echoServer2 _ req = do
 
 
 testHttp1 :: Test
-testHttp1 = testCase "server/http session" $ do
-    let enumBody = enumBS sampleRequest >. enumBS sampleRequest2
+testHttp1 = testCase "server/httpSession" $ do
+    let enumBody = enumBS sampleRequest >==> enumBS sampleRequest2
 
     ref <- newIORef ""
 
@@ -560,18 +531,25 @@ testHttp1 = testCase "server/http session" $ do
 
                _ -> False
 
+    when (not ok) $ do
+        putStrLn "server/httpSession fail!!!! got:"
+        LC.putStrLn s
+
     assertBool "pipelined responses" ok
 
 
 mkIter :: IORef L.ByteString
-       -> (Iteratee IO (), FilePath -> Int64 -> Int64 -> IO ())
+       -> (Iteratee ByteString IO (), FilePath -> Int64 -> Int64 -> IO ())
 mkIter ref = (iter, \f st sz -> onF f st sz iter)
   where
     iter = do
-        x <- copyingStream2stream
-        liftIO $ modifyIORef ref $ \s -> L.append s (fromWrap x)
+        x <- copyingStream2Stream
+        liftIO $ modifyIORef ref $ \s -> L.append s x
 
-    onF f st sz i = enumFilePartial f (st,st+sz) i >>= run
+    onF f st sz i = do
+        step <- runIteratee i
+        let it = enumFilePartial f (st,st+sz) step
+        run_ it
 
 
 testChunkOn1_0 :: Test
@@ -619,7 +597,7 @@ sampleRequest4 =
 
 testHttp2 :: Test
 testHttp2 = testCase "server/connection: close" $ do
-    let enumBody = enumBS sampleRequest4 >. enumBS sampleRequest2
+    let enumBody = enumBS sampleRequest4 >==> enumBS sampleRequest2
 
     ref <- newIORef ""
 
@@ -661,7 +639,7 @@ testHttp2 = testCase "server/connection: close" $ do
 
 
 testHttp100 :: Test
-testHttp100 = testCase "server/Expect: 100-continue" $ do
+testHttp100 = testCase "server/expect100" $ do
     let enumBody = enumBS sampleRequestExpectContinue
 
     ref <- newIORef ""
@@ -695,6 +673,10 @@ testHttp100 = testCase "server/Expect: 100-continue" $ do
                                       ("Server" `L.isPrefixOf` s1))
 
                _ -> False
+
+    when (not ok) $ do
+        putStrLn "expect100 fail! got:"
+        LC.putStrLn s
 
     assertBool "100 Continue" ok
 
@@ -754,7 +736,7 @@ testSendFile = testCase "server/sendFile" $ do
                     $ runSnap sendFileFoo)
             (killThread)
             (\tid -> do
-                 m <- timeout (120 * seconds) $ go tid 
+                 m <- timeout (120 * seconds) $ go tid
                  maybe (assertFailure "timeout")
                        (const $ return ())
                        m)
@@ -762,20 +744,20 @@ testSendFile = testCase "server/sendFile" $ do
   where
     go tid = do
         waitabit
-        
+
         rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
         doc <- HTTP.getResponseBody rsp
-        
+
         killThread tid
         waitabit
-        
+
         assertEqual "sendFile" "FOO\n" doc
 
 
     waitabit = threadDelay $ ((10::Int)^(6::Int))
 
     port     = 8123
-    
+
 
 testServerStartupShutdown :: Test
 testServerStartupShutdown = testCase "server/startup/shutdown" $ do
@@ -788,7 +770,7 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
                        (runSnap pongServer))
             (killThread)
             (\tid -> do
-                 m <- timeout (120 * seconds) $ go tid 
+                 m <- timeout (120 * seconds) $ go tid
                  maybe (assertFailure "timeout")
                        (const $ return ())
                        m)
@@ -796,13 +778,17 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
 
   where
     go tid = do
+        debug $ "testServerStartupShutdown: waiting a bit"
         waitabit
-
+        debug $ "testServerStartupShutdown: sending http request"
         rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")
+        debug $ "testServerStartupShutdown: grabbing response"
         doc <- HTTP.getResponseBody rsp
         assertEqual "server" "PONG" doc
 
+        debug $ "testServerStartupShutdown: killing thread"
         killThread tid
+        debug $ "testServerStartupShutdown: kill signal sent to thread"
         waitabit
 
         expectException $ HTTP.simpleHTTP
@@ -865,3 +851,13 @@ testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
 
 seconds :: Int
 seconds = (10::Int) ^ (6::Int)
+
+
+copyingStream2Stream :: (Monad m) => Iteratee ByteString m L.ByteString
+copyingStream2Stream = go []
+  where
+    go l = do
+        mbx <- I.head
+        maybe (return $ L.fromChunks $ reverse l)
+              (\x -> let !z = S.copy x in go (z:l))
+              mbx

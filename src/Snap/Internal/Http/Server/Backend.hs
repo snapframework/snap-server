@@ -24,8 +24,8 @@ data SessionInfo = SessionInfo
     }
 
 type SessionHandler =  SessionInfo                           -- ^ session port information
-                    -> Enumerator IO ()                      -- ^ read end of socket
-                    -> Iteratee IO ()                        -- ^ write end of socket
+                    -> Enumerator ByteString IO ()           -- ^ read end of socket
+                    -> Iteratee ByteString IO ()             -- ^ write end of socket
                     -> (FilePath -> Int64 -> Int64 -> IO ()) -- ^ sendfile end
                     -> IO ()                                 -- ^ timeout tickler
                     -> IO ()
