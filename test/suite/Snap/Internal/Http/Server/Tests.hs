@@ -8,7 +8,8 @@ module Snap.Internal.Http.Server.Tests
   ( tests ) where
 
 import             Control.Concurrent
-import             Control.Exception ( try
+import             Control.Exception ( catch
+                                     , try
                                      , throwIO
                                      , bracket
                                      , finally
@@ -32,7 +33,7 @@ import             Data.Typeable
 import             Data.Word
 import qualified   Network.HTTP as HTTP
 import qualified   Network.Socket.ByteString as N
-import             Prelude hiding (take)
+import             Prelude hiding (catch, take)
 import qualified   Prelude
 import             System.Timeout
 import             Test.Framework
@@ -469,9 +470,6 @@ testHttpResponse4 = testCase "server/HttpResponse4" $ do
            emptyResponse { rspHttpVersion = (1,0) }
 
 
--- httpServe "127.0.0.1" 8080 "localhost" pongServer
-
-
 
 echoServer :: (ByteString -> IO ())
            -> Request
@@ -731,9 +729,7 @@ sendFileFoo = sendFile "data/fileServe/foo.html"
 
 testSendFile :: Test
 testSendFile = testCase "server/sendFile" $ do
-    bracket (forkIO $ httpServe [HttpPort "*" port] Nothing "localhost"
-                                Nothing Nothing
-                    $ runSnap sendFileFoo)
+    bracket (forkIO serve)
             (killThread)
             (\tid -> do
                  m <- timeout (120 * seconds) $ go tid
@@ -742,6 +738,11 @@ testSendFile = testCase "server/sendFile" $ do
                        m)
 
   where
+    serve = (httpServe [HttpPort "*" port] Nothing "localhost"
+                       Nothing Nothing
+                    $ runSnap sendFileFoo)
+            `catch` \(_::SomeException) -> return ()
+
     go tid = do
         waitabit
 
