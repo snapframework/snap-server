@@ -178,7 +178,7 @@ newLoop sockets handler elog cpu = do
 
     forkOnIO cpu $ loopThread b
 
-    debug $ "Backend.newLoop: loop spawned"
+    debug $ "LibEv.newLoop: loop spawned"
     return b
 
 
@@ -214,7 +214,7 @@ acceptCallback back handler elog cpu sock _loopPtr _ioPtr _ = do
       -- if it does (maybe the request got picked up by another thread) we'll
       -- just bail out
       -2 -> return ()
-      -1 -> debugErrno "Backend.acceptCallback:c_accept()"
+      -1 -> debugErrno "Libev.acceptCallback:c_accept()"
       fd -> do
           debug $ "acceptCallback: accept()ed fd, writing to chan " ++ show fd
           forkOnIO cpu $ (go r `catches` cleanup)
@@ -250,7 +250,7 @@ ioWriteCallback fd active wa _loopPtr _ioPtr _ = do
 
 stop :: Backend -> IO ()
 stop b = ignoreException $ do
-    debug $ "Backend.stop"
+    debug $ "Libev.stop"
 
     -- 1. take the loop lock
     -- 2. shut down the accept() callback
@@ -287,18 +287,18 @@ timerCallback :: EvLoopPtr         -- ^ loop obj
               -> ThreadId          -- ^ thread to kill
               -> TimerCallback
 timerCallback loop tmr ioref tid _ _ _ = do
-    debug "Backend.timerCallback: entered"
+    debug "Libev.timerCallback: entered"
 
     now       <- getCurrentDateTime
     whenToDie <- readIORef ioref
 
     if whenToDie <= now
       then do
-          debug "Backend.timerCallback: killing thread"
+          debug "Libev.timerCallback: killing thread"
           throwTo tid TimeoutException
 
       else do
-          debug $ "Backend.timerCallback: now=" ++ show now
+          debug $ "Libev.timerCallback: now=" ++ show now
                   ++ ", whenToDie=" ++ show whenToDie
           evTimerSetRepeat tmr $ fromRational . toRational $ (whenToDie - now)
           evTimerAgain loop tmr
@@ -307,7 +307,7 @@ timerCallback loop tmr ioref tid _ _ _ = do
 -- if you already hold the loop lock, you are entitled to destroy a connection
 destroyConnection :: Connection -> IO ()
 destroyConnection conn = do
-    debug "Backend.destroyConnection: closing socket and killing connection"
+    debug "Libev.destroyConnection: closing socket and killing connection"
     c_close fd
 
     -- stop and free timer object
@@ -371,7 +371,7 @@ freeBackend backend = ignoreException $ block $ do
 
     let nthreads = Prelude.length tset
 
-    debug $ "Backend.freeBackend: killing active connection threads"
+    debug $ "Libev.freeBackend: killing active connection threads"
 
     Prelude.mapM_ (destroyConnection . snd) tset
 
@@ -380,8 +380,8 @@ freeBackend backend = ignoreException $ block $ do
     Prelude.mapM_ (killThread . fst) tset
     Prelude.mapM_ (killThread . fst) tset
 
-    debug $ "Backend.freeBackend: " ++ show nthreads ++ " thread(s) killed"
-    debug $ "Backend.freeBackend: destroying libev resources"
+    debug $ "Libev.freeBackend: " ++ show nthreads ++ " thread(s) killed"
+    debug $ "Libev.freeBackend: destroying libev resources"
 
     mapM freeEvIo acceptObjs
     forM acceptCbs $ \x -> do
@@ -400,7 +400,7 @@ freeBackend backend = ignoreException $ block $ do
     freeMutexCallback mcb2
 
     evLoopDestroy loop
-    debug $ "Backend.freeBackend: resources destroyed"
+    debug $ "Libev.freeBackend: resources destroyed"
 
   where
     acceptObjs  = _acceptIOObjs backend
@@ -544,7 +544,7 @@ instance Exception TimeoutException
 
 tickleTimeout :: Connection -> IO ()
 tickleTimeout conn = do
-    debug "Backend.tickleTimeout"
+    debug "Libev.tickleTimeout"
     now       <- getCurrentDateTime
     writeIORef (_timerTimeoutTime conn) (now + 30)
 
@@ -570,7 +570,7 @@ waitForLock readLock conn = do
     dbg "waitForLock: took mvar"
 
   where
-    dbg s    = debug $ "Backend.recvData(" ++ show (_rawSocket conn) ++ "): "
+    dbg s    = debug $ "Libev.recvData(" ++ show (_rawSocket conn) ++ "): "
                        ++ s
     io       = if readLock 
                  then (_connReadIOObj conn)
@@ -638,7 +638,7 @@ enumerate :: (MonadIO m)
           -> Enumerator ByteString m a
 enumerate conn session = loop
   where
-    dbg s = debug $ "LibevBackend.enumerate(" ++ show (_socket session)
+    dbg s = debug $ "Libev.enumerate(" ++ show (_socket session)
                     ++ "): " ++ s
 
     loop (Continue k) = do

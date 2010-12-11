@@ -6,6 +6,7 @@ import           Control.Exception
 import           Control.Concurrent (killThread)
 import           Control.Concurrent.MVar
 import           Control.Monad
+import qualified Network.HTTP.Enumerator as HTTP
 import           Test.Framework (defaultMain, testGroup)
 import           Snap.Http.Server.Config
 
@@ -19,31 +20,27 @@ ports :: [Int]
 ports = [8195..]
 
 #ifdef GNUTLS
-sslports :: [Maybe (Int,Int)]
-sslports = map Just $ zip [8295..] [8395..]
+sslports :: [Maybe Int]
+sslports = map Just [8295..]
 #else
-sslports :: [Maybe (Int,Int)]
+sslports :: [Maybe Int]
 sslports = repeat Nothing
 #endif
 
 #ifdef LIBEV
-backends :: [(Int,Maybe (Int,Int),ConfigBackend)]
+backends :: [(Int,Maybe Int,ConfigBackend)]
 backends = zip3 ports sslports [ConfigSimpleBackend, ConfigLibEvBackend]
 #else
-backends :: [(Int,Maybe (Int,Int),ConfigBackend)]
+backends :: [(Int,Maybe Int,ConfigBackend)]
 backends = zip3 ports sslports [ConfigSimpleBackend]
 #endif
 
 main :: IO ()
-main = do
+main = HTTP.withHttpEnumerator $ do
     tinfos <- forM backends $ \(port,sslport,b) ->
         Test.Blackbox.startTestServer port sslport b
 
-    stunnels <- forM backends $ \(_,sslport,_) -> do
-        Test.Blackbox.spawnStunnel sslport
-
     defaultMain (tests ++ concatMap blackbox backends) `finally` do
-        mapM_ Test.Blackbox.killStunnel stunnels
         mapM_ killThread $ map fst tinfos
         mapM_ takeMVar $ map snd tinfos
 

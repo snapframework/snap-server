@@ -31,7 +31,7 @@ import             Data.Time.Calendar
 import             Data.Time.Clock
 import             Data.Typeable
 import             Data.Word
-import qualified   Network.HTTP as HTTP
+import qualified   Network.HTTP.Enumerator as HTTP
 import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (catch, take)
 import qualified   Prelude
@@ -746,8 +746,7 @@ testSendFile = testCase "server/sendFile" $ do
     go tid = do
         waitabit
 
-        rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8123/")
-        doc <- HTTP.getResponseBody rsp
+        doc <- HTTP.simpleHttp "http://localhost:8123/"
 
         killThread tid
         waitabit
@@ -782,9 +781,7 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
         debug $ "testServerStartupShutdown: waiting a bit"
         waitabit
         debug $ "testServerStartupShutdown: sending http request"
-        rsp <- HTTP.simpleHTTP (HTTP.getRequest "http://localhost:8145/")
-        debug $ "testServerStartupShutdown: grabbing response"
-        doc <- HTTP.getResponseBody rsp
+        doc <- HTTP.simpleHttp "http://localhost:8145/"
         assertEqual "server" "PONG" doc
 
         debug $ "testServerStartupShutdown: killing thread"
@@ -792,8 +789,7 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
         debug $ "testServerStartupShutdown: kill signal sent to thread"
         waitabit
 
-        expectException $ HTTP.simpleHTTP
-                        $ HTTP.getRequest "http://localhost:8145/"
+        expectException $ HTTP.simpleHttp "http://localhost:8145/"
         return ()
 
     waitabit = threadDelay $ 2*((10::Int)^(6::Int))
