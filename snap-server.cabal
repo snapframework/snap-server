@@ -142,7 +142,7 @@ Library
     utf8-string,
     unix-compat == 0.2.*,
     vector >= 0.7 && <0.8,
-    vector-algorithms >= 0.3.4 && <0.4,
+    vector-algorithms >= 0.4 && <0.5,
     PSQueue >= 1.1 && <1.2
 
   if flag(portable) || os(windows)

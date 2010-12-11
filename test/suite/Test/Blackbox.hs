@@ -11,7 +11,7 @@ module Test.Blackbox
 
 ------------------------------------------------------------------------------
 import             Control.Concurrent
-import             Control.Exception (finally)
+import             Control.Exception (SomeException, catch)
 import             Control.Monad
 import qualified   Data.ByteString.Char8 as S
 import             Data.Int
@@ -19,7 +19,7 @@ import             Data.Maybe (fromJust)
 import qualified   Network.HTTP as HTTP
 import qualified   Network.URI as URI
 import qualified   Network.Socket.ByteString as N
-import             Prelude hiding (take)
+import             Prelude hiding (catch, take)
 import             System.Directory (getCurrentDirectory)
 import             System.Timeout
 import             System.Posix.Signals (signalProcess, sigINT)
@@ -82,13 +82,12 @@ startTestServer port sslport backend = do
                               cfg
 
     mvar <- newEmptyMVar
-    tid  <- forkIO $
-            (httpServe cfg' testHandler
-             `finally` putMVar mvar ())
+    tid  <- forkIO $ do
+                (httpServe cfg' testHandler) `catch` \(e::SomeException) -> return ()
+                putMVar mvar ()
     waitabit
 
     return (tid,mvar)
-
 
 ------------------------------------------------------------------------------
 {- stunnel needs the SIGINT signal to properly shutdown, but
