@@ -185,7 +185,6 @@ Executable testserver
      network-bytestring >= 0.1.2 && < 0.2,
      old-locale,
      parallel > 2,
-     iteratee >= 0.3.1 && < 0.4,
      snap-core >= 0.3 && <0.4,
      template-haskell,
      test-framework >= 0.3.1 && <0.4,
