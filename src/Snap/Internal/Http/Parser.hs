@@ -41,7 +41,6 @@ import qualified   Data.Vector.Unboxed as Vec
 import             Data.Vector.Unboxed (Vector)
 import             Data.Word (Word8, Word64)
 import             Prelude hiding (head, take, takeWhile)
-import qualified   Prelude
 ------------------------------------------------------------------------------
 import             Snap.Internal.Http.Types
 import             Snap.Internal.Debug
@@ -146,7 +145,7 @@ writeChunkedTransferEncoding = checkDone start
             lift $ runIteratee $ enumLBS o (Continue k)
 
 
-    
+
     bufIt :: Int
           -> DList ByteString
           -> (Stream ByteString -> Iteratee ByteString IO a)

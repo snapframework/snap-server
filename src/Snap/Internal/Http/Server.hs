@@ -132,9 +132,9 @@ httpServe ports mevType localHostname alogPath elogPath handler =
         if initHttps
             then TLS.initTLS
             else return ()
-            
+
         nports <- mapM bindPort ports
-            
+
         (runEventLoop evType nports numCapabilities (logE elog) $
                       runHTTP alog elog handler localHostname) `finally` do
 
@@ -445,15 +445,15 @@ receiveRequest = do
                 joinI $ takeExactly len st'
 
         noContentLength :: Request -> ServerMonad ()
-        noContentLength req = liftIO $ do
+        noContentLength rq = liftIO $ do
             debug ("receiveRequest/setEnumerator: " ++
                    "request did NOT have content-length")
             let enum = SomeEnumerator $
-                       if rqMethod req == POST || rqMethod req == PUT
+                       if rqMethod rq == POST || rqMethod rq == PUT
                          then returnI
                          else iterateeDebugWrapper "noContentLength" .
                               joinI . I.take 0
-            writeIORef (rqBody req) enum
+            writeIORef (rqBody rq) enum
             debug "receiveRequest/setEnumerator: body enumerator set"
 
 
@@ -496,7 +496,7 @@ receiveRequest = do
                 let ii = iterateeDebugWrapper "regurgitate body" (returnI st)
                 st' <- lift $ runIteratee ii
                 e st'
-                    
+
             liftIO $ writeIORef (rqBody req) $ SomeEnumerator e'
             return $ req { rqParams = rqParams req `mappend` newParams }
 
@@ -768,7 +768,7 @@ sendResponse req rsp' writeEnd onSendFile = do
                    putByteString "\r\n"
                    putHdrs $ headers r
                    putByteString "\r\n"
-                   
+
 
 ------------------------------------------------------------------------------
 checkConnectionClose :: (Int, Int) -> Headers -> ServerMonad ()
@@ -808,5 +808,3 @@ l2s = S.concat . L.toChunks
 ------------------------------------------------------------------------------
 toBS :: String -> ByteString
 toBS = S.pack . map c2w
-
-
