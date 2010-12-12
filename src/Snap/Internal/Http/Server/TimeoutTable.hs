@@ -13,6 +13,7 @@ module Snap.Internal.Http.Server.TimeoutTable
   )
 where
 
+
 ------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Monad
@@ -29,23 +30,28 @@ import           Prelude hiding (null)
 import           Data.Concurrent.HashMap (nextHighestPowerOf2)
 
 
+------------------------------------------------------------------------------
 type TT = PSQ ThreadId CTime
 
 
+------------------------------------------------------------------------------
 data TimeoutTable = TimeoutTable {
       _maps     :: !(Vector (MVar TT))
     , _activity :: !(MVar ())
 }
 
 
+------------------------------------------------------------------------------
 defaultNumberOfLocks :: Word
 defaultNumberOfLocks = nextHighestPowerOf2 $ toEnum $ 8 * numCapabilities
 
 
+------------------------------------------------------------------------------
 hashToBucket :: Word -> Word
 hashToBucket x = x .&. (defaultNumberOfLocks-1)
 
 
+------------------------------------------------------------------------------
 new :: IO TimeoutTable
 new = do
     vector <- V.replicateM (fromEnum defaultNumberOfLocks) (newMVar PSQ.empty)
@@ -53,12 +59,14 @@ new = do
     return $ TimeoutTable vector act
 
 
+------------------------------------------------------------------------------
 null :: TimeoutTable -> IO Bool
 null (TimeoutTable maps _) = do
     nulls <- V.mapM (\mv -> withMVar mv $ return . PSQ.null) maps
     return $ V.and nulls
 
 
+------------------------------------------------------------------------------
 insert :: Word -> ThreadId -> CTime -> TimeoutTable -> IO ()
 insert thash tid time (TimeoutTable maps act) = do
     modifyMVar_ psqMv $ \psq -> do
@@ -73,6 +81,7 @@ insert thash tid time (TimeoutTable maps act) = do
     psqMv  = V.unsafeIndex maps $ fromEnum bucket
 
 
+------------------------------------------------------------------------------
 delete :: Word -> ThreadId -> TimeoutTable -> IO ()
 delete thash tid (TimeoutTable maps act) = do
     modifyMVar_ psqMv $ \psq -> do
@@ -87,6 +96,7 @@ delete thash tid (TimeoutTable maps act) = do
     psqMv  = V.unsafeIndex maps $ fromEnum bucket
 
 
+------------------------------------------------------------------------------
 killAll :: TimeoutTable -> IO ()
 killAll (TimeoutTable maps _) = do
     V.mapM_ k maps
@@ -97,6 +107,7 @@ killAll (TimeoutTable maps _) = do
         return PSQ.empty
 
 
+------------------------------------------------------------------------------
 killOlderThan :: CTime -> TimeoutTable -> IO ()
 killOlderThan time (TimeoutTable maps _) = do
     V.mapM_ processPSQ maps
@@ -116,6 +127,7 @@ killOlderThan time (TimeoutTable maps _) = do
                  mmin
 
 
+------------------------------------------------------------------------------
 waitForActivity :: TimeoutTable -> IO ()
 waitForActivity t@(TimeoutTable _ act) = do
     takeMVar act

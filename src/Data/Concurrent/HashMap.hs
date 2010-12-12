@@ -92,9 +92,10 @@ null ht = liftM V.and $ V.mapM f $ _maps ht
   where
     f mv = withMVar mv (return . IM.null)
 
+
 new' :: Eq k =>
         Int            -- ^ number of locks to use
-     -> (k -> Word)     -- ^ hash function
+     -> (k -> Word)    -- ^ hash function
      -> IO (HashMap k v)
 new' numLocks hashFunc = do
     vector <- V.replicateM (fromEnum n) (newMVar IM.empty)
@@ -121,7 +122,6 @@ insert key value ht =
     hashcode = _hash ht key
     bucket   = _hashToBucket ht hashcode
     submap   = V.unsafeIndex (_maps ht) (fromEnum bucket)
-
 
 
 delete :: (Eq k) => k -> HashMap k v -> IO ()
@@ -170,8 +170,6 @@ fromList hf xs = do
 ------------------------------------------------------------------------------
 -- helper functions
 ------------------------------------------------------------------------------
-
-
 
 -- nicked this technique from Data.IntMap
 

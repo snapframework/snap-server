@@ -17,6 +17,8 @@ module Snap.Internal.Http.Server.GnuTLS
   , send
   ) where
 
+
+------------------------------------------------------------------------------
 import           Control.Exception
 import           Data.ByteString (ByteString)
 import           Data.Dynamic
@@ -33,6 +35,8 @@ import           Foreign
 import qualified Network.Socket as Socket
 #endif
 
+
+------------------------------------------------------------------------------
 data GnuTLSException = GnuTLSException String
     deriving (Show, Typeable)
 instance Exception GnuTLSException
@@ -67,15 +71,19 @@ recv _ _ = throwIO $ GnuTLSException "TLS is not supported"
 
 
 -------------------------------------------------------------------------------
---- Init
+-- | Init
 initTLS :: IO ()
-initTLS = gnutls_set_threading_helper >> throwErrorIf "TLS init" gnutls_global_init
+initTLS = gnutls_set_threading_helper >>
+          throwErrorIf "TLS init" gnutls_global_init
 
+
+-------------------------------------------------------------------------------
 stopTLS :: IO ()
 stopTLS = gnutls_global_deinit
 
+
 -------------------------------------------------------------------------------
--- Bind ssl port
+-- | Binds ssl port
 bindHttps :: ByteString
           -> Int
           -> FilePath
@@ -93,6 +101,8 @@ bindHttps bindAddress bindPort cert key = do
 
     return $ ListenHttps sock (castPtr creds) (castPtr dh)
 
+
+-------------------------------------------------------------------------------
 loadCredentials :: FilePath       --- ^ Path to certificate
                 -> FilePath       --- ^ Path to key
                 -> IO (Ptr GnuTLSCredentials)
@@ -101,10 +111,14 @@ loadCredentials cert key = alloca $ \cPtr -> do
     creds <- peek cPtr
 
     withCString cert $ \certstr -> withCString key $ \keystr ->
-        throwErrorIf "TLS set Certificate" $ gnutls_certificate_set_x509_key_file creds certstr keystr gnutls_x509_fmt_pem
+        throwErrorIf "TLS set Certificate" $
+        gnutls_certificate_set_x509_key_file
+            creds certstr keystr gnutls_x509_fmt_pem
 
     return creds
 
+
+-------------------------------------------------------------------------------
 regenerateDHParam :: Ptr GnuTLSCredentials -> IO (Ptr GnuTLSDHParam)
 regenerateDHParam creds = alloca $ \dhptr -> do
     throwErrorIf "TLS allocate" $ gnutls_dh_params_init dhptr
@@ -113,39 +127,48 @@ regenerateDHParam creds = alloca $ \dhptr -> do
     gnutls_certificate_set_dh_params creds dh
     return dh
 
--------------------------------------------------------------------------------
 
+-------------------------------------------------------------------------------
 freePort :: ListenSocket -> IO ()
 freePort (ListenHttps _ creds dh) = do
     gnutls_certificate_free_credentials $ castPtr creds
     gnutls_dh_params_deinit $ castPtr dh
 freePort _ = return ()
 
+
+-------------------------------------------------------------------------------
 createSession :: ListenSocket -> Int -> CInt -> IO () -> IO NetworkSession
-createSession (ListenHttps _ creds _) recvSize socket on_block = alloca $ \sPtr -> do
-    throwErrorIf "TLS alloacte" $ gnutls_init sPtr 1
-    session <- peek sPtr
-    throwErrorIf "TLS session" $ gnutls_credentials_set session 1 $ castPtr creds
-    throwErrorIf "TLS session" $ gnutls_set_default_priority session
-    gnutls_certificate_send_x509_rdn_sequence session 1
-    gnutls_session_enable_compatibility_mode session
+createSession (ListenHttps _ creds _) recvSize socket on_block =
+    alloca $ \sPtr -> do
+        throwErrorIf "TLS alloacte" $ gnutls_init sPtr 1
+        session <- peek sPtr
+        throwErrorIf "TLS session" $
+            gnutls_credentials_set session 1 $ castPtr creds
+        throwErrorIf "TLS session" $ gnutls_set_default_priority session
+        gnutls_certificate_send_x509_rdn_sequence session 1
+        gnutls_session_enable_compatibility_mode session
 
-    buffer <- mallocBytes $ fromIntegral recvSize
-    let s = NetworkSession socket (castPtr session) buffer $ fromIntegral recvSize
+        buffer <- mallocBytes $ fromIntegral recvSize
+        let s = NetworkSession socket (castPtr session) buffer $
+                    fromIntegral recvSize
 
-    gnutls_transport_set_ptr session $ intPtrToPtr $ fromIntegral $ socket
+        gnutls_transport_set_ptr session $ intPtrToPtr $ fromIntegral $ socket
 
-    handshake s on_block
+        handshake s on_block
 
-    return s
+        return s
 createSession _ _ _ _ = error "Invalid socket"
 
+
+-------------------------------------------------------------------------------
 endSession :: NetworkSession -> IO ()
 endSession (NetworkSession _ session buffer _) = do
     throwErrorIf "TLS bye" $ gnutls_bye (castPtr session) 1 `finally` do
         gnutls_deinit $ castPtr session
         free buffer
 
+
+-------------------------------------------------------------------------------
 handshake :: NetworkSession -> IO () -> IO ()
 handshake s@(NetworkSession { _session = session}) on_block = do
     rc <- gnutls_handshake $ castPtr session
@@ -155,6 +178,8 @@ handshake s@(NetworkSession { _session = session}) on_block = do
           | isAgainCode x  -> on_block >> handshake s on_block
           | otherwise      -> throwError "TLS handshake" rc
 
+
+-------------------------------------------------------------------------------
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
      unsafeUseAsCStringLen bs $ uncurry loop
@@ -164,16 +189,22 @@ send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
         let sent' = fromIntegral sent
         case sent' of
             x | x == 0 || x == len -> return ()
-              | x > 0 && x < len   -> tickleTimeout >> loop (plusPtr ptr sent') (len - sent')
+              | x > 0 && x < len   -> tickleTimeout >>
+                                      loop (plusPtr ptr sent') (len - sent')
               | isIntrCode x       -> loop ptr len
               | isAgainCode x      -> onBlock >> loop ptr len
-              | otherwise          -> throwError "TLS send" $ fromIntegral sent'
+              | otherwise          -> throwError "TLS send" $
+                                          fromIntegral sent'
 
-{- I originally wrote recv to use mallocBytes and unsafePackCStringFinalizer to achieve zero-copy.
-   The downside to that method is we might waste memory if a malicious adversary only sends us a few bytes,
-   since the entire buffer won't be freed until the ByteString is collected.  Thus I use packCStringLen which
-   makes a copy.  Perhaps in the future the recv function could be changed to use unsafePackCStringFinalizer if
-   the buffer is at least 3/4 full and packCStringLen otherwise or something like that -}
+
+------------------------------------------------------------------------------
+-- | I originally wrote recv to use mallocBytes and unsafePackCStringFinalizer
+-- to achieve zero-copy.  The downside to that method is we might waste memory
+-- if a malicious adversary only sends us a few bytes, since the entire buffer
+-- won't be freed until the ByteString is collected.  Thus I use
+-- packCStringLen which makes a copy.  Perhaps in the future the recv function
+-- could be changed to use unsafePackCStringFinalizer if the buffer is at
+-- least 3/4 full and packCStringLen otherwise or something like that
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
 recv onBlock (NetworkSession _ session recvBuf recvLen) = loop
   where
@@ -185,12 +216,20 @@ recv onBlock (NetworkSession _ session recvBuf recvLen) = loop
               | x > 0         -> liftM Just $ B.packCStringLen (recvBuf, x)
               | isIntrCode x  -> loop
               | isAgainCode x -> onBlock >> loop
-              | otherwise     -> (throwError "TLS recv" $ fromIntegral size') >> return Nothing
+              | otherwise     -> (throwError "TLS recv" $ fromIntegral size')
+                                 >> return Nothing
 
+
+------------------------------------------------------------------------------
 throwError :: String -> ReturnCode -> IO ()
-throwError prefix rc = gnutls_strerror rc >>= peekCString >>= throwIO . GnuTLSException . (prefix'++)
-    where prefix' = prefix ++ "<" ++ show rc ++ ">: "
+throwError prefix rc = gnutls_strerror rc >>=
+                       peekCString >>=
+                       throwIO . GnuTLSException . (prefix'++)
+  where
+    prefix' = prefix ++ "<" ++ show rc ++ ">: "
 
+
+------------------------------------------------------------------------------
 throwErrorIf :: String -> IO ReturnCode -> IO ()
 throwErrorIf prefix action = do
     rc <- action
@@ -198,12 +237,18 @@ throwErrorIf prefix action = do
         then throwError prefix rc
         else return ()
 
+
+------------------------------------------------------------------------------
 isAgainCode :: (Integral a) => a -> Bool
 isAgainCode x = (fromIntegral x) == (-28 :: Int)
 
+
+------------------------------------------------------------------------------
 isIntrCode :: (Integral a) => a -> Bool
 isIntrCode x = (fromIntegral x) == (-52 :: Int)
 
+
+------------------------------------------------------------------------------
 getHostAddr :: Int
             -> ByteString
             -> IO Socket.SockAddr

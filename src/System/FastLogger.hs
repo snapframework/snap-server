@@ -11,6 +11,8 @@ module System.FastLogger
 , stopLogger
 ) where
 
+
+------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Exception
 import           Control.Monad
@@ -32,6 +34,7 @@ import           Text.Show.ByteString hiding (runPut)
 import           Snap.Internal.Http.Server.Date
 
 
+------------------------------------------------------------------------------
 -- | Holds the state for a logger.
 data Logger = Logger
     { _queuedMessages :: !(IORef (DList ByteString))
@@ -40,6 +43,7 @@ data Logger = Logger
     , _loggingThread  :: !(MVar ThreadId) }
 
 
+------------------------------------------------------------------------------
 -- | Creates a new logger, logging to the given file. If the file argument is
 -- \"-\", then log to stdout; if it's \"stderr\" then we log to stderr,
 -- otherwise we log to a regular file in append mode. The file is closed and
@@ -57,6 +61,8 @@ newLogger fp = do
 
     return lg
 
+
+------------------------------------------------------------------------------
 -- | Prepares a log message with the time prepended.
 timestampedLogEntry :: ByteString -> IO ByteString
 timestampedLogEntry msg = do
@@ -69,6 +75,7 @@ timestampedLogEntry msg = do
         putByteString msg
 
 
+------------------------------------------------------------------------------
 -- | Prepares a log message in \"combined\" format.
 combinedLogEntry :: ByteString        -- ^ remote host
                  -> Maybe ByteString  -- ^ remote user
@@ -81,7 +88,7 @@ combinedLogEntry :: ByteString        -- ^ remote host
                  -> ByteString        -- ^ user agent (up to you to ensure
                                       --   there are no quotes in here)
                  -> IO ByteString
-combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !userAgent = do
+combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
     let user = fromMaybe "-" mbUser
     let numBytes = maybe "-" (\s -> strict $ show s) mbNumBytes
     let referer = maybe "-" (\s -> S.concat ["\"", s, "\""]) mbReferer
@@ -89,21 +96,21 @@ combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !userAgent = 
     timeStr <- getLogDateString
 
     let !p = [ host
-            , " - "
-            , user
-            , " ["
-            , timeStr
-            , "] \""
-            , req
-            , "\" "
-            , strict $ show status
-            , " "
-            , numBytes
-            , " "
-            , referer
-            , " \""
-            , userAgent
-            , "\"" ]
+             , " - "
+             , user
+             , " ["
+             , timeStr
+             , "] \""
+             , req
+             , "\" "
+             , strict $ show status
+             , " "
+             , numBytes
+             , " "
+             , referer
+             , " \""
+             , ua
+             , "\"" ]
 
     let !output = S.concat p
 
@@ -114,6 +121,7 @@ combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !userAgent = 
     strict = S.concat . L.toChunks
 
 
+------------------------------------------------------------------------------
 -- | Sends out a log message verbatim with a newline appended. Note:
 -- if you want a fancy log message you'll have to format it yourself
 -- (or use 'combinedLogEntry').
@@ -124,6 +132,7 @@ logMsg !lg !s = do
     tryPutMVar (_dataWaiting lg) () >> return ()
 
 
+------------------------------------------------------------------------------
 loggingThread :: Logger -> IO ()
 loggingThread (Logger queue notifier filePath _) = do
     initialize >>= go
@@ -196,6 +205,7 @@ loggingThread (Logger queue notifier filePath _) = do
         loop d
 
 
+------------------------------------------------------------------------------
 -- | Kills a logger thread, causing any unwritten contents to be
 -- flushed out to disk
 stopLogger :: Logger -> IO ()

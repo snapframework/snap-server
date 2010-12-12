@@ -66,15 +66,26 @@ type ServerHandler = (ByteString -> IO ())
                    -> Request
                    -> Iteratee ByteString IO (Request,Response)
 
+
+------------------------------------------------------------------------------
 type ServerMonad = StateT ServerState (Iteratee ByteString IO)
 
-data ListenPort = HttpPort  ByteString Int                   -- (bind address, port)
-                | HttpsPort ByteString Int FilePath FilePath -- (bind address, port, path to certificate, path to key)
 
+------------------------------------------------------------------------------
+data ListenPort =
+    -- (bind address, port)
+    HttpPort  ByteString Int |
+    -- (bind address, port, path to certificate, path to key)
+    HttpsPort ByteString Int FilePath FilePath
+
+
+------------------------------------------------------------------------------
 data EventLoopType = EventLoopSimple
                    | EventLoopLibEv
   deriving (Prelude.Show)
 
+
+------------------------------------------------------------------------------
 defaultEvType :: EventLoopType
 #ifdef LIBEV
 defaultEvType = EventLoopLibEv
@@ -82,6 +93,8 @@ defaultEvType = EventLoopLibEv
 defaultEvType = EventLoopSimple
 #endif
 
+
+------------------------------------------------------------------------------
 data ServerState = ServerState
     { _forceConnectionClose  :: Bool
     , _localHostname         :: ByteString
@@ -89,6 +102,7 @@ data ServerState = ServerState
     , _logAccess             :: Request -> Response -> IO ()
     , _logError              :: ByteString -> IO ()
     }
+
 
 ------------------------------------------------------------------------------
 runServerMonad :: ByteString                     -- ^ local host name
@@ -108,7 +122,8 @@ runServerMonad lh s la le m = evalStateT m st
 
 ------------------------------------------------------------------------------
 httpServe :: [ListenPort]        -- ^ ports to listen on
-          -> Maybe EventLoopType -- ^ Specify a given event loop, otherwise a default is picked
+          -> Maybe EventLoopType -- ^ Specify a given event loop,
+                                 --   otherwise a default is picked
           -> ByteString          -- ^ local hostname (server name)
           -> Maybe FilePath      -- ^ path to the access log
           -> Maybe FilePath      -- ^ path to the error log
@@ -127,7 +142,8 @@ httpServe ports mevType localHostname alogPath elogPath handler =
         logE elog $ S.concat [ "Server.httpServe: START ("
                              , toBS $ Prelude.show evType, ")"]
 
-        let initHttps = foldr (\p b -> b || case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}) False ports
+        let isHttps = case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}
+        let initHttps = foldr (\p b -> b || isHttps p) False ports
 
         if initHttps
             then TLS.initTLS
@@ -148,7 +164,8 @@ httpServe ports mevType localHostname alogPath elogPath handler =
 
     --------------------------------------------------------------------------
     bindPort (HttpPort  baddr port)          = bindHttp  baddr port
-    bindPort (HttpsPort baddr port cert key) = TLS.bindHttps baddr port cert key
+    bindPort (HttpsPort baddr port cert key) =
+        TLS.bindHttps baddr port cert key
 
 
     --------------------------------------------------------------------------
@@ -323,20 +340,22 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
           liftIO $ debug "Server.httpSession: handled, skipping request body"
 
           if rspTransformingRqBody rsp
-             then liftIO $ debug "Server.httpSession: not skipping request body, transforming."
+             then liftIO $ debug "Server.httpSession: not skipping " ++
+                                 "request body, transforming."
              else do
                srqEnum <- liftIO $ readIORef $ rqBody req'
                let (SomeEnumerator rqEnum) = srqEnum
 
-               skipStep <- liftIO $ runIteratee $
-                           iterateeDebugWrapper "httpSession/skipToEof" skipToEof
+               skipStep <- liftIO $ runIteratee $ iterateeDebugWrapper
+                               "httpSession/skipToEof" skipToEof
                lift $ rqEnum skipStep
 
           liftIO $ debug $ "Server.httpSession: request body skipped, " ++
                            "sending response"
 
           date <- liftIO getDateString
-          let ins = Map.insert "Date" [date] . Map.insert "Server" sERVER_HEADER
+          let ins = Map.insert "Date" [date] .
+                    Map.insert "Server" sERVER_HEADER
           let rsp' = updateHeaders ins rsp
           (bytesSent,_) <- sendResponse req rsp' writeEnd onSendFile
 
@@ -404,8 +423,8 @@ receiveRequest = do
 
   where
     --------------------------------------------------------------------------
-    -- check: did the client specify "transfer-encoding: chunked"? then we have
-    -- to honor that.
+    -- check: did the client specify "transfer-encoding: chunked"? then we
+    -- have to honor that.
     --
     -- otherwise: check content-length header. if set: only take N bytes from
     -- the read end of the socket
@@ -604,9 +623,9 @@ sendResponse req rsp' writeEnd onSendFile = do
         -- "enum" here has to be run in the context of the READ iteratee, even
         -- though it's writing to the output, because we may be transforming
         -- the input. That's why we check if we're transforming the request
-        -- body here, and if not, send EOF to the write end; so that it doesn't
-        -- join up with the read iteratee and try to get more data from the
-        -- socket.
+        -- body here, and if not, send EOF to the write end; so that it
+        -- doesn't join up with the read iteratee and try to get more data
+        -- from the socket.
         let enum = if rspTransformingRqBody rsp
                      then enumBS hs >==> e
                      else enumBS hs >==> e >==> (joinI . I.take 0)
@@ -619,7 +638,8 @@ sendResponse req rsp' writeEnd onSendFile = do
                    iterateeDebugWrapper "countBytes writeEnd" $
                    countBytes $ returnI writeEnd
         (x,bs) <- enum outstep
-        debug $ "sendResponse: whenEnum: " ++ Prelude.show bs ++ " bytes enumerated"
+        debug $ "sendResponse: whenEnum: " ++ Prelude.show bs ++
+                " bytes enumerated"
 
         return (x, bs-hl)
 
@@ -631,9 +651,9 @@ sendResponse req rsp' writeEnd onSendFile = do
                  -> Int64         -- ^ start byte offset
                  -> Iteratee ByteString IO (a,Int64)
     whenSendFile hs r f start = do
-        -- Guaranteed to have a content length here. Sending EOF through to the
-        -- write end guarantees that we flush the buffer before we send the
-        -- file with sendfile().
+        -- Guaranteed to have a content length here. Sending EOF through to
+        -- the write end guarantees that we flush the buffer before we send
+        -- the file with sendfile().
         lift $ runIteratee $ (enumBS hs >==> enumEOF) writeEnd
 
         let !cl = fromJust $ rspContentLength r

@@ -11,6 +11,7 @@ module Snap.Internal.Http.Server.SimpleBackend
   ( simpleEventLoop
   ) where
 
+
 ------------------------------------------------------------------------------
 import           Control.Monad.Trans
 
@@ -46,11 +47,11 @@ import           System.Posix.Types (Fd(..))
 
 
 ------------------------------------------------------------------------------
-{- For each cpu, we store:
-    + a list of accept threads, one per port.
-    + one timeout table and one timeout thread.  These timeout the session threads.
-    + a mvar to signal when the timeout thread is shutdown
--}
+-- | For each cpu, we store:
+--    * A list of accept threads, one per port.
+--    * One timeout table and one timeout thread.
+--      These timeout the session threads.
+--    * An mvar to signal when the timeout thread is shutdown
 data EventLoopCpu = EventLoopCpu
     { _boundCpu        :: Int
     , _acceptThreads   :: [ThreadId]
@@ -59,6 +60,8 @@ data EventLoopCpu = EventLoopCpu
     , _exitMVar        :: !(MVar ())
     }
 
+
+------------------------------------------------------------------------------
 simpleEventLoop :: EventLoop
 simpleEventLoop sockets cap elog handler = do
     loops <- Prelude.mapM (newLoop sockets handler elog) [0..(cap-1)]
@@ -71,6 +74,8 @@ simpleEventLoop sockets cap elog handler = do
         mapM stopLoop loops
         mapM Listen.closeSocket sockets
 
+
+------------------------------------------------------------------------------
 newLoop :: [ListenSocket]
         -> SessionHandler
         -> (S.ByteString -> IO ())
@@ -79,16 +84,21 @@ newLoop :: [ListenSocket]
 newLoop sockets handler elog cpu = do
     tt         <- TT.new
     exit       <- newEmptyMVar
-    accThreads <- forM sockets $ \p -> forkOnIO cpu $ acceptThread handler tt elog cpu p
+    accThreads <- forM sockets $ \p -> forkOnIO cpu $
+                  acceptThread handler tt elog cpu p
     tid        <- forkOnIO cpu $ timeoutThread tt exit
 
     return $ EventLoopCpu cpu accThreads tt tid exit
 
+
+------------------------------------------------------------------------------
 stopLoop :: EventLoopCpu -> IO ()
 stopLoop loop = block $ do
     Prelude.mapM_ killThread $ _acceptThreads loop
     killThread $ _timeoutThread loop
 
+
+------------------------------------------------------------------------------
 acceptThread :: SessionHandler
              -> TimeoutTable
              -> (S.ByteString -> IO ())
@@ -106,10 +116,15 @@ acceptThread handler tt elog cpu sock = loop
 
     go = runSession handler tt sock
 
-    cleanup = [
-                Handler $ \(e :: SomeException) -> elog $ S.concat [ "SimpleBackend.acceptThread: ", S.pack . map c2w $ show e]
-              ]
+    cleanup =
+        [
+          Handler $ \(e :: SomeException) -> elog
+                  $ S.concat [ "SimpleBackend.acceptThread: "
+                             , S.pack . map c2w $ show e]
+        ]
 
+
+------------------------------------------------------------------------------
 timeoutThread :: TimeoutTable -> MVar () -> IO ()
 timeoutThread table exitMVar = do
     go `catch` (\(_::SomeException) -> killAll)
@@ -136,6 +151,7 @@ timeoutThread table exitMVar = do
         TT.killAll table
 
 
+------------------------------------------------------------------------------
 data AddressNotSupportedException = AddressNotSupportedException String
    deriving (Typeable)
 
@@ -145,7 +161,9 @@ instance Show AddressNotSupportedException where
 instance Exception AddressNotSupportedException
 
 
-runSession :: SessionHandler -> TimeoutTable -> ListenSocket -> Socket -> SockAddr -> IO ()
+------------------------------------------------------------------------------
+runSession :: SessionHandler -> TimeoutTable -> ListenSocket -> Socket
+           -> SockAddr -> IO ()
 runSession handler tt lsock sock addr = do
     let fd = fdSocket sock
     curId <- myThreadId
@@ -175,7 +193,8 @@ runSession handler tt lsock sock addr = do
 
     timeout
 
-    bracket (Listen.createSession lsock 8192 fd (threadWaitRead $ fromIntegral fd))
+    bracket (Listen.createSession lsock 8192 fd
+              (threadWaitRead $ fromIntegral fd))
             (\session -> block $ do
                  debug "thread killed, closing socket"
 
@@ -194,8 +213,11 @@ runSession handler tt lsock sock addr = do
                               timeout
             )
 
+
+------------------------------------------------------------------------------
 eatException :: IO a -> IO ()
 eatException act = (act >> return ()) `catch` \(_::SomeException) -> return ()
+
 
 ------------------------------------------------------------------------------
 sendFile :: ListenSocket
@@ -233,12 +255,16 @@ sendFile _ _ _ writeEnd fp start sz = do
     return ()
 #endif
 
+
+------------------------------------------------------------------------------
 tickleTimeout :: TimeoutTable -> ThreadId -> Word -> IO ()
 tickleTimeout table tid thash = do
     debug "Backend.tickleTimeout"
     now   <- getCurrentDateTime
     TT.insert thash tid now table
 
+
+------------------------------------------------------------------------------
 enumerate :: (MonadIO m)
           => ListenSocket
           -> NetworkSession
@@ -282,12 +308,15 @@ enumerate port session sock = loop
 
     fd = fdSocket sock
 #ifdef PORTABLE
-    timeoutRecv = Listen.recv port sock (threadWaitRead $ fromIntegral fd) session
+    timeoutRecv = Listen.recv port sock (threadWaitRead $
+                  fromIntegral fd) session
 #else
-    timeoutRecv = Listen.recv port (threadWaitRead $ fromIntegral fd) session
+    timeoutRecv = Listen.recv port (threadWaitRead $
+                  fromIntegral fd) session
 #endif
 
 
+------------------------------------------------------------------------------
 writeOut :: (MonadIO m)
          => ListenSocket
          -> NetworkSession
@@ -318,7 +347,9 @@ writeOut port session sock tickle = loop
 
     fd = fdSocket sock
 #ifdef PORTABLE
-    timeoutSend = Listen.send port sock tickle (threadWaitWrite $ fromIntegral fd) session
+    timeoutSend = Listen.send port sock tickle
+                              (threadWaitWrite $ fromIntegral fd) session
 #else
-    timeoutSend = Listen.send port tickle (threadWaitWrite $ fromIntegral fd) session
+    timeoutSend = Listen.send port tickle
+                              (threadWaitWrite $ fromIntegral fd) session
 #endif

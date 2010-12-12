@@ -1,12 +1,16 @@
 module Snap.Internal.Http.Server.Backend where
 
-{- The server backend is made up of two APIs.
-   + The ListenSocket class abstracts the reading and writing from the network.
-     We have seperate implementations of ListenSocket for http and https.
+{-
 
-   + The EventLoop function is the interface to accept on the socket.
-     The EventLoop function will listen on the ports, and for each accepted
-     connection it wil call the SessionHandler.
+The server backend is made up of two APIs.
+
++ The ListenSocket class abstracts the reading and writing from the network.
+  We have seperate implementations of ListenSocket for http and https.
+
++ The EventLoop function is the interface to accept on the socket.
+  The EventLoop function will listen on the ports, and for each accepted
+  connection it wil call the SessionHandler.
+
 -}
 
 import Data.ByteString (ByteString)
@@ -15,6 +19,8 @@ import Foreign.C
 import Network.Socket (Socket)
 import Snap.Iteratee (Iteratee, Enumerator)
 
+
+------------------------------------------------------------------------------
 data SessionInfo = SessionInfo
     { localAddress  :: ByteString
     , localPort     :: Int
@@ -23,13 +29,18 @@ data SessionInfo = SessionInfo
     , isSecure      :: Bool
     }
 
-type SessionHandler =  SessionInfo                           -- ^ session port information
-                    -> Enumerator ByteString IO ()           -- ^ read end of socket
-                    -> Iteratee ByteString IO ()             -- ^ write end of socket
-                    -> (FilePath -> Int64 -> Int64 -> IO ()) -- ^ sendfile end
-                    -> IO ()                                 -- ^ timeout tickler
-                    -> IO ()
 
+------------------------------------------------------------------------------
+type SessionHandler =
+       SessionInfo                           -- ^ session port information
+    -> Enumerator ByteString IO ()           -- ^ read end of socket
+    -> Iteratee ByteString IO ()             -- ^ write end of socket
+    -> (FilePath -> Int64 -> Int64 -> IO ()) -- ^ sendfile end
+    -> IO ()                                 -- ^ timeout tickler
+    -> IO ()
+
+
+------------------------------------------------------------------------------
 type EventLoop = [ListenSocket]                -- ^ list of ports
                -> Int                          -- ^ number of capabilities
                -> (ByteString -> IO ())        -- ^ error log
@@ -67,9 +78,13 @@ class ListenSocket a where
          -> IO ()
 -}
 
+
+------------------------------------------------------------------------------
 data ListenSocket = ListenHttp  Socket
                   | ListenHttps Socket (Ptr Word) (Ptr Word)
 
+
+------------------------------------------------------------------------------
 data NetworkSession = NetworkSession
   { _socket     :: CInt
   , _session    :: Ptr Word

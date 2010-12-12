@@ -66,11 +66,14 @@ import           System.IO
 --  and the path to the private key in PEM format
 data ConfigListen = ListenHttp  ByteString Int
                   | ListenHttps ByteString Int FilePath FilePath
+
+
 instance Show ConfigListen where
     show (ListenHttp b p) = "http(" ++ show b ++ ":" ++ show p ++ ")"
     show (ListenHttps b p c k) = "https(" ++ show b ++ ":" ++ show p ++
                                      ", cert = " ++ show c ++
                                      ", key = " ++ show k ++ ")"
+
 
 ------------------------------------------------------------------------------
 -- | A data type to record which backend event loop should be used when
@@ -78,6 +81,7 @@ instance Show ConfigListen where
 data ConfigBackend = ConfigSimpleBackend
                    | ConfigLibEvBackend
     deriving (Eq,Show)
+
 
 ------------------------------------------------------------------------------
 -- | A record type which represents partial configurations (for 'httpServe')
@@ -211,6 +215,7 @@ completeConfig c = case listen c' of
                     _  -> c'
     where c' = mappend defaultConfig c
 
+
 ------------------------------------------------------------------------------
 -- | A data structure used during command-line option parsing
 --
@@ -250,6 +255,7 @@ instance MonadSnap m => Monoid (OptionData m a) where
         , sslkey       = (sslkey       b) `mplus`   (sslkey       a)
         }
 
+
 ------------------------------------------------------------------------------
 -- | These are the default values for the options
 defaultOptions :: MonadSnap m => OptionData m a
@@ -281,6 +287,7 @@ optionsToConfig o = mconcat $ [config o] ++ http ++ https
           maybe4 _ f (Just a) (Just b) (Just c) (Just d) = [f a b c d]
           maybe4 d _ _        _        _        _        = d
 
+
 ------------------------------------------------------------------------------
 -- | Convert config to options
 configToOptions :: MonadSnap m => Config m a -> OptionData m a
@@ -294,33 +301,38 @@ configToOptions c = OptionData
     , sslkey  = Nothing
     }
 
+
 ------------------------------------------------------------------------------
 -- | A description of the command-line options accepted by
 -- 'commandLineConfig'.
 --
--- The 'OptionData' parameter is just for specifying any default values which are
--- to override those in 'defaultOptions'. This is so the usage message can
+-- The 'OptionData' parameter is just for specifying any default values which
+-- are to override those in 'defaultOptions'. This is so the usage message can
 -- accurately inform the user what the default values for the options are. In
 -- most cases, you will probably just end up passing 'mempty' for this
 -- parameter.
 --
--- The return type is a list of options describing a @'Maybe' ('OptionData' m)@
--- as opposed to a @'OptionData' m@, because if the @--help@ option is given,
+-- The return type is a list of options describing @'Maybe' ('OptionData' m)@
+-- as opposed to @'OptionData' m@, because if the @--help@ option is given,
 -- the set of command-line options no longer describe a config, but an action
 -- (printing out the usage message).
-options :: MonadSnap m => OptionData m a -> [OptDescr (Maybe (OptionData m a))]
+options :: MonadSnap m
+        => OptionData m a
+        -> [OptDescr (Maybe (OptionData m a))]
 options defaults =
     [ Option [] ["hostname"]
              (ReqArg (Just . setConfig setHostname . U.fromString) "NAME")
              $ "local hostname" ++ defaultC getHostname
     , Option ['b'] ["address"]
-             (ReqArg (\s -> Just $ mempty { bind = Just $ U.fromString s }) "ADDRESS")
+             (ReqArg (\s -> Just $ mempty { bind = Just $ U.fromString s })
+                     "ADDRESS")
              $ "address to bind to" ++ defaultO bind
     , Option ['p'] ["port"]
              (ReqArg (\s -> Just $ mempty { port = Just $ read s}) "PORT")
              $ "port to listen on" ++ defaultO port
     , Option [] ["ssl-address"]
-             (ReqArg (\s -> Just $ mempty { sslbind = Just $ U.fromString s }) "ADDRESS")
+             (ReqArg (\s -> Just $ mempty { sslbind = Just $ U.fromString s })
+                     "ADDRESS")
              $ "ssl address to bind to" ++ defaultO sslbind
     , Option [] ["ssl-port"]
              (ReqArg (\s -> Just $ mempty { sslport = Just $ read s}) "PORT")
