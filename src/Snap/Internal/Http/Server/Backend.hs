@@ -14,8 +14,8 @@ import Foreign
 import Foreign.C
 import Network.Socket (Socket)
 import Snap.Iteratee (Iteratee, Enumerator)
-   
-data SessionInfo = SessionInfo 
+
+data SessionInfo = SessionInfo
     { localAddress  :: ByteString
     , localPort     :: Int
     , remoteAddress :: ByteString

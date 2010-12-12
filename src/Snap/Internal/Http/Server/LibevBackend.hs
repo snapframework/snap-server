@@ -200,10 +200,10 @@ loopThread backend = do
 
 
 acceptCallback :: Backend
-               -> SessionHandler 
+               -> SessionHandler
                -> (ByteString -> IO ())
                -> Int
-               -> ListenSocket 
+               -> ListenSocket
                -> IoCallback
 acceptCallback back handler elog cpu sock _loopPtr _ioPtr _ = do
     debug "inside acceptCallback"
@@ -414,7 +414,7 @@ freeBackend backend = ignoreException $ block $ do
 
 
 -- | Note: proc gets run in the background
-runSession :: Backend 
+runSession :: Backend
            -> SessionHandler
            -> ListenSocket
            -> CInt
@@ -572,7 +572,7 @@ waitForLock readLock conn = do
   where
     dbg s    = debug $ "Libev.recvData(" ++ show (_rawSocket conn) ++ "): "
                        ++ s
-    io       = if readLock 
+    io       = if readLock
                  then (_connReadIOObj conn)
                  else (_connWriteIOObj conn)
     bk       = _backend conn
@@ -679,7 +679,7 @@ writeOut conn session = loop
         liftIO $ sendData $ S.concat xs
         loop
 
-    sendData = Listen.send (_listenSocket conn) 
+    sendData = Listen.send (_listenSocket conn)
                            (tickleTimeout conn)
                            (waitForLock False conn)
                            session

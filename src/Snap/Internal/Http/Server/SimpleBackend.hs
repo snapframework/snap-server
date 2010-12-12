@@ -64,7 +64,7 @@ simpleEventLoop sockets cap elog handler = do
     loops <- Prelude.mapM (newLoop sockets handler elog) [0..(cap-1)]
 
     debug "simpleEventLoop: waiting for mvars"
-    
+
     --wait for all threads to exit
     Prelude.mapM_ (takeMVar . _exitMVar) loops `finally` do
         debug "simpleEventLoop: killing all threads"
@@ -89,11 +89,11 @@ stopLoop loop = block $ do
     Prelude.mapM_ killThread $ _acceptThreads loop
     killThread $ _timeoutThread loop
 
-acceptThread :: SessionHandler 
-             -> TimeoutTable 
-             -> (S.ByteString -> IO ()) 
-             -> Int 
-             -> ListenSocket 
+acceptThread :: SessionHandler
+             -> TimeoutTable
+             -> (S.ByteString -> IO ())
+             -> Int
+             -> ListenSocket
              -> IO ()
 acceptThread handler tt elog cpu sock = loop
   where
@@ -105,7 +105,7 @@ acceptThread handler tt elog cpu sock = loop
         loop
 
     go = runSession handler tt sock
- 
+
     cleanup = [
                 Handler $ \(e :: SomeException) -> elog $ S.concat [ "SimpleBackend.acceptThread: ", S.pack . map c2w $ show e]
               ]
@@ -187,7 +187,7 @@ runSession handler tt lsock sock addr = do
                  eatException $ sClose sock
             )
             (\s -> let writeEnd = writeOut lsock s sock timeout
-                   in handler sinfo 
+                   in handler sinfo
                               (enumerate lsock s sock)
                               writeEnd
                               (sendFile lsock timeout fd writeEnd)

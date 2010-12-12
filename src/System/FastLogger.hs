@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module System.FastLogger 
+module System.FastLogger
 ( Logger
 , timestampedLogEntry
 , combinedLogEntry

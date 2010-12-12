@@ -158,7 +158,7 @@ handshake s@(NetworkSession { _session = session}) on_block = do
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
      unsafeUseAsCStringLen bs $ uncurry loop
-  where 
+  where
     loop ptr len = do
         sent <- gnutls_record_send (castPtr session) ptr $ fromIntegral len
         let sent' = fromIntegral sent
@@ -173,7 +173,7 @@ send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
    The downside to that method is we might waste memory if a malicious adversary only sends us a few bytes,
    since the entire buffer won't be freed until the ByteString is collected.  Thus I use packCStringLen which
    makes a copy.  Perhaps in the future the recv function could be changed to use unsafePackCStringFinalizer if
-   the buffer is at least 3/4 full and packCStringLen otherwise or something like that -} 
+   the buffer is at least 3/4 full and packCStringLen otherwise or something like that -}
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
 recv onBlock (NetworkSession _ session recvBuf recvLen) = loop
   where

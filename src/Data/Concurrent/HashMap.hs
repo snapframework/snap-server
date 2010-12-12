@@ -233,7 +233,7 @@ updateSubmap hashcode key value m = (m'', b)
     m'   = maybe m (const $ delSubmap hashcode key m) oldV
     m''  = insSubmap hashcode key value m'
     b    = isJust oldV
-    
+
 
 defaultNumberOfLocks :: Int
 defaultNumberOfLocks = 8 * numCapabilities
