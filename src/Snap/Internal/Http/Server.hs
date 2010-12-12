@@ -142,7 +142,7 @@ httpServe ports mevType localHostname alogPath elogPath handler =
         logE elog $ S.concat [ "Server.httpServe: START ("
                              , toBS $ Prelude.show evType, ")"]
 
-        let isHttps = case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}
+        let isHttps p = case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}
         let initHttps = foldr (\p b -> b || isHttps p) False ports
 
         if initHttps
@@ -340,8 +340,9 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
           liftIO $ debug "Server.httpSession: handled, skipping request body"
 
           if rspTransformingRqBody rsp
-             then liftIO $ debug "Server.httpSession: not skipping " ++
-                                 "request body, transforming."
+             then liftIO $ debug $
+                      "Server.httpSession: not skipping " ++
+                      "request body, transforming."
              else do
                srqEnum <- liftIO $ readIORef $ rqBody req'
                let (SomeEnumerator rqEnum) = srqEnum
