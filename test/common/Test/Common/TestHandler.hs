@@ -14,10 +14,8 @@ import           Data.Maybe
 import           Snap.Iteratee hiding (Enumerator)
 import qualified Snap.Iteratee as I
 import           Snap.Types
-import           Snap.Http.Server
 import           Snap.Util.FileServe
 import           Snap.Util.GZip
-import           Snap.Internal.Iteratee.Debug
 import           Test.Common.Rot13 (rot13)
 
 
@@ -75,4 +73,3 @@ testHandler = withCompression $
           , ("bigresponse"    , bigResponseHandler           )
           , ("respcode/:code" , responseHandler              )
           ]
-

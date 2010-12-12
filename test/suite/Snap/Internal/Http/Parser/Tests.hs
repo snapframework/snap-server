@@ -8,15 +8,12 @@ module Snap.Internal.Http.Parser.Tests
 import qualified Control.Exception as E
 import           Control.Exception hiding (try, assert)
 import           Control.Monad
-import           Control.Monad.Identity
-import           Control.Monad.Trans
 import           Control.Parallel.Strategies
 import           Data.Attoparsec hiding (Result(..))
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w)
-import           Data.IORef
 import           Data.List
 import qualified Data.Map as Map
 import           Data.Maybe (isNothing)
@@ -33,7 +30,6 @@ import           Text.Printf
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Debug
-import           Snap.Internal.Iteratee.Debug
 import           Snap.Iteratee hiding (map, sequence)
 import qualified Snap.Iteratee as I
 import           Snap.Test.Common()
@@ -125,7 +121,7 @@ testChunked = testProperty "parser/chunkedTransferEncoding" $
         QC.run $ debug $ "chunked is " ++ show chunked
         QC.run $ debug "------------------------------"
         sstep <- QC.run $ runIteratee $ stream2stream
-        step  <- QC.run $ runIteratee $ 
+        step  <- QC.run $ runIteratee $
                  joinI $ readChunkedTransferEncoding sstep
 
         out   <- QC.run $ run_ $ enum step
@@ -193,9 +189,9 @@ testBothChunkedPipelined = testProperty "parser/testBothChunkedPipelined" $
 
         sstep <- QC.run $ runIteratee stream2stream
 
-        let iters = replicate ntimes $ joinI $
-                    readChunkedTransferEncoding sstep
-        let godzilla = sequence $ map (>>= pcrlf) iters
+        let iters' = replicate ntimes $ joinI $
+                     readChunkedTransferEncoding sstep
+        let godzilla = sequence $ map (>>= pcrlf) iters'
 
         x <- QC.run $ runIteratee godzilla >>= run_ . e2
 
@@ -234,9 +230,9 @@ testBothChunkedEmpty = testCase "parser/testBothChunkedEmpty" prop
 
         let pcrlf = \s -> iterParser $ string "\r\n" >> return s
 
-        let iters = replicate ntimes $ joinI $
-                    readChunkedTransferEncoding sstep
-        godzilla <- runIteratee $ sequence $ map (>>= pcrlf) iters
+        let iters' = replicate ntimes $ joinI $
+                     readChunkedTransferEncoding sstep
+        godzilla <- runIteratee $ sequence $ map (>>= pcrlf) iters'
 
         x <- run_ $ e2 godzilla
 
@@ -271,8 +267,7 @@ testFormEncoded = testCase "parser/formEncoded" $ do
     assertEqual "foo3" (Just ["foo bar"]  ) $ Map.lookup "foo3" mp
 
 
-
-
+copyingStream2Stream :: (Monad m) => Iteratee ByteString m ByteString
 copyingStream2Stream = go []
   where
     go l = do

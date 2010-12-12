@@ -30,7 +30,6 @@ import             Data.Maybe (fromJust)
 import             Data.Time.Calendar
 import             Data.Time.Clock
 import             Data.Typeable
-import             Data.Word
 import qualified   Network.HTTP.Enumerator as HTTP
 import qualified   Network.Socket.ByteString as N
 import             Prelude hiding (catch, take)
