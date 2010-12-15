@@ -26,6 +26,7 @@ import qualified Data.Map as Map
 import           Data.Maybe (fromJust, catMaybes, fromMaybe)
 import           Data.Monoid
 import           Data.Version
+import           Data.Time
 import           Foreign.C.Types
 import           Foreign.ForeignPtr
 import           GHC.Conc
@@ -33,6 +34,7 @@ import           Prelude hiding (catch, show, Show)
 import qualified Prelude
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
+import           System.Locale
 import           Text.Show.ByteString hiding (runPut)
 ------------------------------------------------------------------------------
 import           System.FastLogger
@@ -600,7 +602,8 @@ sendResponse :: forall a . Request
                                                      -- sendfile
              -> ServerMonad (Int64, a)
 sendResponse req rsp' writeEnd onSendFile = do
-    rsp <- fixupResponse rsp'
+    let rsp'' = renderCookies rsp'
+    rsp <- fixupResponse rsp''
     let !headerString = mkHeaderString rsp
 
     (!x,!bs) <- case (rspBody rsp) of
@@ -744,6 +747,13 @@ sendResponse req rsp' writeEnd onSendFile = do
 
 
     --------------------------------------------------------------------------
+    renderCookies :: Response -> Response
+    renderCookies r = updateHeaders f r
+      where
+        f h = Map.insert "Set-Cookie" cookies h
+        cookies = fmap cookieToBS . Map.elems $ rspCookies r
+
+    --------------------------------------------------------------------------
     fixupResponse :: Response -> ServerMonad Response
     fixupResponse r = {-# SCC "fixupResponse" #-} do
         let r' = deleteHeader "Content-Length" r
@@ -814,6 +824,18 @@ toHeaders kvps = foldl' f Map.empty kvps'
   where
     kvps'     = map (first toCI . second (:[])) kvps
     f m (k,v) = Map.insertWith' (flip (++)) k v m
+
+
+------------------------------------------------------------------------------
+-- | Convert 'Cookie' into 'ByteString' for output.
+cookieToBS :: Cookie -> ByteString
+cookieToBS (Cookie k v mbExpTime mbDomain mbPath) = cookie
+  where
+    cookie  = S.concat [k, "=", v, path, exptime, domain]
+    path    = maybe "" (S.append "; path=") mbPath
+    domain  = maybe "" (S.append "; domain=") mbDomain
+    exptime = maybe "" (S.append "; expires=" . fmt) mbExpTime
+    fmt     = fromStr . formatTime defaultTimeLocale "%a, %d-%b-%Y %H:%M:%S GMT"
 
 
 ------------------------------------------------------------------------------
