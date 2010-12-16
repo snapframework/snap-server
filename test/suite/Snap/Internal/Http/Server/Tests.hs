@@ -65,6 +65,7 @@ tests = [ testHttpRequest1
         , testHttpResponse2
         , testHttpResponse3
         , testHttpResponse4
+        , testHttpResponseCookies
         , testHttp1
         , testHttp2
         , testHttp100
@@ -469,6 +470,43 @@ testHttpResponse4 = testCase "server/HttpResponse4" $ do
            emptyResponse { rspHttpVersion = (1,0) }
 
 
+testHttpResponseCookies :: Test
+testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
+    sstep <- runIteratee copyingStream2Stream
+    req <- mkRequest sampleRequest
+    b <- run_ $ rsm $
+         sendResponse req rsp2 sstep testOnSendFile >>=
+                      return . snd
+    b2 <- run_ $ rsm $
+           sendResponse req rsp3 sstep testOnSendFile >>=
+                        return . snd
+
+    assertEqual "http response cookie" (L.concat [
+                      "HTTP/1.0 304 Test\r\n"
+                    , "Content-Length: 0\r\n"
+                    , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n\r\n"
+                    ]) b
+
+
+    assertEqual "http response multi-cookies" (L.concat [
+                      "HTTP/1.0 304 Test\r\n"
+                    , "Content-Length: 0\r\n"
+                    , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n"
+                    , "Set-Cookie: zoo=baz; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n\r\n"
+                    ]) b2
+
+  where
+    rsp1 = setResponseStatus 304 "Test" $
+           emptyResponse { rspHttpVersion = (1,0) }
+    rsp2 = addResponseCookie cook rsp1
+    rsp3 = addResponseCookie cook2 rsp2
+
+    utc   = UTCTime (ModifiedJulianDay 55226) 0
+    cook  = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
+    cook2 = Cookie "zoo" "baz" (Just utc) (Just ".foo.com") (Just "/")
+    cook3 = Cookie "boo" "baz" Nothing Nothing Nothing
+
+
 
 echoServer :: (ByteString -> IO ())
            -> Request
@@ -489,7 +527,7 @@ echoServer _ req = do
 echoServer2 :: ServerHandler
 echoServer2 _ req = do
     (rq,rsp) <- echoServer (const $ return ()) req
-    return (rq, addCookie cook rsp)
+    return (rq, addResponseCookie cook rsp)
   where
     cook = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
     utc = UTCTime (ModifiedJulianDay 55226) 0
