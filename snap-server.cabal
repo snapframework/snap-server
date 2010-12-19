@@ -146,7 +146,6 @@ Library
     PSQueue >= 1.1 && <1.2
 
   if flag(portable) || os(windows)
-    build-depends: network-bytestring >= 0.1.2 && < 0.2
     cpp-options: -DPORTABLE
   else
     build-depends: unix
