@@ -40,6 +40,7 @@ module Snap.Http.Server.Config
   , setOther
   ) where
 
+import           Blaze.ByteString.Builder
 import           Control.Exception (SomeException)
 import           Control.Monad
 import qualified Data.ByteString.UTF8 as U
@@ -50,7 +51,7 @@ import           Data.List
 import           Data.Monoid
 import           Prelude hiding (catch)
 import           Snap.Types
-import           Snap.Iteratee ((>==>), enumBS)
+import           Snap.Iteratee ((>==>), enumBuilder)
 import           System.Console.GetOpt
 import           System.Environment hiding (getEnv)
 #ifndef PORTABLE
@@ -199,7 +200,7 @@ defaultConfig = Config
         finishWith $ setContentType "text/plain; charset=utf-8"
                    . setContentLength (fromIntegral $ B.length msg)
                    . setResponseStatus 500 "Internal Server Error"
-                   . modifyResponseBody (>==> enumBS msg)
+                   . modifyResponseBody (>==> enumBuilder (fromByteString msg))
                    $ emptyResponse
     , other        = Nothing
     }

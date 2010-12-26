@@ -11,7 +11,6 @@ module Snap.Internal.Http.Parser
   , iterParser
   , parseCookie
   , parseUrlEncoded
-  , writeChunkedTransferEncoding
   , strictize
   ) where
 
@@ -23,15 +22,12 @@ import             Control.Monad (liftM)
 import             Control.Monad.Trans
 import             Data.Attoparsec hiding (many, Result(..))
 import             Data.Attoparsec.Enumerator
-import             Data.Bits
 import             Data.ByteString (ByteString)
 import qualified   Data.ByteString as S
 import             Data.ByteString.Internal (c2w, w2c)
 import qualified   Data.ByteString.Lazy as L
 import qualified   Data.ByteString.Nums.Careless.Hex as Cvt
 import             Data.Char
-import             Data.DList (DList)
-import qualified   Data.DList as D
 import             Data.List (foldl')
 import             Data.Int
 import             Data.Map (Map)
@@ -39,7 +35,7 @@ import qualified   Data.Map as Map
 import             Data.Maybe (catMaybes)
 import qualified   Data.Vector.Unboxed as Vec
 import             Data.Vector.Unboxed (Vector)
-import             Data.Word (Word8, Word64)
+import             Data.Word (Word8)
 import             Prelude hiding (head, take, takeWhile)
 ------------------------------------------------------------------------------
 import             Snap.Internal.Http.Types
@@ -82,96 +78,6 @@ readChunkedTransferEncoding =
     chunkParserToEnumeratee $
     iterateeDebugWrapper "pGetTransferChunk" $
     iterParser pGetTransferChunk
-
-
-------------------------------------------------------------------------------
-toHex :: Int64 -> S.ByteString
-toHex 0 = "0"
-toHex n' = s
-  where
-    !s = trim 16 (fromIntegral (abs n'))
-
-    trim :: Int -> Word64 -> S.ByteString
-    trim !i !n
-      | n .&. 0xf000000000000000 == 0 = trim (i-1) (n `shiftL` 4)
-      | otherwise = fst (S.unfoldrN i f n)
-
-    f n = Just (ch (n `shiftR` 60), n `shiftL` 4)
-
-    ch (fromIntegral -> i)
-      | i < 10    = (c2w '0' -  0) + i
-      | otherwise = (c2w 'a' - 10) + i
-
-
-------------------------------------------------------------------------------
--- | Given an iteratee, produces a new one that wraps chunks sent to it with a
--- chunked transfer-encoding. Example usage:
---
---
--- > FIXME this text is now wrong
---
--- > > (writeChunkedTransferEncoding
--- >     (enumLBS (L.fromChunks ["foo","bar","quux"]))
--- >     stream2stream) >>=
--- >     run >>=
--- >     return . fromWrap
--- >
--- > Chunk "a\r\nfoobarquux\r\n0\r\n\r\n" Empty
---
-writeChunkedTransferEncoding :: Enumeratee ByteString ByteString IO a
-writeChunkedTransferEncoding = checkDone start
-
-  where
-    start = bufIt 0 D.empty
-
-    bufSiz = 16284
-
-    sendOut :: DList ByteString
-            -> (Stream ByteString -> Iteratee ByteString IO a)
-            -> Iteratee ByteString IO (Step ByteString IO a)
-    sendOut dl k = do
-        let chunks = D.toList dl
-        let bs     = L.fromChunks chunks
-        let n      = L.length bs
-
-        if n == 0
-          then return $ Continue k
-          else do
-            let o = L.concat [ L.fromChunks [ toHex (toEnum . fromEnum $ n)
-                                            , "\r\n" ]
-                             , bs
-                             , "\r\n" ]
-
-            lift $ runIteratee $ enumLBS o (Continue k)
-
-
-
-    bufIt :: Int
-          -> DList ByteString
-          -> (Stream ByteString -> Iteratee ByteString IO a)
-          -> Iteratee ByteString IO (Step ByteString IO a)
-    bufIt n dl k = do
-        mbS <- head
-        case mbS of
-          Nothing -> do
-              step  <- sendOut dl k
-              step' <- lift $ runIteratee $ enumBS "0\r\n\r\n" step
-              lift $ runIteratee $ enumEOF step'
-
-          (Just s) -> do
-              let m = S.length s
-
-              if m == 0
-                then bufIt n dl k
-                else do
-                  let n'  = m + n
-                  let dl' = D.snoc dl s
-
-                  if n' > bufSiz
-                    then do
-                      step <- sendOut dl' k
-                      checkDone start step
-                    else bufIt n' dl' k
 
 
 ------------------------------------------------------------------------------

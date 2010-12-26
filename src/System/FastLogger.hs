@@ -13,23 +13,17 @@ module System.FastLogger
 
 
 ------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder
+import           Blaze.ByteString.Builder.Char.Utf8
 import           Control.Concurrent
 import           Control.Exception
-import           Control.Monad
 import           Data.ByteString.Char8 (ByteString)
-import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.ByteString.Internal (c2w)
-import           Data.DList (DList)
-import qualified Data.DList as D
 import           Data.Int
 import           Data.IORef
-import           Data.Maybe
-import           Data.Serialize.Put
-import           Prelude hiding (catch, show)
-import qualified Prelude
+import           Data.Monoid
 import           System.IO
-import           Text.Show.ByteString hiding (runPut)
 
 import           Snap.Internal.Http.Server.Date
 
@@ -37,7 +31,7 @@ import           Snap.Internal.Http.Server.Date
 ------------------------------------------------------------------------------
 -- | Holds the state for a logger.
 data Logger = Logger
-    { _queuedMessages :: !(IORef (DList ByteString))
+    { _queuedMessages :: !(IORef Builder)
     , _dataWaiting    :: !(MVar ())
     , _loggerPath     :: !(FilePath)
     , _loggingThread  :: !(MVar ThreadId) }
@@ -50,7 +44,7 @@ data Logger = Logger
 -- re-opened every 15 minutes to facilitate external log rotation.
 newLogger :: FilePath -> IO Logger
 newLogger fp = do
-    q  <- newIORef D.empty
+    q  <- newIORef mempty
     dw <- newEmptyMVar
     th <- newEmptyMVar
 
@@ -68,11 +62,11 @@ timestampedLogEntry :: ByteString -> IO ByteString
 timestampedLogEntry msg = do
     timeStr <- getLogDateString
 
-    return $! runPut $! do
-        putWord8 $ c2w '['
-        putByteString timeStr
-        putByteString "] "
-        putByteString msg
+    return $! toByteString
+           $! mconcat [ fromWord8 $ c2w '['
+                      , fromByteString timeStr
+                      , fromByteString "] "
+                      , fromByteString msg ]
 
 
 ------------------------------------------------------------------------------
@@ -89,36 +83,40 @@ combinedLogEntry :: ByteString        -- ^ remote host
                                       --   there are no quotes in here)
                  -> IO ByteString
 combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
-    let user = fromMaybe "-" mbUser
-    let numBytes = maybe "-" (\s -> strict $ show s) mbNumBytes
-    let referer = maybe "-" (\s -> S.concat ["\"", s, "\""]) mbReferer
-
     timeStr <- getLogDateString
 
-    let !p = [ host
-             , " - "
+    let !l = [ fromByteString host
+             , fromByteString " - "
              , user
-             , " ["
-             , timeStr
-             , "] \""
-             , req
-             , "\" "
-             , strict $ show status
-             , " "
+             , fromByteString " ["
+             , fromByteString timeStr
+             , fromByteString "] \""
+             , fromByteString req
+             , fromByteString "\" "
+             , fromShow status
+             , space
              , numBytes
-             , " "
+             , space
              , referer
-             , " \""
-             , ua
-             , "\"" ]
+             , fromByteString " \""
+             , fromByteString ua
+             , quote ]
 
-    let !output = S.concat p
+    let !output = toByteString $ mconcat l
 
     return $! output
 
-
   where
-    strict = S.concat . L.toChunks
+    dash     = fromWord8 $ c2w '-'
+    quote    = fromWord8 $ c2w '\"'
+    space    = fromWord8 $ c2w ' '
+    user     = maybe dash fromByteString mbUser
+    numBytes = maybe dash fromShow mbNumBytes
+    referer  = maybe dash
+                     (\s -> mconcat [ quote
+                                    , fromByteString s
+                                    , quote ])
+                     mbReferer
 
 
 ------------------------------------------------------------------------------
@@ -127,8 +125,8 @@ combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
 -- (or use 'combinedLogEntry').
 logMsg :: Logger -> ByteString -> IO ()
 logMsg !lg !s = do
-    let !s' = S.snoc s '\n'
-    atomicModifyIORef (_queuedMessages lg) $ \d -> (D.snoc d s',())
+    let !s' = fromByteString s `mappend` (fromWord8 $ c2w '\n')
+    atomicModifyIORef (_queuedMessages lg) $ \d -> (d `mappend` s',())
     tryPutMVar (_dataWaiting lg) () >> return ()
 
 
@@ -173,12 +171,11 @@ loggingThread (Logger queue notifier filePath _) = do
 
 
     flushIt (!href, !lastOpened) = do
-        dl <- atomicModifyIORef queue $ \x -> (D.empty,x)
+        dl <- atomicModifyIORef queue $ \x -> (mempty,x)
 
-        let !msgs = D.toList dl
-        let !s = L.fromChunks msgs
+        let !msgs = toLazyByteString dl
         h <- readIORef href
-        L.hPut h s
+        L.hPut h msgs
         hFlush h
 
         -- close the file every 15 minutes (for log rotation)

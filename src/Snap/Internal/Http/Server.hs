@@ -7,12 +7,15 @@
 module Snap.Internal.Http.Server where
 
 ------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder
+import           Blaze.ByteString.Builder.Char8
+import           Blaze.ByteString.Builder.Enumerator
+import           Blaze.ByteString.Builder.HTTP
 import           Control.Arrow (first, second)
 import           Control.Monad.State.Strict
 import           Control.Exception
 import           Data.Char
 import           Data.CIByteString
-import           Data.Binary.Put
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as SC
@@ -22,20 +25,16 @@ import qualified Data.ByteString.Nums.Careless.Int as Cvt
 import           Data.Int
 import           Data.IORef
 import           Data.List (foldl')
+import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust, catMaybes, fromMaybe)
 import           Data.Monoid
 import           Data.Version
 import           Data.Time
-import           Foreign.C.Types
-import           Foreign.ForeignPtr
 import           GHC.Conc
-import           Prelude hiding (catch, show, Show)
-import qualified Prelude
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
 import           System.Locale
-import           Text.Show.ByteString hiding (runPut)
 ------------------------------------------------------------------------------
 import           System.FastLogger
 import           Snap.Internal.Http.Types
@@ -84,7 +83,7 @@ data ListenPort =
 ------------------------------------------------------------------------------
 data EventLoopType = EventLoopSimple
                    | EventLoopLibEv
-  deriving (Prelude.Show)
+  deriving (Show)
 
 
 ------------------------------------------------------------------------------
@@ -142,7 +141,7 @@ httpServe ports mevType localHostname alogPath elogPath handler =
         let evType = maybe defaultEvType id mevType
 
         logE elog $ S.concat [ "Server.httpServe: START ("
-                             , toBS $ Prelude.show evType, ")"]
+                             , toBS $ show evType, ")"]
 
         let isHttps p = case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}
         let initHttps = foldr (\p b -> b || isHttps p) False ports
@@ -205,8 +204,8 @@ logE' logger s = (timestampedLogEntry s) >>= logMsg logger
 
 
 ------------------------------------------------------------------------------
-bshow :: (Prelude.Show a) => a -> ByteString
-bshow = toBS . Prelude.show
+bshow :: (Show a) => a -> ByteString
+bshow = toBS . show
 
 
 ------------------------------------------------------------------------------
@@ -222,7 +221,7 @@ logA' logger req rsp = do
     let user      = Nothing -- TODO we don't do authentication yet
     let (v, v')   = rqVersion req
     let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
-    let method    = toBS $ Prelude.show (rqMethod req)
+    let method    = toBS $ show (rqMethod req)
     let reql      = S.intercalate " " [ method, rqURI req, ver ]
     let status    = rspStatus rsp
     let cl        = rspContentLength rsp
@@ -256,7 +255,7 @@ runHTTP alog elog handler lh sinfo readEnd writeEnd onSendFile tickle =
     logPrefix = S.concat [ "[", remoteAddress sinfo, "]: error: " ]
 
     go = do
-        buf <- mkIterateeBuffer
+        buf <- allocBuffer 16384
         let iter1 = runServerMonad lh sinfo (logA alog) (logE elog) $
                                    httpSession writeEnd buf onSendFile tickle
                                    handler
@@ -294,19 +293,15 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 ------------------------------------------------------------------------------
 -- | Runs an HTTP session.
 httpSession :: Iteratee ByteString IO ()     -- ^ write end of socket
-            -> ForeignPtr CChar              -- ^ iteratee buffer
+            -> Buffer                        -- ^ builder buffer
             -> (FilePath -> Int64 -> Int64 -> IO ())
                                              -- ^ sendfile continuation
             -> IO ()                         -- ^ timeout tickler
             -> ServerHandler                 -- ^ handler procedure
             -> ServerMonad ()
-httpSession writeEnd' ibuf onSendFile tickle handler = do
+httpSession writeEnd' buffer onSendFile tickle handler = do
 
-    let writeEnd1 = I.unsafeBufferIterateeWithBuffer ibuf writeEnd'
-    let writeEndI = iterateeDebugWrapper "writeEnd" writeEnd1
-
-    -- everything downstream expects a Step here
-    writeEnd <- liftIO $ runIteratee writeEndI
+    let writeEnd = iterateeDebugWrapper "writeEnd" writeEnd'
 
     liftIO $ debug "Server.httpSession: entered"
     mreq  <- receiveRequest
@@ -318,9 +313,9 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
     case mreq of
       (Just req) -> do
           liftIO $ debug $ "Server.httpSession: got request: " ++
-                           Prelude.show (rqMethod req) ++
+                           show (rqMethod req) ++
                            " " ++ SC.unpack (rqURI req) ++
-                           " " ++ Prelude.show (rqVersion req)
+                           " " ++ show (rqVersion req)
 
           -- check for Expect: 100-continue
           checkExpect100Continue req writeEnd
@@ -360,10 +355,10 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
           let ins = Map.insert "Date" [date] .
                     Map.insert "Server" sERVER_HEADER
           let rsp' = updateHeaders ins rsp
-          (bytesSent,_) <- sendResponse req rsp' writeEnd onSendFile
+          (bytesSent,_) <- sendResponse req rsp' buffer writeEnd onSendFile
 
           liftIO . debug $ "Server.httpSession: sent " ++
-                           (Prelude.show bytesSent) ++ " bytes"
+                           (show bytesSent) ++ " bytes"
 
           maybe (logAccess req rsp')
                 (\_ -> logAccess req $ setContentLength bytesSent rsp')
@@ -373,7 +368,7 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
              then do
                  debug $ "httpSession: Connection: Close, harikari"
                  liftIO $ myThreadId >>= killThread
-             else httpSession writeEnd' ibuf onSendFile tickle handler
+             else httpSession writeEnd' buffer onSendFile tickle handler
 
       Nothing -> do
           liftIO $ debug $ "Server.httpSession: parser did not produce a " ++
@@ -383,7 +378,7 @@ httpSession writeEnd' ibuf onSendFile tickle handler = do
 
 ------------------------------------------------------------------------------
 checkExpect100Continue :: Request
-                       -> Step ByteString IO ()
+                       -> Iteratee ByteString IO ()
                        -> ServerMonad ()
 checkExpect100Continue req writeEnd = do
     let mbEx = getHeaders "Expect" req
@@ -395,13 +390,13 @@ checkExpect100Continue req writeEnd = do
   where
     go = do
         let (major,minor) = rqVersion req
-        let hl = runPut $ do
-                     putByteString "HTTP/"
-                     showp major
-                     putAscii '.'
-                     showp minor
-                     putByteString " 100 Continue\r\n\r\n"
-        liftIO $ runIteratee $ (enumLBS hl >==> enumEOF) writeEnd
+        let hl = mconcat [ fromByteString "HTTP/"
+                         , fromShow major
+                         , fromWord8 $ c2w '.'
+                         , fromShow minor
+                         , fromByteString " 100 Continue\r\n\r\n" ]
+        liftIO $ runIteratee
+                   ((enumBS (toByteString hl) >==> enumEOF) $$ writeEnd)
         return ()
 
 
@@ -453,7 +448,7 @@ receiveRequest = do
         hasContentLength :: Int64 -> ServerMonad ()
         hasContentLength len = do
             liftIO $ debug $ "receiveRequest/setEnumerator: " ++
-                             "request had content-length " ++ Prelude.show len
+                             "request had content-length " ++ show len
             liftIO $ writeIORef (rqBody req) (SomeEnumerator e)
             liftIO $ debug "receiveRequest/setEnumerator: body enumerator set"
           where
@@ -597,21 +592,24 @@ receiveRequest = do
 -- Response must be well-formed here
 sendResponse :: forall a . Request
              -> Response
-             -> Step ByteString IO a                 -- ^ iteratee write end
+             -> Buffer
+             -> Iteratee ByteString IO a             -- ^ iteratee write end
              -> (FilePath -> Int64 -> Int64 -> IO a) -- ^ function to call on
                                                      -- sendfile
              -> ServerMonad (Int64, a)
-sendResponse req rsp' writeEnd onSendFile = do
+sendResponse req rsp' buffer writeEnd' onSendFile = do
     let rsp'' = renderCookies rsp'
-    rsp <- fixupResponse rsp''
-    let !headerString = mkHeaderString rsp
+    (rsp, writeEnd) <- fixupResponse rsp'' writeEnd'
+    let (!headerString,!hlen) = mkHeaderBuilder rsp
 
-    (!x,!bs) <- case (rspBody rsp) of
-                  (Enum e)             -> lift $ whenEnum headerString rsp e
-                  (SendFile f Nothing) -> lift $
-                                          whenSendFile headerString rsp f 0
-                  (SendFile f (Just (st,_))) ->
-                      lift $ whenSendFile headerString rsp f st
+    (!x,!bs) <-
+        case (rspBody rsp) of
+          (Enum e)             -> lift $ whenEnum writeEnd headerString hlen
+                                                  rsp e
+          (SendFile f Nothing) -> lift $
+                                  whenSendFile writeEnd headerString rsp f 0
+          (SendFile f (Just (st,_))) ->
+              lift $ whenSendFile writeEnd headerString rsp f st
 
     debug "sendResponse: response sent"
 
@@ -619,46 +617,53 @@ sendResponse req rsp' writeEnd onSendFile = do
 
   where
     --------------------------------------------------------------------------
-    whenEnum :: ByteString
+    whenEnum :: Iteratee ByteString IO a
+             -> Builder
+             -> Int
              -> Response
-             -> (forall x . Enumerator ByteString IO x)
+             -> (forall x . Enumerator Builder IO x)
              -> Iteratee ByteString IO (a,Int64)
-    whenEnum hs rsp e = do
+    whenEnum writeEnd hs hlen rsp e = do
         -- "enum" here has to be run in the context of the READ iteratee, even
         -- though it's writing to the output, because we may be transforming
         -- the input. That's why we check if we're transforming the request
         -- body here, and if not, send EOF to the write end; so that it
         -- doesn't join up with the read iteratee and try to get more data
         -- from the socket.
+        let eBuilder = enumBuilder hs >==> e
         let enum = if rspTransformingRqBody rsp
-                     then enumBS hs >==> e
-                     else enumBS hs >==> e >==> (joinI . I.take 0)
-
-        let hl = fromIntegral $ S.length hs
+                     then eBuilder
+                     else eBuilder >==>
+                          mapEnum fromByteString (joinI . I.take 0)
 
         debug $ "sendResponse: whenEnum: enumerating bytes"
 
         outstep <- lift $ runIteratee $
                    iterateeDebugWrapper "countBytes writeEnd" $
-                   countBytes $ returnI writeEnd
-        (x,bs) <- enum outstep
-        debug $ "sendResponse: whenEnum: " ++ Prelude.show bs ++
+                   countBytes writeEnd
+        (x,bs) <- mapIter toByteString
+                          (enum $$ joinI $
+                             unsafeBuilderToByteString (return buffer) outstep)
+        debug $ "sendResponse: whenEnum: " ++ show bs ++
                 " bytes enumerated"
 
-        return (x, bs-hl)
+        return (x, bs - fromIntegral hlen)
 
 
     --------------------------------------------------------------------------
-    whenSendFile :: ByteString    -- ^ headers
+    whenSendFile :: Iteratee ByteString IO a  -- ^ write end
+                 -> Builder       -- ^ headers
                  -> Response
                  -> FilePath      -- ^ file to send
                  -> Int64         -- ^ start byte offset
                  -> Iteratee ByteString IO (a,Int64)
-    whenSendFile hs r f start = do
+    whenSendFile writeEnd hs r f start = do
         -- Guaranteed to have a content length here. Sending EOF through to
         -- the write end guarantees that we flush the buffer before we send
         -- the file with sendfile().
-        lift $ runIteratee $ (enumBS hs >==> enumEOF) writeEnd
+        lift $ runIteratee ((enumBuilder hs >==> enumEOF) $$
+                            unsafeBuilderToByteString (return buffer)
+                              $$ writeEnd)
 
         let !cl = fromJust $ rspContentLength r
         x <- liftIO $ onSendFile f start cl
@@ -670,22 +675,39 @@ sendResponse req rsp' writeEnd onSendFile = do
 
 
     --------------------------------------------------------------------------
-    putHdrs hdrs =
-        {-# SCC "putHdrs" #-}
-        Prelude.mapM_ putHeader $ Map.toList hdrs
+    buildHdrs :: Map CIByteString [ByteString]
+              -> (Builder,Int)
+    buildHdrs hdrs =
+        {-# SCC "buildHdrs" #-}
+        Map.foldrWithKey f (mempty,0) hdrs
       where
-        putHeader (k, ys) = Prelude.mapM_ (putOne k) ys
+        f k ys (b,len) =
+            let (!b',len') = h k ys
+            in (b `mappend` b', len+len')
 
-        putOne k y = do
-            putByteString $ unCI k
-            putByteString ": "
-            putByteString y
-            putByteString "\r\n"
+        ical []     = (mempty,0)
+        ical [y]    = (fromByteString y, S.length y)
+        ical (y:ys) = let (b,l) = ical ys
+                      in ( fromByteString y `mappend`
+                           fromByteString ", " `mappend` b
+                         , l + S.length y + 2 )
+
+        h k ys = ( mconcat [ fromByteString $ unCI k
+                           , fromByteString ": "
+                           , b
+                           , fromByteString "\r\n" ]
+                 , klen + 4 + l )
+          where
+            k'      = unCI k
+            klen    = S.length k'
+            (!b,!l) = ical ys
 
 
     --------------------------------------------------------------------------
-    noCL :: Response -> ServerMonad Response
-    noCL r =
+    noCL :: Response
+         -> Iteratee ByteString IO a
+         -> ServerMonad (Response, Iteratee ByteString IO a)
+    noCL r wend =
         {-# SCC "noCL" #-}
         do
             -- are we in HTTP/1.1?
@@ -695,39 +717,36 @@ sendResponse req rsp' writeEnd onSendFile = do
                   let r' = setHeader "Transfer-Encoding" "chunked" r
                   let origE = rspBodyToEnum $ rspBody r
 
-                  let e i = do
-                      step <- lift $ runIteratee $ joinI $
-                              writeChunkedTransferEncoding i
-                      origE step
+                  let e = mapEnum chunkedTransferEncoding origE >==>
+                          enumBuilder chunkedTransferTerminator
 
-                  return $ r' { rspBody = Enum e }
+                  return (r' { rspBody = Enum e }, wend)
 
               else do
                   -- HTTP/1.0 and no content-length? We'll have to close the
                   -- socket.
                   modify $! \s -> s { _forceConnectionClose = True }
-                  return $ setHeader "Connection" "close" r
+                  return (setHeader "Connection" "close" r, wend)
 
 
     --------------------------------------------------------------------------
-    hasCL :: Int64 -> Response -> ServerMonad Response
-    hasCL cl r =
+    hasCL :: Int64
+          -> Response
+          -> Iteratee ByteString IO a
+          -> ServerMonad (Response, Iteratee ByteString IO a)
+    hasCL cl r we =
         {-# SCC "hasCL" #-}
         do
             -- set the content-length header
-            let r' = setHeader "Content-Length" (l2s $ show cl) r
-            let b = case (rspBody r') of
-                      (Enum e)       -> Enum (i e)
-                      (SendFile f m) -> SendFile f m
+            let r' = setHeader "Content-Length" (toByteString $ fromShow cl) r
+            let we' = case (rspBody r') of
+                        (Enum _)       -> weCL
+                        (SendFile _ _) -> we
 
-            return $ r' { rspBody = b }
+            return (r',we')
 
       where
-        i :: forall z . Enumerator ByteString IO z
-          -> Enumerator ByteString IO z
-        i enum step = do
-            step' <- lift $ runIteratee $ joinI $ takeExactly cl step
-            enum step'
+        weCL = joinI $ takeExactly cl $$ we
 
 
     --------------------------------------------------------------------------
@@ -741,7 +760,7 @@ sendResponse req rsp' writeEnd onSendFile = do
 
     --------------------------------------------------------------------------
     handle304 :: Response -> Response
-    handle304 r = setResponseBody (enumBS "") $
+    handle304 r = setResponseBody (enumBuilder mempty) $
                   updateHeaders (Map.delete "Transfer-Encoding") $
                   setContentLength 0 r
 
@@ -754,8 +773,10 @@ sendResponse req rsp' writeEnd onSendFile = do
         cookies = fmap cookieToBS . Map.elems $ rspCookies r
 
     --------------------------------------------------------------------------
-    fixupResponse :: Response -> ServerMonad Response
-    fixupResponse r = {-# SCC "fixupResponse" #-} do
+    fixupResponse :: Response
+                  -> Iteratee ByteString IO a
+                  -> ServerMonad (Response, Iteratee ByteString IO a)
+    fixupResponse r writeEnd = {-# SCC "fixupResponse" #-} do
         let r' = deleteHeader "Content-Length" r
 
         let code = rspStatus r'
@@ -764,7 +785,7 @@ sendResponse req rsp' writeEnd onSendFile = do
                    then handle304 r'
                    else r'
 
-        r''' <- do
+        (r''', wEnd) <- do
             z <- case (rspBody r'') of
                    (Enum _)                  -> return r''
                    (SendFile f Nothing)      -> setFileSize f r''
@@ -772,33 +793,45 @@ sendResponse req rsp' writeEnd onSendFile = do
                                                 setContentLength (e-s) r''
 
             case (rspContentLength z) of
-              Nothing   -> noCL z
-              (Just sz) -> hasCL sz z
+              Nothing   -> noCL z writeEnd
+              (Just sz) -> hasCL sz z writeEnd
 
         -- HEAD requests cannot have bodies per RFC 2616 sec. 9.4
         if rqMethod req == HEAD
-          then return $ deleteHeader "Transfer-Encoding"
-                      $ r''' { rspBody = Enum $ enumBS "" }
-          else return r'''
+          then return ( deleteHeader "Transfer-Encoding" $
+                        r''' { rspBody = Enum $ enumBuilder mempty }
+                      , wEnd )
+          else return (r''', wEnd)
 
 
     --------------------------------------------------------------------------
-    mkHeaderString :: Response -> ByteString
-    mkHeaderString r = out
+    mkHeaderBuilder :: Response -> (Builder,Int)
+    mkHeaderBuilder r = {-# SCC "mkHeaderBuilder" #-}
+        ( mconcat [ fromByteString "HTTP/"
+                  , fromString majstr
+                  , fromWord8 $ c2w '.'
+                  , fromString minstr
+                  , space
+                  , fromString $ statstr
+                  , space
+                  , fromByteString reason
+                  , crlf
+                  , hdrs
+                  , crlf
+                  ]
+        , 12 + majlen + minlen + statlen + S.length reason + hlen )
+
       where
-        !out = {-# SCC "mkHeaderString" #-}
-               S.concat $ L.toChunks $ runPut $ do
-                   putByteString "HTTP/"
-                   showp major
-                   putAscii '.'
-                   showp minor
-                   putAscii ' '
-                   showp $ rspStatus r
-                   putAscii ' '
-                   putByteString $ rspStatusReason r
-                   putByteString "\r\n"
-                   putHdrs $ headers r
-                   putByteString "\r\n"
+        (hdrs,hlen) = buildHdrs $ headers r
+        majstr      = show major
+        minstr      = show minor
+        majlen      = length majstr
+        minlen      = length minstr
+        statstr     = show $ rspStatus r
+        statlen     = length statstr
+        crlf        = fromByteString "\r\n"
+        space       = fromWord8 $ c2w ' '
+        reason      = rspStatusReason r
 
 
 ------------------------------------------------------------------------------
