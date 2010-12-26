@@ -599,8 +599,9 @@ sendResponse :: forall a . Request
              -> ServerMonad (Int64, a)
 sendResponse req rsp' buffer writeEnd' onSendFile = do
     let rsp'' = renderCookies rsp'
-    (rsp, writeEnd) <- fixupResponse rsp'' writeEnd'
+    rsp <- fixupResponse rsp''
     let (!headerString,!hlen) = mkHeaderBuilder rsp
+    let writeEnd = fixCLIteratee hlen rsp writeEnd'
 
     (!x,!bs) <-
         case (rspBody rsp) of
@@ -679,9 +680,9 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
               -> (Builder,Int)
     buildHdrs hdrs =
         {-# SCC "buildHdrs" #-}
-        Map.foldrWithKey f (mempty,0) hdrs
+        Map.foldlWithKey f (mempty,0) hdrs
       where
-        f k ys (b,len) =
+        f (b,len) k ys =
             let (!b',len') = h k ys
             in (b `mappend` b', len+len')
 
@@ -705,48 +706,47 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
     --------------------------------------------------------------------------
     noCL :: Response
-         -> Iteratee ByteString IO a
-         -> ServerMonad (Response, Iteratee ByteString IO a)
-    noCL r wend =
-        {-# SCC "noCL" #-}
-        do
-            -- are we in HTTP/1.1?
-            let sendChunked = (rspHttpVersion r) == (1,1)
-            if sendChunked
-              then do
-                  let r' = setHeader "Transfer-Encoding" "chunked" r
-                  let origE = rspBodyToEnum $ rspBody r
+         -> ServerMonad Response
+    noCL r = {-# SCC "noCL" #-} do
+        -- are we in HTTP/1.1?
+        let sendChunked = (rspHttpVersion r) == (1,1)
+        if sendChunked
+          then do
+              let r' = setHeader "Transfer-Encoding" "chunked" r
+              let origE = rspBodyToEnum $ rspBody r
 
-                  let e = mapEnum chunkedTransferEncoding origE >==>
-                          enumBuilder chunkedTransferTerminator
+              let e = mapEnum chunkedTransferEncoding origE >==>
+                      enumBuilder chunkedTransferTerminator
 
-                  return (r' { rspBody = Enum e }, wend)
+              return $! r' { rspBody = Enum e }
 
-              else do
-                  -- HTTP/1.0 and no content-length? We'll have to close the
-                  -- socket.
-                  modify $! \s -> s { _forceConnectionClose = True }
-                  return (setHeader "Connection" "close" r, wend)
+          else do
+              -- HTTP/1.0 and no content-length? We'll have to close the
+              -- socket.
+              modify $! \s -> s { _forceConnectionClose = True }
+              return $! setHeader "Connection" "close" r
 
+
+    --------------------------------------------------------------------------
+    fixCLIteratee :: Int                       -- ^ header length 
+                  -> Response                  -- ^ response
+                  -> Iteratee ByteString IO a  -- ^ write end
+                  -> Iteratee ByteString IO a
+    fixCLIteratee hlen resp we = maybe we f mbCL
+      where
+        f cl = case rspBody resp of
+                 (Enum _) -> joinI $ takeExactly (cl + fromIntegral hlen) $$ we
+                 (SendFile _ _) -> we
+                 
+        mbCL = rspContentLength resp
 
     --------------------------------------------------------------------------
     hasCL :: Int64
           -> Response
-          -> Iteratee ByteString IO a
-          -> ServerMonad (Response, Iteratee ByteString IO a)
-    hasCL cl r we =
-        {-# SCC "hasCL" #-}
-        do
-            -- set the content-length header
-            let r' = setHeader "Content-Length" (toByteString $ fromShow cl) r
-            let we' = case (rspBody r') of
-                        (Enum _)       -> weCL
-                        (SendFile _ _) -> we
-
-            return (r',we')
-
-      where
-        weCL = joinI $ takeExactly cl $$ we
+          -> ServerMonad Response
+    hasCL cl r = {-# SCC "hasCL" #-}
+        -- set the content-length header
+        return $! setHeader "Content-Length" (toByteString $ fromShow cl) r
 
 
     --------------------------------------------------------------------------
@@ -769,39 +769,38 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
     renderCookies :: Response -> Response
     renderCookies r = updateHeaders f r
       where
-        f h = Map.insert "Set-Cookie" cookies h
+        f h = if null cookies
+                then h
+                else Map.insert "Set-Cookie" cookies h
         cookies = fmap cookieToBS . Map.elems $ rspCookies r
+
 
     --------------------------------------------------------------------------
     fixupResponse :: Response
-                  -> Iteratee ByteString IO a
-                  -> ServerMonad (Response, Iteratee ByteString IO a)
-    fixupResponse r writeEnd = {-# SCC "fixupResponse" #-} do
+                  -> ServerMonad Response
+    fixupResponse r = {-# SCC "fixupResponse" #-} do
         let r' = deleteHeader "Content-Length" r
-
         let code = rspStatus r'
-
         let r'' = if code == 204 || code == 304
                    then handle304 r'
                    else r'
 
-        (r''', wEnd) <- do
-            z <- case (rspBody r'') of
+        r''' <- do
+            z <- case rspBody r'' of
                    (Enum _)                  -> return r''
                    (SendFile f Nothing)      -> setFileSize f r''
                    (SendFile _ (Just (s,e))) -> return $
                                                 setContentLength (e-s) r''
 
-            case (rspContentLength z) of
-              Nothing   -> noCL z writeEnd
-              (Just sz) -> hasCL sz z writeEnd
+            case rspContentLength z of
+              Nothing   -> noCL z
+              (Just sz) -> hasCL sz z
 
         -- HEAD requests cannot have bodies per RFC 2616 sec. 9.4
         if rqMethod req == HEAD
-          then return ( deleteHeader "Transfer-Encoding" $
-                        r''' { rspBody = Enum $ enumBuilder mempty }
-                      , wEnd )
-          else return (r''', wEnd)
+          then return $! deleteHeader "Transfer-Encoding" $
+                         r''' { rspBody = Enum $ enumBuilder mempty }
+          else return $! r'''
 
 
     --------------------------------------------------------------------------

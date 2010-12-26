@@ -26,6 +26,8 @@ parseGet = do
     return ()
 
 
+-- FIXME: writeChunkedTransferEncoding went away
+{-
 parseChunked :: IO ()
 parseChunked = do
     sstep <- runIteratee stream2stream
@@ -41,10 +43,12 @@ toChunked lbs = do
     sstep <- runIteratee stream2stream
     cstep <- runIteratee $ joinI $ writeChunkedTransferEncoding sstep
     run_ $ enumLBS lbs cstep
+-}
 
 benchmarks = bgroup "parser"
              [ bench "firefoxget" $ whnfIO parseGet
-             , bench "readChunkedTransferEncoding" $ whnfIO parseChunked ]
+--             , bench "readChunkedTransferEncoding" $ whnfIO parseChunked
+             ]
 
 
 stream2stream :: (Monad m) => Iteratee ByteString m ByteString              

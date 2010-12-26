@@ -6,6 +6,7 @@
 
 module Snap.Test.Common where
 
+import           Blaze.ByteString.Builder
 import           Control.Exception (SomeException)
 import           Control.Monad
 import           Control.Monad.CatchIO
@@ -13,7 +14,7 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w)
-import qualified Data.DList as D
+import           Data.Monoid
 import           Network.Socket
 import qualified Network.Socket.ByteString as N
 import           Prelude hiding (catch)
@@ -69,15 +70,15 @@ withSock port go = do
 
 recvAll :: Socket -> IO ByteString
 recvAll sock = do
-    d <- f D.empty sock
-    return $ S.concat $ D.toList d
+    b <- f mempty sock
+    return $ toByteString b
 
   where
-    f d sk = do
+    f b sk = do
         s <- N.recv sk 100000
         if S.null s
-          then return d
-          else f (D.snoc d s) sk
+          then return b
+          else f (b `mappend` fromByteString s) sk
 
 
 ditchHeaders :: [ByteString] -> [ByteString]

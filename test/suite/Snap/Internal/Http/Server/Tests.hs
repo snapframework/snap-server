@@ -7,48 +7,50 @@
 module Snap.Internal.Http.Server.Tests
   ( tests ) where
 
-import             Control.Concurrent
-import             Control.Exception ( catch
-                                     , try
-                                     , throwIO
-                                     , bracket
-                                     , finally
-                                     , SomeException
-                                     , Exception )
-import             Control.Monad
-import "monads-fd" Control.Monad.Trans
-import qualified   Data.ByteString.Char8 as S
-import qualified   Data.ByteString.Lazy as L
-import qualified   Data.ByteString.Lazy.Char8 as LC
-import             Data.ByteString (ByteString)
-import             Data.ByteString.Internal (c2w)
-import             Data.Char
-import             Data.Int
-import             Data.IORef
-import qualified   Data.Map as Map
-import             Data.Maybe (fromJust)
-import             Data.Time.Calendar
-import             Data.Time.Clock
-import             Data.Typeable
-import qualified   Network.HTTP.Enumerator as HTTP
-import qualified   Network.Socket.ByteString as N
-import             Prelude hiding (catch, take)
-import qualified   Prelude
-import             System.Timeout
-import             Test.Framework
-import             Test.Framework.Providers.HUnit
-import             Test.HUnit hiding (Test, path)
+import           Blaze.ByteString.Builder
+import           Blaze.ByteString.Builder.Enumerator
+import           Control.Concurrent
+import           Control.Exception ( catch
+                                   , try
+                                   , throwIO
+                                   , bracket
+                                   , finally
+                                   , SomeException
+                                   , Exception )
+import           Control.Monad
+import           Control.Monad.Trans
+import qualified Data.ByteString.Char8 as S
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as LC
+import           Data.ByteString (ByteString)
+import           Data.ByteString.Internal (c2w)
+import           Data.Char
+import           Data.Int
+import           Data.IORef
+import qualified Data.Map as Map
+import           Data.Maybe (fromJust)
+import           Data.Time.Calendar
+import           Data.Time.Clock
+import           Data.Typeable
+import qualified Network.HTTP.Enumerator as HTTP
+import qualified Network.Socket.ByteString as N
+import           Prelude hiding (catch, take)
+import qualified Prelude
+import           System.Timeout
+import           Test.Framework
+import           Test.Framework.Providers.HUnit
+import           Test.HUnit hiding (Test, path)
 
-import qualified   Snap.Http.Server as Svr
+import qualified Snap.Http.Server as Svr
 
-import             Snap.Internal.Debug
-import             Snap.Internal.Http.Types
-import             Snap.Internal.Http.Server
-import qualified   Snap.Iteratee as I
-import             Snap.Iteratee hiding (map)
-import             Snap.Internal.Http.Server.Backend
-import             Snap.Test.Common
-import             Snap.Types
+import           Snap.Internal.Debug
+import           Snap.Internal.Http.Types
+import           Snap.Internal.Http.Server
+import qualified Snap.Iteratee as I
+import           Snap.Iteratee hiding (map)
+import           Snap.Internal.Http.Server.Backend
+import           Snap.Test.Common
+import           Snap.Types
 
 data TestException = TestException
   deriving (Show, Typeable)
@@ -366,11 +368,11 @@ rsm = runServerMonad "localhost" (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58382 F
 
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "server/HttpResponse1" $ do
-    sstep <- runIteratee copyingStream2Stream
     req   <- mkRequest sampleRequest
+    buf   <- allocBuffer 16384
 
     b     <- run_ $ rsm $
-             sendResponse req rsp1 sstep testOnSendFile >>=
+             sendResponse req rsp1 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
     assertEqual "http response" (L.concat [
@@ -384,7 +386,8 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
-           modifyResponseBody (>==> (enumBS "0123456789")) $
+           modifyResponseBody (>==> (enumBuilder $
+                                     fromByteString "0123456789")) $
            setResponseBody returnI $
            emptyResponse { rspHttpVersion = (1,0) }
 
@@ -397,10 +400,10 @@ testOnSendFile f st sz = do
 
 testHttpResponse2 :: Test
 testHttpResponse2 = testCase "server/HttpResponse2" $ do
-    sstep <- runIteratee copyingStream2Stream
     req   <- mkRequest sampleRequest
+    buf   <- allocBuffer 16384
     b2    <- run_ $ rsm $
-             sendResponse req rsp2 sstep testOnSendFile >>=
+             sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
     assertEqual "http response" (L.concat [
@@ -413,7 +416,8 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
-           modifyResponseBody (>==> (enumBS "0123456789")) $
+           modifyResponseBody (>==> (enumBuilder $
+                                     fromByteString "0123456789")) $
            setResponseBody returnI $
            emptyResponse { rspHttpVersion = (1,0) }
     rsp2 = rsp1 { rspContentLength = Nothing }
@@ -421,11 +425,11 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
 
 testHttpResponse3 :: Test
 testHttpResponse3 = testCase "server/HttpResponse3" $ do
-    sstep <- runIteratee copyingStream2Stream
     req   <- mkRequest sampleRequest
+    buf   <- allocBuffer 16384
 
     b3 <- run_ $ rsm $
-          sendResponse req rsp3 sstep testOnSendFile >>=
+          sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
                        return . snd
 
     assertEqual "http response" b3 $ L.concat [
@@ -443,7 +447,8 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
     rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
-           modifyResponseBody (>==> (enumBS "0123456789")) $
+           modifyResponseBody (>==> (enumBuilder $
+                                     fromByteString "0123456789")) $
            setResponseBody returnI $
            emptyResponse { rspHttpVersion = (1,0) }
     rsp2 = rsp1 { rspContentLength = Nothing }
@@ -452,12 +457,12 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
 
 testHttpResponse4 :: Test
 testHttpResponse4 = testCase "server/HttpResponse4" $ do
-    sstep <- runIteratee copyingStream2Stream
+    buf   <- allocBuffer 16384
 
     req <- mkRequest sampleRequest
 
     b <- run_ $ rsm $
-         sendResponse req rsp1 sstep testOnSendFile >>=
+         sendResponse req rsp1 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
     assertEqual "http response" (L.concat [
@@ -472,14 +477,14 @@ testHttpResponse4 = testCase "server/HttpResponse4" $ do
 
 testHttpResponseCookies :: Test
 testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
-    sstep <- runIteratee copyingStream2Stream
+    buf <- allocBuffer 16384
     req <- mkRequest sampleRequest
     b <- run_ $ rsm $
-         sendResponse req rsp2 sstep testOnSendFile >>=
+         sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
     b2 <- run_ $ rsm $
-           sendResponse req rsp3 sstep testOnSendFile >>=
-                        return . snd
+          sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
+                      return . snd
 
     assertEqual "http response cookie" (L.concat [
                       "HTTP/1.0 304 Test\r\n"
@@ -520,7 +525,8 @@ echoServer _ req = do
     liftIO $ writeIORef (rqBody req) (SomeEnumerator $ joinI . I.take 0)
     return (req, rsp b cl)
   where
-    rsp s cl = emptyResponse { rspBody = Enum $ enumLBS s
+    rsp s cl = emptyResponse { rspBody = Enum $
+                                         enumBuilder (fromLazyByteString s)
                              , rspContentLength = Just $ fromIntegral cl }
 
 
@@ -614,7 +620,7 @@ testChunkOn1_0 = testCase "server/transfer-encoding chunked" $ do
     f :: ServerHandler
     f _ req = do
         let s = L.fromChunks $ Prelude.take 500 $ repeat "fldkjlfksdjlfd"
-        let out = enumLBS s
+        let out = enumBuilder $ fromLazyByteString s
         return (req, emptyResponse { rspBody = Enum out })
 
 
@@ -756,9 +762,11 @@ testExpectGarbage = testCase "server/Expect: garbage" $ do
 
 
 pongServer :: Snap ()
-pongServer = modifyResponse $ setResponseBody (enumBS "PONG") .
+pongServer = modifyResponse $ setResponseBody enum .
                               setContentType "text/plain" .
                               setContentLength 4
+  where
+    enum = enumBuilder $ fromByteString "PONG"
 
 sendFileFoo :: Snap ()
 sendFileFoo = sendFile "data/fileServe/foo.html"

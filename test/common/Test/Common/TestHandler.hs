@@ -3,14 +3,12 @@
 
 module Test.Common.TestHandler (testHandler) where
 
-
+import           Blaze.ByteString.Builder
 import           Control.Monad
 import           Control.Monad.Trans
-
 import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.Maybe
-
 import           Snap.Iteratee hiding (Enumerator)
 import qualified Snap.Iteratee as I
 import           Snap.Types
@@ -20,9 +18,10 @@ import           Test.Common.Rot13 (rot13)
 
 
 pongHandler :: Snap ()
-pongHandler = modifyResponse $ setResponseBody (enumBS "PONG") .
-                               setContentType "text/plain" .
-                               setContentLength 4
+pongHandler = modifyResponse $
+              setResponseBody (enumBuilder $ fromByteString "PONG") .
+              setContentType "text/plain" .
+              setContentLength 4
 
 echoUriHandler :: Snap ()
 echoUriHandler = do
@@ -43,8 +42,10 @@ rot13Handler = transformRequestBody f
               (feedStep origStep)
               mbX
 
-    feedStep origStep x = do
-        step <- lift $ runIteratee $ enumBS (rot13 x) origStep
+    feedStep origStep b = do
+        let x = toByteString b
+        let e = enumBuilder $ fromByteString $ rot13 x
+        step <- lift $ runIteratee $ e origStep
         f step
 
 

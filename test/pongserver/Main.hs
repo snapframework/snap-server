@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
+import           Blaze.ByteString.Builder
 import           Control.Concurrent
 import           Control.Exception (finally)
 
@@ -10,10 +11,11 @@ import           Snap.Http.Server
 
 -- FIXME: need better primitives for output
 pongServer :: Snap ()
-pongServer = modifyResponse $ setResponseBody (enumBS "PONG") .
+pongServer = modifyResponse $ setResponseBody enum .
                               setContentType "text/plain" .
                               setContentLength 4
-
+  where
+    enum = enumBuilder $ fromByteString "PONG"
 
 main :: IO ()
 main = do

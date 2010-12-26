@@ -39,9 +39,6 @@ tests :: [Test]
 tests = [ testShow
         , testCookie
         , testChunked
-        , testBothChunked
-        , testBothChunkedPipelined
-        , testBothChunkedEmpty
         , testP2I
         , testNull
         , testPartial
@@ -132,112 +129,6 @@ testChunked = testProperty "parser/chunkedTransferEncoding" $
       where
         chunked = (transferEncodingChunked s)
         enum = enumLBS chunked
-
-
-testBothChunked :: Test
-testBothChunked = testProperty "parser/invertChunked" $
-                  monadicIO $ forAllM arbitrary prop
-  where
-    prop s = do
-        sstep <- QC.run $ runIteratee stream2stream
-        let it = joinI $ writeChunkedTransferEncoding sstep
-
-        bs <- QC.run $ runIteratee it >>= run_ . enumLBS s
-
-        let enum = enumLBS bs
-
-        x <- QC.run $
-             runIteratee (joinI $ readChunkedTransferEncoding sstep) >>=
-             run_ . enum
-
-        QC.assert $ s == x
-
-
-
-testBothChunkedPipelined :: Test
-testBothChunkedPipelined = testProperty "parser/testBothChunkedPipelined" $
-                           monadicIO prop
-  where
-    prop = do
-        sz     <- QC.pick (choose (1000,4000))
-        s'     <- QC.pick $ resize sz arbitrary
-        ntimes <- QC.pick (choose (4,7))
-        --let s' = L.take 2000 $ L.fromChunks $ repeat s
-
-        let e = enumLBS s'
-        let n = fromEnum $ L.length s'
-
-        let enum = foldl' (>==>) (enumBS "") (replicate ntimes e)
-
-        bufi <- QC.run $
-                unsafeBufferIteratee copyingStream2Stream >>= runIteratee
-
-        iter' <- QC.run $ runIteratee $ joinI $
-                 writeChunkedTransferEncoding bufi
-        let iter = I.joinI $ I.take n iter'
-
-        let iters = replicate ntimes iter
-        let mothra = foldM (\s it -> it >>= \t -> return $ s `mappend` t)
-                           mempty
-                           iters
-
-        bs <- QC.run $ runIteratee mothra >>= run_ . enum
-
-        let e2 = enumBS bs
-
-        let pcrlf = \s -> iterParser $ string "\r\n" >> return s
-
-        sstep <- QC.run $ runIteratee stream2stream
-
-        let iters' = replicate ntimes $ joinI $
-                     readChunkedTransferEncoding sstep
-        let godzilla = sequence $ map (>>= pcrlf) iters'
-
-        x <- QC.run $ runIteratee godzilla >>= run_ . e2
-
-        QC.assert $
-          x == (replicate ntimes s')
-
-
-
-testBothChunkedEmpty :: Test
-testBothChunkedEmpty = testCase "parser/testBothChunkedEmpty" prop
-  where
-    prop = do
-        let s' = ""
-        let e = enumLBS s'
-        let n = fromEnum $ L.length s'
-
-        let ntimes = 5
-        let enum = foldl' (>==>) (enumBS "") (replicate ntimes e)
-
-        sstep <- runIteratee stream2stream
-
-        step <- runIteratee $
-                joinI $
-                writeChunkedTransferEncoding sstep
-        iter <- liftM returnI $ runIteratee $ joinI $ I.take n step
-
-        let iters = replicate ntimes (iter :: Iteratee ByteString IO L.ByteString)
-        let mothra = foldM (\s it -> it >>= \t -> return $ s `mappend` t)
-                           mempty
-                           iters
-
-        mothraStep <- runIteratee mothra
-        bs <- run_ $ enum mothraStep
-
-        let e2 = enumLBS bs
-
-        let pcrlf = \s -> iterParser $ string "\r\n" >> return s
-
-        let iters' = replicate ntimes $ joinI $
-                     readChunkedTransferEncoding sstep
-        godzilla <- runIteratee $ sequence $ map (>>= pcrlf) iters'
-
-        x <- run_ $ e2 godzilla
-
-        assertBool "empty chunked transfer" $
-          x == (replicate ntimes s')
 
 
 testCookie :: Test
