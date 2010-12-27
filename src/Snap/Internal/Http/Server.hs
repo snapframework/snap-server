@@ -635,14 +635,15 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
         let enum = if rspTransformingRqBody rsp
                      then eBuilder
                      else eBuilder >==>
-                          mapEnum fromByteString (joinI . I.take 0)
+                          mapEnum toByteString fromByteString
+                                  (joinI . I.take 0)
 
         debug $ "sendResponse: whenEnum: enumerating bytes"
 
         outstep <- lift $ runIteratee $
                    iterateeDebugWrapper "countBytes writeEnd" $
                    countBytes writeEnd
-        (x,bs) <- mapIter toByteString
+        (x,bs) <- mapIter fromByteString toByteString
                           (enum $$ joinI $
                              unsafeBuilderToByteString (return buffer) outstep)
         debug $ "sendResponse: whenEnum: " ++ show bs ++
@@ -686,22 +687,19 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
             let (!b',len') = h k ys
             in (b `mappend` b', len+len')
 
-        ical []     = (mempty,0)
-        ical [y]    = (fromByteString y, S.length y)
-        ical (y:ys) = let (b,l) = ical ys
-                      in ( fromByteString y `mappend`
-                           fromByteString ", " `mappend` b
-                         , l + S.length y + 2 )
+        crlf = fromByteString "\r\n"
 
-        h k ys = ( mconcat [ fromByteString $ unCI k
-                           , fromByteString ": "
-                           , b
-                           , fromByteString "\r\n" ]
-                 , klen + 4 + l )
+        doOne pre plen (b,len) y = ( mconcat [ b
+                                             , pre
+                                             , fromByteString y
+                                             , crlf ]
+                                   , len + plen + 2 + S.length y )
+
+        h k ys = foldl' (doOne kb klen) (mempty,0) ys
           where
             k'      = unCI k
-            klen    = S.length k'
-            (!b,!l) = ical ys
+            kb      = fromByteString k' `mappend` fromByteString ": "
+            klen    = S.length k' + 2
 
 
     --------------------------------------------------------------------------
@@ -715,8 +713,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
               let r' = setHeader "Transfer-Encoding" "chunked" r
               let origE = rspBodyToEnum $ rspBody r
 
-              let e = mapEnum chunkedTransferEncoding origE >==>
-                      enumBuilder chunkedTransferTerminator
+              let e = \i -> joinI $ origE $$ chunkIt i
 
               return $! r' { rspBody = Enum e }
 
@@ -726,6 +723,14 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
               modify $! \s -> s { _forceConnectionClose = True }
               return $! setHeader "Connection" "close" r
 
+    --------------------------------------------------------------------------
+    chunkIt :: forall x . Enumeratee Builder Builder IO x
+    chunkIt = checkDone $ continue . step
+      where
+        step k EOF = k (Chunks [chunkedTransferTerminator]) >>== return
+        step k (Chunks []) = continue $ step k
+        step k (Chunks xs) = k (Chunks [chunkedTransferEncoding $ mconcat xs])
+                             >>== chunkIt
 
     --------------------------------------------------------------------------
     fixCLIteratee :: Int                       -- ^ header length 

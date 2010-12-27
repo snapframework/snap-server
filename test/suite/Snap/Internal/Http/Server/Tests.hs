@@ -432,15 +432,15 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
           sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
                        return . snd
 
-    assertEqual "http response" b3 $ L.concat [
-                      "HTTP/1.1 600 Test\r\n"
-                    , "Content-Type: text/plain\r\n"
-                    , "Foo: Bar\r\n"
-                    , "Transfer-Encoding: chunked\r\n\r\n"
-                    , "a\r\n"
-                    , "0123456789\r\n"
-                    , "0\r\n\r\n"
-                    ]
+    assertEqual "http response" (L.concat [
+                                       "HTTP/1.1 600 Test\r\n"
+                                      , "Content-Type: text/plain\r\n"
+                                      , "Foo: Bar\r\n"
+                                      , "Transfer-Encoding: chunked\r\n\r\n"
+                                      , "000A\r\n"
+                                      , "0123456789\r\n"
+                                      , "0\r\n\r\n"
+                                      ]) b3
 
 
   where
