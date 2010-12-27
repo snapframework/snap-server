@@ -26,17 +26,19 @@ import           Control.Monad (liftM)
 import           Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 #endif
 
+import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Backend
-
 
 ------------------------------------------------------------------------------
 bindHttp :: ByteString -> Int -> IO ListenSocket
 bindHttp bindAddr bindPort = do
     sock <- socket AF_INET Stream 0
     addr <- getHostAddr bindPort bindAddr
+    debug $ "bindHttp: binding port " ++ show addr
     setSocketOption sock ReuseAddr 1
     bindSocket sock addr
     listen sock 150
+    debug $ "bindHttp: bound socket " ++ show sock
     return $ ListenHttp sock
 
 

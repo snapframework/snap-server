@@ -108,7 +108,7 @@ acceptThread :: SessionHandler
 acceptThread handler tt elog cpu sock = loop
   where
     loop = do
-        debug $ "acceptThread: calling accept()"
+        debug $ "acceptThread: calling accept() on socket " ++ show sock
         (s,addr) <- accept $ Listen.listenSocket sock
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
         forkOnIO cpu (go s addr `catches` cleanup)

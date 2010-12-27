@@ -791,7 +791,7 @@ testSendFile = testCase "server/sendFile" $ do
     go tid = do
         waitabit
 
-        doc <- HTTP.simpleHttp "http://localhost:8123/"
+        doc <- HTTP.simpleHttp "http://127.0.0.1:8123/"
 
         killThread tid
         waitabit
@@ -826,7 +826,7 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
         debug $ "testServerStartupShutdown: waiting a bit"
         waitabit
         debug $ "testServerStartupShutdown: sending http request"
-        doc <- HTTP.simpleHttp "http://localhost:8145/"
+        doc <- HTTP.simpleHttp "http://127.0.0.1:8145/"
         assertEqual "server" "PONG" doc
 
         debug $ "testServerStartupShutdown: killing thread"
@@ -834,7 +834,7 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
         debug $ "testServerStartupShutdown: kill signal sent to thread"
         waitabit
 
-        expectException $ HTTP.simpleHttp "http://localhost:8145/"
+        expectException $ HTTP.simpleHttp "http://127.0.0.1:8145/"
         return ()
 
     waitabit = threadDelay $ 2*((10::Int)^(6::Int))

@@ -90,7 +90,7 @@ startTestServer port sslport backend = do
 doPong :: Bool -> Int -> IO ByteString
 doPong ssl port = do
     let uri = (if ssl then "https" else "http")
-              ++ "://localhost:" ++ show port ++ "/pong"
+              ++ "://127.0.0.1:" ++ show port ++ "/pong"
 
     rsp <- HTTP.simpleHttp uri
     return $ S.concat $ L.toChunks rsp
@@ -101,7 +101,7 @@ doPong ssl port = do
 -- headPong :: Bool -> Int -> IO ByteString
 -- headPong ssl port = do
 --     let uri = (if ssl then "https" else "http")
---               ++ "://localhost:" ++ show port ++ "/echo"
+--               ++ "://127.0.0.1:" ++ show port ++ "/echo"
 
 --     req0 <- HTTP.parseUrl uri
 
@@ -131,7 +131,7 @@ testEcho ssl port name = testProperty (name ++ "/blackbox/echo") $
   where
     prop txt = do
         let uri = (if ssl then "https" else "http")
-                  ++ "://localhost:" ++ show port ++ "/echo"
+                  ++ "://127.0.0.1:" ++ show port ++ "/echo"
 
         req0 <- QC.run $ HTTP.parseUrl uri
         let req = req0 { HTTP.requestBody = txt
@@ -150,7 +150,7 @@ testRot13 ssl port name = testProperty (name ++ "/blackbox/rot13") $
   where
     prop txt = do
         let uri = (if ssl then "https" else "http")
-                  ++ "://localhost:" ++ show port ++ "/rot13"
+                  ++ "://127.0.0.1:" ++ show port ++ "/rot13"
 
         req0 <- QC.run $ HTTP.parseUrl uri
         let req = req0 { HTTP.requestBody = L.fromChunks [txt]
