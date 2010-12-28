@@ -88,7 +88,7 @@ data ConfigBackend = ConfigSimpleBackend
 -- by wrapping all of its fields in a 'Maybe'. Values of this type are usually
 -- constructed via its 'Monoid' instance by doing something like:
 --
--- > setPort 9000 mempty
+-- > addListen (ListenHttp "0.0.0.0" 9000) mempty
 --
 -- Any fields which are unspecified in the 'Config' passed to 'httpServe' (and
 -- this is the norm) are filled in with default values from 'defaultConfig'.
