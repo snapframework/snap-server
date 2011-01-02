@@ -69,10 +69,10 @@ data ConfigListen = ListenHttp  ByteString Int
 
 
 instance Show ConfigListen where
-    show (ListenHttp b p) = "http(" ++ show b ++ ":" ++ show p ++ ")"
-    show (ListenHttps b p c k) = "https(" ++ show b ++ ":" ++ show p ++
-                                     ", cert = " ++ show c ++
-                                     ", key = " ++ show k ++ ")"
+    show (ListenHttp b p) = "http://" ++ U.toString b ++ ":" ++ show p
+    show (ListenHttps b p c k) =
+        "https://" ++ U.toString b ++ ":" ++ show p ++
+        " (cert = " ++ show c ++ ", key = " ++ show k ++ ")"
 
 
 ------------------------------------------------------------------------------
