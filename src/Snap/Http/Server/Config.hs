@@ -70,10 +70,10 @@ data ConfigListen = ListenHttp  ByteString Int
 
 
 instance Show ConfigListen where
-    show (ListenHttp b p) = "http(" ++ show b ++ ":" ++ show p ++ ")"
-    show (ListenHttps b p c k) = "https(" ++ show b ++ ":" ++ show p ++
-                                     ", cert = " ++ show c ++
-                                     ", key = " ++ show k ++ ")"
+    show (ListenHttp b p) = "http://" ++ U.toString b ++ ":" ++ show p
+    show (ListenHttps b p c k) =
+        "https://" ++ U.toString b ++ ":" ++ show p ++
+        " (cert = " ++ show c ++ ", key = " ++ show k ++ ")"
 
 
 ------------------------------------------------------------------------------
@@ -89,7 +89,7 @@ data ConfigBackend = ConfigSimpleBackend
 -- by wrapping all of its fields in a 'Maybe'. Values of this type are usually
 -- constructed via its 'Monoid' instance by doing something like:
 --
--- > setPort 9000 mempty
+-- > addListen (ListenHttp "0.0.0.0" 9000) mempty
 --
 -- Any fields which are unspecified in the 'Config' passed to 'httpServe' (and
 -- this is the norm) are filled in with default values from 'defaultConfig'.
