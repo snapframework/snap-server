@@ -164,7 +164,7 @@ pVersion :: Parser (Int, Int)
 pVersion = string "HTTP/" *>
            liftA2 (,) (digit' <* word8 (c2w '.')) digit'
     where
-      digit' = fmap (digitToInt . w2c) digit
+      digit' = fmap digitToInt digit
 
 
 ------------------------------------------------------------------------------
