@@ -63,29 +63,31 @@ data EventLoopCpu = EventLoopCpu
 
 ------------------------------------------------------------------------------
 simpleEventLoop :: EventLoop
-simpleEventLoop sockets cap elog handler = do
-    loops <- Prelude.mapM (newLoop sockets handler elog) [0..(cap-1)]
+simpleEventLoop defaultTimeout sockets cap elog handler = do
+    loops <- Prelude.mapM (newLoop defaultTimeout sockets handler elog)
+                          [0..(cap-1)]
 
     debug "simpleEventLoop: waiting for mvars"
 
     --wait for all threads to exit
     Prelude.mapM_ (takeMVar . _exitMVar) loops `finally` do
         debug "simpleEventLoop: killing all threads"
-        mapM stopLoop loops
-        mapM Listen.closeSocket sockets
+        _ <- mapM_ stopLoop loops
+        mapM_ Listen.closeSocket sockets
 
 
 ------------------------------------------------------------------------------
-newLoop :: [ListenSocket]
+newLoop :: Int
+        -> [ListenSocket]
         -> SessionHandler
         -> (S.ByteString -> IO ())
         -> Int
         -> IO EventLoopCpu
-newLoop sockets handler elog cpu = do
+newLoop defaultTimeout sockets handler elog cpu = do
     tt         <- TT.new
     exit       <- newEmptyMVar
     accThreads <- forM sockets $ \p -> forkOnIO cpu $
-                  acceptThread handler tt elog cpu p
+                  acceptThread defaultTimeout handler tt elog cpu p
     tid        <- forkOnIO cpu $ timeoutThread tt exit
 
     return $ EventLoopCpu cpu accThreads tt tid exit
@@ -99,22 +101,23 @@ stopLoop loop = block $ do
 
 
 ------------------------------------------------------------------------------
-acceptThread :: SessionHandler
+acceptThread :: Int
+             -> SessionHandler
              -> TimeoutTable
              -> (S.ByteString -> IO ())
              -> Int
              -> ListenSocket
              -> IO ()
-acceptThread handler tt elog cpu sock = loop
+acceptThread defaultTimeout handler tt elog cpu sock = loop
   where
     loop = do
         debug $ "acceptThread: calling accept() on socket " ++ show sock
         (s,addr) <- accept $ Listen.listenSocket sock
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
-        forkOnIO cpu (go s addr `catches` cleanup)
+        _ <- forkOnIO cpu (go s addr `catches` cleanup)
         loop
 
-    go = runSession handler tt sock
+    go = runSession defaultTimeout handler tt sock
 
     cleanup =
         [
@@ -141,10 +144,7 @@ timeoutThread table exitMVar = do
 
     killTooOld = do
         now    <- getCurrentDateTime
-        TT.killOlderThan (now - tIMEOUT) table
-
-    -- timeout = 30 seconds
-    tIMEOUT = 30
+        TT.killOlderThan now table
 
     killAll = do
         debug "Backend.timeoutThread: shutdown, killing all connections"
@@ -162,9 +162,13 @@ instance Exception AddressNotSupportedException
 
 
 ------------------------------------------------------------------------------
-runSession :: SessionHandler -> TimeoutTable -> ListenSocket -> Socket
+runSession :: Int
+           -> SessionHandler
+           -> TimeoutTable
+           -> ListenSocket
+           -> Socket
            -> SockAddr -> IO ()
-runSession handler tt lsock sock addr = do
+runSession defaultTimeout handler tt lsock sock addr = do
     let fd = fdSocket sock
     curId <- myThreadId
 
@@ -191,7 +195,7 @@ runSession handler tt lsock sock addr = do
     let curHash = hashString $ show curId
     let timeout = tickleTimeout tt curId curHash
 
-    timeout
+    timeout defaultTimeout
 
     bracket (Listen.createSession lsock 8192 fd
               (threadWaitRead $ fromIntegral fd))
@@ -205,11 +209,12 @@ runSession handler tt lsock sock addr = do
                  eatException $ shutdown sock ShutdownBoth
                  eatException $ sClose sock
             )
-            (\s -> let writeEnd = writeOut lsock s sock timeout
+            (\s -> let writeEnd = writeOut lsock s sock (timeout defaultTimeout)
                    in handler sinfo
                               (enumerate lsock s sock)
                               writeEnd
-                              (sendFile lsock timeout fd writeEnd)
+                              (sendFile lsock (timeout defaultTimeout) fd
+                                        writeEnd)
                               timeout
             )
 
@@ -257,11 +262,11 @@ sendFile _ _ _ writeEnd fp start sz = do
 
 
 ------------------------------------------------------------------------------
-tickleTimeout :: TimeoutTable -> ThreadId -> Word -> IO ()
-tickleTimeout table tid thash = do
+tickleTimeout :: TimeoutTable -> ThreadId -> Word -> Int -> IO ()
+tickleTimeout table tid thash tm = do
     debug "Backend.tickleTimeout"
     now   <- getCurrentDateTime
-    TT.insert thash tid now table
+    TT.insert thash tid (now + toEnum tm) table
 
 
 ------------------------------------------------------------------------------
@@ -321,7 +326,7 @@ writeOut :: (MonadIO m)
          => ListenSocket
          -> NetworkSession
          -> Socket
-         -> IO ()
+         -> (IO ())
          -> Iteratee ByteString m ()
 writeOut port session sock tickle = loop
   where

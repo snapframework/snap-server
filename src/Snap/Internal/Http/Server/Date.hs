@@ -102,7 +102,7 @@ dateThread ds@(DateState _ _ _ valueIsOld morePlease _) = loop
 ensureFreshDate :: IO ()
 ensureFreshDate = block $ do
     old <- readIORef $ _valueIsOld dateState
-    tryPutMVar (_morePlease dateState) ()
+    _ <- tryPutMVar (_morePlease dateState) ()
 
     -- if the value is not fresh we will tickle the date thread but also fetch
     -- the new value immediately; we used to block but we'll do a little extra

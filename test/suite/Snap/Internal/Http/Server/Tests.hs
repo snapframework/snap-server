@@ -514,9 +514,10 @@ testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
 
 
 echoServer :: (ByteString -> IO ())
+           -> (Int -> IO ())
            -> Request
            -> Iteratee ByteString IO (Request,Response)
-echoServer _ req = do
+echoServer _ _ req = do
     se <- liftIO $ readIORef (rqBody req)
     let (SomeEnumerator enum) = se
     i <- liftM enum $ lift $ runIteratee copyingStream2Stream
@@ -531,8 +532,8 @@ echoServer _ req = do
 
 
 echoServer2 :: ServerHandler
-echoServer2 _ req = do
-    (rq,rsp) <- echoServer (const $ return ()) req
+echoServer2 _ _ req = do
+    (rq,rsp) <- echoServer (const $ return ()) (const $ return ()) req
     return (rq, addResponseCookie cook rsp)
   where
     cook = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
@@ -547,8 +548,9 @@ testHttp1 = testCase "server/httpSession" $ do
 
     let (iter,onSendFile) = mkIter ref
 
-    runHTTP Nothing Nothing echoServer "localhost" (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58384 False)
-            enumBody iter onSendFile (return ())
+    runHTTP 60 Nothing Nothing echoServer "localhost"
+            (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58384 False)
+            enumBody iter onSendFile (const $ return ())
 
     s <- readIORef ref
 
@@ -601,8 +603,9 @@ testChunkOn1_0 = testCase "server/transfer-encoding chunked" $ do
     let (iter,onSendFile) = mkIter ref
 
     done <- newEmptyMVar
-    forkIO (runHTTP Nothing Nothing f "localhost" (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58384 False)
-                enumBody iter onSendFile (return ())
+    forkIO (runHTTP 60 Nothing Nothing f "localhost"
+                    (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58384 False)
+                enumBody iter onSendFile (const $ return ())
             `finally` putMVar done ())
 
     takeMVar done
@@ -618,7 +621,7 @@ testChunkOn1_0 = testCase "server/transfer-encoding chunked" $ do
     lower = S.map toLower . S.concat . L.toChunks
 
     f :: ServerHandler
-    f _ req = do
+    f _ _ req = do
         let s = L.fromChunks $ Prelude.take 500 $ repeat "fldkjlfksdjlfd"
         let out = enumBuilder $ fromLazyByteString s
         return (req, emptyResponse { rspBody = Enum out })
@@ -646,7 +649,8 @@ testHttp2 = testCase "server/connection: close" $ do
 
     done <- newEmptyMVar
 
-    forkIO (runHTTP Nothing
+    forkIO (runHTTP 60
+                    Nothing
                     Nothing
                     echoServer2
                     "localhost"
@@ -654,7 +658,7 @@ testHttp2 = testCase "server/connection: close" $ do
                     enumBody
                     iter
                     onSendFile
-                    (return ()) `finally` putMVar done ())
+                    (const $ return ()) `finally` putMVar done ())
 
     takeMVar done
 
@@ -687,7 +691,8 @@ testHttp100 = testCase "server/expect100" $ do
 
     let (iter,onSendFile) = mkIter ref
 
-    runHTTP Nothing
+    runHTTP 60
+            Nothing
             Nothing
             echoServer2
             "localhost"
@@ -695,7 +700,7 @@ testHttp100 = testCase "server/expect100" $ do
             enumBody
             iter
             onSendFile
-            (return ())
+            (const $ return ())
 
     s <- readIORef ref
 
@@ -730,7 +735,8 @@ testExpectGarbage = testCase "server/Expect: garbage" $ do
 
     let (iter,onSendFile) = mkIter ref
 
-    runHTTP Nothing
+    runHTTP 60
+            Nothing
             Nothing
             echoServer2
             "localhost"
@@ -738,7 +744,7 @@ testExpectGarbage = testCase "server/Expect: garbage" $ do
             enumBody
             iter
             onSendFile
-            (return ())
+            (const $ return ())
 
     s <- readIORef ref
 
@@ -783,7 +789,7 @@ testSendFile = testCase "server/sendFile" $ do
                        m)
 
   where
-    serve = (httpServe [HttpPort "*" port] Nothing "localhost"
+    serve = (httpServe 60 [HttpPort "*" port] Nothing "localhost"
                        Nothing Nothing
                     $ runSnap sendFileFoo)
             `catch` \(_::SomeException) -> return ()
@@ -807,7 +813,8 @@ testSendFile = testCase "server/sendFile" $ do
 testServerStartupShutdown :: Test
 testServerStartupShutdown = testCase "server/startup/shutdown" $ do
     bracket (forkIO $
-             httpServe [HttpPort "*" port]
+             httpServe 20
+                       [HttpPort "*" port]
                        Nothing
                        "localhost"
                        (Just "test-access.log")
@@ -845,7 +852,8 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
 testServerShutdownWithOpenConns :: Test
 testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
     tid <- forkIO $
-           httpServe [HttpPort "127.0.0.1" port]
+           httpServe 20
+                     [HttpPort "127.0.0.1" port]
                      Nothing
                      "localhost"
                      Nothing

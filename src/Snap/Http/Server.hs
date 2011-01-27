@@ -50,13 +50,15 @@ snapServerVersion = Int.snapServerVersion
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
     setUnicodeLocale $ fromJust $ getLocale conf
-    Int.httpServe (map listenToInt $ getListen conf)
+    Int.httpServe tout
+                  (map listenToInt $ getListen conf)
                   (fmap backendToInt $ getBackend conf)
                   (fromJust $ getHostname  conf)
                   (fromJust $ getAccessLog conf)
                   (fromJust $ getErrorLog  conf)
                   (runSnap handler)
   where
+    tout = fromMaybe 60 $ getDefaultTimeout config
     conf = completeConfig config
     listenToInt (ListenHttp b p) = Int.HttpPort b p
     listenToInt (ListenHttps b p c k) = Int.HttpsPort b p c k

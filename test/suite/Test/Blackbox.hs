@@ -67,6 +67,7 @@ startTestServer port sslport backend = do
               setErrorLog  (Just $ "ts-error." ++ show backend ++ ".log")  .
               addListen    (ListenHttp "*" port)                           .
               setBackend   backend                                         .
+              setDefaultTimeout 10                                         .
               setVerbose   False                                           $
               defaultConfig
 

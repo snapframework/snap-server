@@ -64,8 +64,9 @@ import qualified Paths_snap_server as V
 -- Note that we won't be bothering end users with this -- the details will be
 -- hidden inside the Snap monad
 type ServerHandler = (ByteString -> IO ())
-                   -> Request
-                   -> Iteratee ByteString IO (Request,Response)
+                  -> (Int -> IO ())
+                  -> Request
+                  -> Iteratee ByteString IO (Request,Response)
 
 
 ------------------------------------------------------------------------------
@@ -122,7 +123,8 @@ runServerMonad lh s la le m = evalStateT m st
 
 
 ------------------------------------------------------------------------------
-httpServe :: [ListenPort]        -- ^ ports to listen on
+httpServe :: Int                 -- ^ default timeout
+          -> [ListenPort]        -- ^ ports to listen on
           -> Maybe EventLoopType -- ^ Specify a given event loop,
                                  --   otherwise a default is picked
           -> ByteString          -- ^ local hostname (server name)
@@ -130,7 +132,8 @@ httpServe :: [ListenPort]        -- ^ ports to listen on
           -> Maybe FilePath      -- ^ path to the error log
           -> ServerHandler       -- ^ handler procedure
           -> IO ()
-httpServe ports mevType localHostname alogPath elogPath handler =
+httpServe defaultTimeout ports mevType localHostname alogPath elogPath
+          handler =
     withLoggers alogPath elogPath
                 (\(alog, elog) -> spawnAll alog elog)
 
@@ -152,9 +155,9 @@ httpServe ports mevType localHostname alogPath elogPath handler =
 
         nports <- mapM bindPort ports
 
-        (runEventLoop evType nports numCapabilities (logE elog) $
-                      runHTTP alog elog handler localHostname) `finally` do
-
+        (runEventLoop evType defaultTimeout nports numCapabilities (logE elog)
+                      $ runHTTP defaultTimeout alog elog handler localHostname)
+          `finally` do
             logE elog "Server.httpServe: SHUTDOWN"
 
             if initHttps
@@ -233,7 +236,8 @@ logA' logger req rsp = do
 
 
 ------------------------------------------------------------------------------
-runHTTP :: Maybe Logger                  -- ^ access logger
+runHTTP :: Int                           -- ^ default timeout
+        -> Maybe Logger                  -- ^ access logger
         -> Maybe Logger                  -- ^ error logger
         -> ServerHandler                 -- ^ handler procedure
         -> ByteString                    -- ^ local host name
@@ -242,9 +246,10 @@ runHTTP :: Maybe Logger                  -- ^ access logger
         -> Iteratee ByteString IO ()     -- ^ write end of socket
         -> (FilePath -> Int64 -> Int64 -> IO ())
                                          -- ^ sendfile end
-        -> IO ()                         -- ^ timeout tickler
+        -> (Int -> IO ())                -- ^ timeout tickler
         -> IO ()
-runHTTP alog elog handler lh sinfo readEnd writeEnd onSendFile tickle =
+runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
+        tickle =
     go `catches` [ Handler $ \(e :: AsyncException) -> do
                        throwIO e
 
@@ -257,8 +262,8 @@ runHTTP alog elog handler lh sinfo readEnd writeEnd onSendFile tickle =
     go = do
         buf <- allocBuffer 16384
         let iter1 = runServerMonad lh sinfo (logA alog) (logE elog) $
-                                   httpSession writeEnd buf onSendFile tickle
-                                   handler
+                                   httpSession defaultTimeout writeEnd buf
+                                               onSendFile tickle handler
         let iter = iterateeDebugWrapper "httpSession iteratee" iter1
 
         debug "runHTTP/go: prepping iteratee for start"
@@ -292,14 +297,15 @@ logError s = gets _logError >>= (\l -> liftIO $ l s)
 
 ------------------------------------------------------------------------------
 -- | Runs an HTTP session.
-httpSession :: Iteratee ByteString IO ()     -- ^ write end of socket
+httpSession :: Int
+            -> Iteratee ByteString IO ()     -- ^ write end of socket
             -> Buffer                        -- ^ builder buffer
             -> (FilePath -> Int64 -> Int64 -> IO ())
                                              -- ^ sendfile continuation
-            -> IO ()                         -- ^ timeout tickler
+            -> (Int -> IO ())                -- ^ timeout tickler
             -> ServerHandler                 -- ^ handler procedure
             -> ServerMonad ()
-httpSession writeEnd' buffer onSendFile tickle handler = do
+httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
 
     let writeEnd = iterateeDebugWrapper "writeEnd" writeEnd'
 
@@ -308,7 +314,7 @@ httpSession writeEnd' buffer onSendFile tickle handler = do
     liftIO $ debug "Server.httpSession: receiveRequest finished"
 
     -- successfully got a request, so restart timer
-    liftIO tickle
+    liftIO $ tickle defaultTimeout
 
     case mreq of
       (Just req) -> do
@@ -322,7 +328,7 @@ httpSession writeEnd' buffer onSendFile tickle handler = do
 
           logerr <- gets _logError
 
-          (req',rspOrig) <- lift $ handler logerr req
+          (req',rspOrig) <- lift $ handler logerr tickle req
 
           liftIO $ debug $ "Server.httpSession: finished running user handler"
 
@@ -368,7 +374,8 @@ httpSession writeEnd' buffer onSendFile tickle handler = do
              then do
                  debug $ "httpSession: Connection: Close, harikari"
                  liftIO $ myThreadId >>= killThread
-             else httpSession writeEnd' buffer onSendFile tickle handler
+             else httpSession defaultTimeout writeEnd' buffer onSendFile tickle
+                              handler
 
       Nothing -> do
           liftIO $ debug $ "Server.httpSession: parser did not produce a " ++

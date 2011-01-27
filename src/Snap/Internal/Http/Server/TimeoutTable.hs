@@ -73,7 +73,7 @@ insert thash tid time (TimeoutTable maps act) = do
         let !psq' = PSQ.insert tid time psq
         return $! psq'
 
-    tryPutMVar act ()
+    _ <- tryPutMVar act ()
     return ()
 
   where
@@ -88,7 +88,7 @@ delete thash tid (TimeoutTable maps act) = do
         let !psq' = PSQ.delete tid psq
         return $! psq'
 
-    tryPutMVar act ()
+    _ <- tryPutMVar act ()
     return ()
 
   where

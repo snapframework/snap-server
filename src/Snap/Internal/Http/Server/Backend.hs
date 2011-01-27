@@ -36,16 +36,17 @@ type SessionHandler =
     -> Enumerator ByteString IO ()           -- ^ read end of socket
     -> Iteratee ByteString IO ()             -- ^ write end of socket
     -> (FilePath -> Int64 -> Int64 -> IO ()) -- ^ sendfile end
-    -> IO ()                                 -- ^ timeout tickler
+    -> (Int -> IO ())                        -- ^ timeout tickler
     -> IO ()
 
 
 ------------------------------------------------------------------------------
-type EventLoop = [ListenSocket]                -- ^ list of ports
-               -> Int                          -- ^ number of capabilities
-               -> (ByteString -> IO ())        -- ^ error log
-               -> SessionHandler               -- ^ session handler
-               -> IO ()
+type EventLoop = Int                       -- ^ default timeout
+              -> [ListenSocket]            -- ^ list of ports
+              -> Int                       -- ^ number of capabilities
+              -> (ByteString -> IO ())     -- ^ error log
+              -> SessionHandler            -- ^ session handler
+              -> IO ()
 
 
 {- For performance reasons, we do not implement this as a class

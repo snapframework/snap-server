@@ -22,7 +22,7 @@ data LibevException = LibevException String
 instance Exception LibevException
 
 libEvEventLoop :: EventLoop
-libEvEventLoop _ _ _ _ = throwIO $
+libEvEventLoop _ _ _ _ _ = throwIO $
     LibevException "libev event loop is not supported"
 
 #else
@@ -107,8 +107,9 @@ data Connection = Connection
 
 ------------------------------------------------------------------------------
 libEvEventLoop :: EventLoop
-libEvEventLoop sockets cap elog handler = do
-    backends <- Prelude.mapM (newLoop sockets handler elog) [0..(cap-1)]
+libEvEventLoop defaultTimeout sockets cap elog handler = do
+    backends <- Prelude.mapM (newLoop defaultTimeout sockets handler elog)
+                             [0..(cap-1)]
 
     debug "libevEventLoop: waiting for loop exit"
     Prelude.mapM_ (takeMVar . _loopExit) backends `finally` do
@@ -118,12 +119,13 @@ libEvEventLoop sockets cap elog handler = do
 
 
 ------------------------------------------------------------------------------
-newLoop :: [ListenSocket]        -- ^ value you got from bindIt
+newLoop :: Int                   -- ^ default timeout
+        -> [ListenSocket]        -- ^ value you got from bindIt
         -> SessionHandler        -- ^ handler
         -> (ByteString -> IO ()) -- ^ error logger
         -> Int                   -- ^ cpu
         -> IO Backend
-newLoop sockets handler elog cpu = do
+newLoop defaultTimeout sockets handler elog cpu = do
     -- We'll try kqueue on OSX even though the libev docs complain that it's
     -- "broken", in the hope that it works as expected for sockets
     f  <- evRecommendedBackends
@@ -179,7 +181,8 @@ newLoop sockets handler elog cpu = do
     -- setup the accept callback; this watches for read readiness on the
     -- listen port
     forM_ (zip3 sockets accIOs accMVars) $ \(sock, accIO, x) -> do
-        accCB <- mkIoCallback $ acceptCallback b handler elog cpu sock
+        accCB <- mkIoCallback $ acceptCallback defaultTimeout b handler elog
+                                               cpu sock
         evIoInit accIO accCB (fdSocket $ Listen.listenSocket sock) ev_read
         evIoStart lp accIO
         putMVar x accCB
@@ -209,13 +212,14 @@ loopThread backend = do
 
 
 ------------------------------------------------------------------------------
-acceptCallback :: Backend
+acceptCallback :: Int
+               -> Backend
                -> SessionHandler
                -> (ByteString -> IO ())
                -> Int
                -> ListenSocket
                -> IoCallback
-acceptCallback back handler elog cpu sock _loopPtr _ioPtr _ = do
+acceptCallback defaultTimeout back handler elog cpu sock _loopPtr _ioPtr _ = do
     debug "inside acceptCallback"
     r <- c_accept $ fdSocket $ Listen.listenSocket sock
 
@@ -230,7 +234,7 @@ acceptCallback back handler elog cpu sock _loopPtr _ioPtr _ = do
           forkOnIO cpu $ (go r `catches` cleanup)
           return ()
   where
-    go = runSession back handler sock
+    go = runSession defaultTimeout back handler sock
     cleanup = [ Handler $ \(_ :: TimeoutException) -> return ()
               , Handler $ \(e :: SomeException) ->
                   elog $ S.concat [ "libev.acceptCallback: "
@@ -436,12 +440,13 @@ freeBackend backend = ignoreException $ block $ do
 
 ------------------------------------------------------------------------------
 -- | Note: proc gets run in the background
-runSession :: Backend
+runSession :: Int
+           -> Backend
            -> SessionHandler
            -> ListenSocket
            -> CInt
            -> IO ()
-runSession backend handler lsock fd = do
+runSession defaultTimeout backend handler lsock fd = do
     sock <- mkSocket fd AF_INET Stream 0 Connected
     peerName <- getPeerName sock
     sockName <- getSocketName sock
@@ -527,8 +532,8 @@ runSession backend handler lsock fd = do
             (\session -> do H.update tid conn (_connectionThreads backend)
                             handler sinfo
                                     (enumerate conn session)
-                                    (writeOut conn session)
-                                    (sendFile conn session)
+                                    (writeOut defaultTimeout conn session)
+                                    (sendFile defaultTimeout conn session)
                                     (tickleTimeout conn)
             )
 
@@ -573,11 +578,11 @@ instance Exception TimeoutException
 
 
 ------------------------------------------------------------------------------
-tickleTimeout :: Connection -> IO ()
-tickleTimeout conn = do
+tickleTimeout :: Connection -> Int -> IO ()
+tickleTimeout conn tm = do
     debug "Libev.tickleTimeout"
     now       <- getCurrentDateTime
-    writeIORef (_timerTimeoutTime conn) (now + 30)
+    writeIORef (_timerTimeoutTime conn) (now + toEnum tm)
 
 
 ------------------------------------------------------------------------------
@@ -621,9 +626,14 @@ waitForLock readLock conn = do
 
 
 ------------------------------------------------------------------------------
-sendFile :: Connection -> NetworkSession -> FilePath -> Int64 -> Int64
+sendFile :: Int
+         -> Connection
+         -> NetworkSession
+         -> FilePath
+         -> Int64
+         -> Int64
          -> IO ()
-sendFile c s fp start sz = do
+sendFile defaultTimeout c s fp start sz = do
     withMVar lock $ \_ -> do
       act <- readIORef $ _writeActive c
       when act $ evIoStop loop io
@@ -636,10 +646,10 @@ sendFile c s fp start sz = do
                                 (closeFd)
                                 (go start sz)
         _            -> do
-            step <- runIteratee $ writeOut c s
+            step <- runIteratee $ writeOut defaultTimeout c s
             run_ $ enumFilePartial fp (start,start+sz) step
 #else
-    step <- runIteratee $ writeOut c s
+    step <- runIteratee $ writeOut defaultTimeout c s
 
     run_ $ enumFilePartial fp (start,start+sz) step
     return ()
@@ -657,7 +667,8 @@ sendFile c s fp start sz = do
       | otherwise  = do
             sent <- SF.sendFile sfd fd off bytes
             if sent < bytes
-              then tickleTimeout c >> go (off+sent) (bytes-sent) fd
+              then tickleTimeout c defaultTimeout >>
+                   go (off+sent) (bytes-sent) fd
               else return ()
 
     sfd  = Fd $ _rawSocket c
@@ -707,10 +718,11 @@ enumerate conn session = loop
 
 ------------------------------------------------------------------------------
 writeOut :: (MonadIO m)
-         => Connection
+         => Int
+         -> Connection
          -> NetworkSession
          -> Iteratee ByteString m ()
-writeOut conn session = loop
+writeOut defaultTimeout conn session = loop
   where
     loop = continue k
 
@@ -720,7 +732,7 @@ writeOut conn session = loop
         loop
 
     sendData = Listen.send (_listenSocket conn)
-                           (tickleTimeout conn)
+                           (tickleTimeout conn defaultTimeout)
                            (waitForLock False conn)
                            session
 

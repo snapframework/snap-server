@@ -26,6 +26,7 @@ module Snap.Http.Server.Config
   , getCompression
   , getVerbose
   , getErrorHandler
+  , getDefaultTimeout
   , getOther
 
   , setHostname
@@ -37,6 +38,7 @@ module Snap.Http.Server.Config
   , setCompression
   , setVerbose
   , setErrorHandler
+  , setDefaultTimeout
   , setOther
   ) where
 
@@ -94,25 +96,26 @@ data ConfigBackend = ConfigSimpleBackend
 -- Any fields which are unspecified in the 'Config' passed to 'httpServe' (and
 -- this is the norm) are filled in with default values from 'defaultConfig'.
 data MonadSnap m => Config m a = Config
-    { hostname     :: Maybe ByteString
+    { hostname       :: Maybe ByteString
       -- ^ The name of the server
-    , listen       :: [ConfigListen]
+    , listen         :: [ConfigListen]
       -- ^ The local interfaces to listen on
-    , accessLog    :: Maybe (Maybe FilePath)
+    , accessLog      :: Maybe (Maybe FilePath)
       -- ^ The path to the access log
-    , errorLog     :: Maybe (Maybe FilePath)
+    , errorLog       :: Maybe (Maybe FilePath)
       -- ^ The path to the error log
-    , locale       :: Maybe String
+    , locale         :: Maybe String
       -- ^ The locale to use
-    , backend      :: Maybe ConfigBackend
+    , backend        :: Maybe ConfigBackend
       -- ^ The backend to use
-    , compression  :: Maybe Bool
+    , compression    :: Maybe Bool
       -- ^ Whether to use compression
-    , verbose      :: Maybe Bool
+    , verbose        :: Maybe Bool
       -- ^ Whether to write server status updates to stderr
-    , errorHandler :: Maybe (SomeException -> m ())
+    , errorHandler   :: Maybe (SomeException -> m ())
       -- ^ A MonadSnap action to handle 500 errors
-    , other        :: Maybe a
+    , defaultTimeout :: Maybe Int
+    , other          :: Maybe a
       -- ^ This is for any other state needed to initialize a custom server
     }
 
@@ -129,6 +132,7 @@ instance MonadSnap m => Show (Config m a) where
         , showM "compression" . compression
         , showM "verbose" . verbose
         , showM "errorHandler" . fmap (const ()) . errorHandler
+        , showM "defaultTimeout" . fmap (const ()) . defaultTimeout
         ]) ++ "}"
       where
         showM s   = maybe "" ((++) (s ++ " = ") . show)
@@ -145,29 +149,31 @@ emptyConfig = mempty
 ------------------------------------------------------------------------------
 instance MonadSnap m => Monoid (Config m a) where
     mempty = Config
-        { hostname     = Nothing
-        , listen       = []
-        , accessLog    = Nothing
-        , errorLog     = Nothing
-        , locale       = Nothing
-        , backend      = Nothing
-        , compression  = Nothing
-        , verbose      = Nothing
-        , errorHandler = Nothing
-        , other        = Nothing
+        { hostname       = Nothing
+        , listen         = []
+        , accessLog      = Nothing
+        , errorLog       = Nothing
+        , locale         = Nothing
+        , backend        = Nothing
+        , compression    = Nothing
+        , verbose        = Nothing
+        , errorHandler   = Nothing
+        , defaultTimeout = Nothing
+        , other          = Nothing
         }
 
     a `mappend` b = Config
-        { hostname     = (hostname     b) `mplus` (hostname     a)
-        , listen       = (listen       b)   ++    (listen       a)
-        , accessLog    = (accessLog    b) `mplus` (accessLog    a)
-        , errorLog     = (errorLog     b) `mplus` (errorLog     a)
-        , locale       = (locale       b) `mplus` (locale       a)
-        , backend      = (backend      b) `mplus` (backend      a)
-        , compression  = (compression  b) `mplus` (compression  a)
-        , verbose      = (verbose      b) `mplus` (verbose      a)
-        , errorHandler = (errorHandler b) `mplus` (errorHandler a)
-        , other        = (other        b) `mplus` (other        a)
+        { hostname       = (hostname       b) `mplus` (hostname       a)
+        , listen         = (listen         b)   ++    (listen         a)
+        , accessLog      = (accessLog      b) `mplus` (accessLog      a)
+        , errorLog       = (errorLog       b) `mplus` (errorLog       a)
+        , locale         = (locale         b) `mplus` (locale         a)
+        , backend        = (backend        b) `mplus` (backend        a)
+        , compression    = (compression    b) `mplus` (compression    a)
+        , verbose        = (verbose        b) `mplus` (verbose        a)
+        , errorHandler   = (errorHandler   b) `mplus` (errorHandler   a)
+        , defaultTimeout = (defaultTimeout b) `mplus` (defaultTimeout a)
+        , other          = (other          b) `mplus` (other          a)
         }
 
 
@@ -202,6 +208,7 @@ defaultConfig = Config
                    . setResponseStatus 500 "Internal Server Error"
                    . modifyResponseBody (>==> enumBuilder (fromByteString msg))
                    $ emptyResponse
+    , defaultTimeout = Just 60
     , other        = Nothing
     }
 
@@ -231,6 +238,7 @@ data MonadSnap m => OptionData m a = OptionData
     , sslport :: Maybe Int
     , sslcert :: Maybe FilePath
     , sslkey  :: Maybe FilePath
+    , tout    :: Maybe Int
     }
 
 
@@ -244,6 +252,7 @@ instance MonadSnap m => Monoid (OptionData m a) where
         , sslport = Nothing
         , sslcert = Nothing
         , sslkey  = Nothing
+        , tout    = Nothing
         }
 
     a `mappend` b = OptionData
@@ -254,6 +263,7 @@ instance MonadSnap m => Monoid (OptionData m a) where
         , sslport      = (sslport      b) `mplus`   (sslport      a)
         , sslcert      = (sslcert      b) `mplus`   (sslcert      a)
         , sslkey       = (sslkey       b) `mplus`   (sslkey       a)
+        , tout         = (tout         b) `mplus`   (tout         a)
         }
 
 
@@ -268,13 +278,14 @@ defaultOptions = OptionData
     , sslport = Nothing
     , sslcert = Just "cert.pem"
     , sslkey  = Just "key.pem"
+    , tout    = Just 60
     }
 
 
 ------------------------------------------------------------------------------
 -- | Convert options to config
 optionsToConfig :: MonadSnap m => OptionData m a -> Config m a
-optionsToConfig o = mconcat $ [config o] ++ http ++ https
+optionsToConfig o = mconcat $ [config o] ++ http ++ https ++ [tmOut]
     where lhttp  = maybe2 [] ListenHttp  (bind o) (port o)
           lhttps = maybe4 [] ListenHttps (sslbind o)
                                          (sslport o)
@@ -288,6 +299,9 @@ optionsToConfig o = mconcat $ [config o] ++ http ++ https
           maybe4 _ f (Just a) (Just b) (Just c) (Just d) = [f a b c d]
           maybe4 d _ _        _        _        _        = d
 
+          tmOut = maybe mempty
+                        (\t -> mempty { defaultTimeout = Just t })
+                        (tout o)
 
 ------------------------------------------------------------------------------
 -- | Convert config to options
@@ -300,6 +314,7 @@ configToOptions c = OptionData
     , sslport = Nothing
     , sslcert = Nothing
     , sslkey  = Nothing
+    , tout    = (defaultTimeout c)
     }
 
 
@@ -359,6 +374,9 @@ options defaults =
     , Option ['c'] ["compression"]
              (NoArg $ Just $ setConfig setCompression True)
              $ "use gzip compression on responses"
+    , Option ['t'] ["timeout"]
+             (ReqArg (\t -> Just $ mempty { tout = Just $ read t}) "SECS")
+             $ "set default timeout in seconds"
     , Option [] ["no-compression"]
              (NoArg $ Just $ setConfig setCompression False)
              $ "serve responses uncompressed"
@@ -469,6 +487,11 @@ getOther = other
 
 
 ------------------------------------------------------------------------------
+getDefaultTimeout :: MonadSnap m => Config m a -> Maybe Int
+getDefaultTimeout = defaultTimeout
+
+
+------------------------------------------------------------------------------
 setHostname :: MonadSnap m => ByteString -> Config m a -> Config m a
 setHostname a m = m {hostname = Just a}
 
@@ -517,3 +540,8 @@ setErrorHandler a m = m {errorHandler = Just a}
 ------------------------------------------------------------------------------
 setOther :: MonadSnap m => a -> Config m a -> Config m a
 setOther a m = m {other = Just a}
+
+
+------------------------------------------------------------------------------
+setDefaultTimeout :: MonadSnap m => Int -> Config m a -> Config m a
+setDefaultTimeout t m = m {defaultTimeout = Just t}
