@@ -121,7 +121,8 @@ acceptThread defaultTimeout handler tt elog cpu sock = loop
 
     cleanup =
         [
-          Handler $ \(e :: SomeException) -> elog
+          Handler $ \(_ :: AsyncException) -> return ()
+        , Handler $ \(e :: SomeException) -> elog
                   $ S.concat [ "SimpleBackend.acceptThread: "
                              , S.pack . map c2w $ show e]
         ]
