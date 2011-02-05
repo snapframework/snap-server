@@ -219,7 +219,8 @@ acceptCallback :: Int
                -> Int
                -> ListenSocket
                -> IoCallback
-acceptCallback defaultTimeout back handler elog cpu sock _loopPtr _ioPtr _ = do
+acceptCallback defaultTimeout back handler
+               elog cpu sock _loopPtr _ioPtr _ = do
     debug "inside acceptCallback"
     r <- c_accept $ fdSocket $ Listen.listenSocket sock
 

@@ -70,19 +70,19 @@ recv _ _ = throwIO $ GnuTLSException "TLS is not supported"
 #else
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 -- | Init
 initTLS :: IO ()
 initTLS = gnutls_set_threading_helper >>
           throwErrorIf "TLS init" gnutls_global_init
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 stopTLS :: IO ()
 stopTLS = gnutls_global_deinit
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 -- | Binds ssl port
 bindHttps :: ByteString
           -> Int
@@ -102,7 +102,7 @@ bindHttps bindAddress bindPort cert key = do
     return $ ListenHttps sock (castPtr creds) (castPtr dh)
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 loadCredentials :: FilePath       --- ^ Path to certificate
                 -> FilePath       --- ^ Path to key
                 -> IO (Ptr GnuTLSCredentials)
@@ -118,7 +118,7 @@ loadCredentials cert key = alloca $ \cPtr -> do
     return creds
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 regenerateDHParam :: Ptr GnuTLSCredentials -> IO (Ptr GnuTLSDHParam)
 regenerateDHParam creds = alloca $ \dhptr -> do
     throwErrorIf "TLS allocate" $ gnutls_dh_params_init dhptr
@@ -128,7 +128,7 @@ regenerateDHParam creds = alloca $ \dhptr -> do
     return dh
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 freePort :: ListenSocket -> IO ()
 freePort (ListenHttps _ creds dh) = do
     gnutls_certificate_free_credentials $ castPtr creds
@@ -136,7 +136,7 @@ freePort (ListenHttps _ creds dh) = do
 freePort _ = return ()
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 createSession :: ListenSocket -> Int -> CInt -> IO () -> IO NetworkSession
 createSession (ListenHttps _ creds _) recvSize socket on_block =
     alloca $ \sPtr -> do
@@ -160,7 +160,7 @@ createSession (ListenHttps _ creds _) recvSize socket on_block =
 createSession _ _ _ _ = error "Invalid socket"
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 endSession :: NetworkSession -> IO ()
 endSession (NetworkSession _ session buffer _) = do
     throwErrorIf "TLS bye" $ gnutls_bye (castPtr session) 1 `finally` do
@@ -168,7 +168,7 @@ endSession (NetworkSession _ session buffer _) = do
         free buffer
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 handshake :: NetworkSession -> IO () -> IO ()
 handshake s@(NetworkSession { _session = session}) on_block = do
     rc <- gnutls_handshake $ castPtr session
@@ -179,7 +179,7 @@ handshake s@(NetworkSession { _session = session}) on_block = do
           | otherwise      -> throwError "TLS handshake" rc
 
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
      unsafeUseAsCStringLen bs $ uncurry loop
@@ -268,90 +268,127 @@ data GnuTLSCredentials
 data GnuTLSSession
 data GnuTLSDHParam
 
+------------------------------------------------------------------------------
 -- Global init/errors
 
-foreign import ccall safe "gnutls_set_threading_helper"
-   gnutls_set_threading_helper :: IO ()
+foreign import ccall safe
+    "gnutls_set_threading_helper"
+    gnutls_set_threading_helper :: IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_global_init"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_global_init"
     gnutls_global_init :: IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_global_deinit"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_global_deinit"
     gnutls_global_deinit :: IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_strerror"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_strerror"
     gnutls_strerror :: ReturnCode -> IO CString
 
+------------------------------------------------------------------------------
 -- Sessions.  All functions here except handshake and bye just
 -- allocate memory or update members of structures, so they are ok with
 -- unsafe ccall.
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_init"
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_init"
     gnutls_init :: Ptr (Ptr GnuTLSSession) -> CInt -> IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_deinit"
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_deinit"
     gnutls_deinit :: Ptr GnuTLSSession -> IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_handshake"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_handshake"
     gnutls_handshake :: Ptr GnuTLSSession -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_bye"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_bye"
     gnutls_bye :: Ptr GnuTLSSession -> CInt -> IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_set_default_priority"
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_set_default_priority"
     gnutls_set_default_priority :: Ptr GnuTLSSession -> IO ReturnCode
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_session_enable_compatibility_mode"
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_session_enable_compatibility_mode"
     gnutls_session_enable_compatibility_mode :: Ptr GnuTLSSession -> IO ()
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_certificate_send_x509_rdn_sequence"
-    gnutls_certificate_send_x509_rdn_sequence :: Ptr GnuTLSSession -> CInt -> IO ()
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_certificate_send_x509_rdn_sequence"
+    gnutls_certificate_send_x509_rdn_sequence
+      :: Ptr GnuTLSSession -> CInt -> IO ()
 
--- Certificates.  Perhaps these could be unsafe but they are not performance critical,
--- since they are called only once during server startup.
+------------------------------------------------------------------------------
+-- Certificates.  Perhaps these could be unsafe but they are not performance
+-- critical, since they are called only once during server startup.
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_allocate_credentials"
-    gnutls_certificate_allocate_credentials :: Ptr (Ptr GnuTLSCredentials) -> IO ReturnCode
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_certificate_allocate_credentials"
+    gnutls_certificate_allocate_credentials
+      :: Ptr (Ptr GnuTLSCredentials) -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_free_credentials"
-    gnutls_certificate_free_credentials :: Ptr GnuTLSCredentials -> IO ()
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_certificate_free_credentials"
+    gnutls_certificate_free_credentials
+      :: Ptr GnuTLSCredentials -> IO ()
 
 gnutls_x509_fmt_pem :: CInt
 gnutls_x509_fmt_pem = 1
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_set_x509_key_file"
-    gnutls_certificate_set_x509_key_file :: Ptr GnuTLSCredentials -> CString -> CString -> CInt -> IO ReturnCode
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_certificate_set_x509_key_file"
+    gnutls_certificate_set_x509_key_file
+      :: Ptr GnuTLSCredentials -> CString -> CString -> CInt -> IO ReturnCode
 
 
--- Credentials.  This is ok as unsafe because it just sets members in the session structure.
+------------------------------------------------------------------------------
+-- Credentials.  This is ok as unsafe because it just sets members in the
+-- session structure.
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_credentials_set"
-    gnutls_credentials_set :: Ptr GnuTLSSession -> CInt -> Ptr a -> IO ReturnCode
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_credentials_set"
+    gnutls_credentials_set
+        :: Ptr GnuTLSSession -> CInt -> Ptr a -> IO ReturnCode
 
--- Records.  These are marked unsafe because they are very performance critical.  Since
--- we are using non-blocking sockets send and recv will not block.
+------------------------------------------------------------------------------
+-- Records.  These are marked unsafe because they are very performance
+-- critical.  Since we are using non-blocking sockets send and recv will not
+-- block.
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_transport_set_ptr"
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_transport_set_ptr"
     gnutls_transport_set_ptr :: Ptr GnuTLSSession -> Ptr a -> IO ()
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_record_recv"
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_record_recv"
     gnutls_record_recv :: Ptr GnuTLSSession -> Ptr a -> CSize -> IO CSize
 
-foreign import ccall unsafe "gnutls/gnutls.h gnutls_record_send"
+foreign import ccall unsafe
+    "gnutls/gnutls.h gnutls_record_send"
     gnutls_record_send :: Ptr GnuTLSSession -> Ptr a -> CSize -> IO CSize
 
--- DHParam.  Perhaps these could be unsafe but they are not performance critical.
+------------------------------------------------------------------------------
+-- DHParam.  Perhaps these could be unsafe but they are not performance
+-- critical.
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_init"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_dh_params_init"
     gnutls_dh_params_init :: Ptr (Ptr GnuTLSDHParam) -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_deinit"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_dh_params_deinit"
     gnutls_dh_params_deinit :: Ptr GnuTLSDHParam -> IO ()
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_dh_params_generate2"
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_dh_params_generate2"
     gnutls_dh_params_generate2 :: Ptr GnuTLSDHParam -> CUInt -> IO ReturnCode
 
-foreign import ccall safe "gnutls/gnutls.h gnutls_certificate_set_dh_params"
-    gnutls_certificate_set_dh_params :: Ptr GnuTLSCredentials -> Ptr GnuTLSDHParam -> IO ()
+foreign import ccall safe
+    "gnutls/gnutls.h gnutls_certificate_set_dh_params"
+    gnutls_certificate_set_dh_params
+      :: Ptr GnuTLSCredentials -> Ptr GnuTLSDHParam -> IO ()
 
 #endif

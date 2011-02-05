@@ -156,7 +156,7 @@ httpServe defaultTimeout ports mevType localHostname alogPath elogPath
         nports <- mapM bindPort ports
 
         (runEventLoop evType defaultTimeout nports numCapabilities (logE elog)
-                      $ runHTTP defaultTimeout alog elog handler localHostname)
+                    $ runHTTP defaultTimeout alog elog handler localHostname)
           `finally` do
             logE elog "Server.httpServe: SHUTDOWN"
 
@@ -374,8 +374,8 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
              then do
                  debug $ "httpSession: Connection: Close, harikari"
                  liftIO $ myThreadId >>= killThread
-             else httpSession defaultTimeout writeEnd' buffer onSendFile tickle
-                              handler
+             else httpSession defaultTimeout writeEnd' buffer onSendFile
+                              tickle handler
 
       Nothing -> do
           liftIO $ debug $ "Server.httpSession: parser did not produce a " ++
@@ -651,8 +651,8 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
                    iterateeDebugWrapper "countBytes writeEnd" $
                    countBytes writeEnd
         (x,bs) <- mapIter fromByteString toByteString
-                          (enum $$ joinI $
-                             unsafeBuilderToByteString (return buffer) outstep)
+                          (enum $$ joinI $ unsafeBuilderToByteString
+                              (return buffer) outstep)
         debug $ "sendResponse: whenEnum: " ++ show bs ++
                 " bytes enumerated"
 
@@ -740,16 +740,17 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
                              >>== chunkIt
 
     --------------------------------------------------------------------------
-    fixCLIteratee :: Int                       -- ^ header length 
+    fixCLIteratee :: Int                       -- ^ header length
                   -> Response                  -- ^ response
                   -> Iteratee ByteString IO a  -- ^ write end
                   -> Iteratee ByteString IO a
     fixCLIteratee hlen resp we = maybe we f mbCL
       where
         f cl = case rspBody resp of
-                 (Enum _) -> joinI $ takeExactly (cl + fromIntegral hlen) $$ we
+                 (Enum _) -> joinI $ takeExactly (cl + fromIntegral hlen)
+                                  $$ we
                  (SendFile _ _) -> we
-                 
+
         mbCL = rspContentLength resp
 
     --------------------------------------------------------------------------
@@ -879,7 +880,8 @@ cookieToBS (Cookie k v mbExpTime mbDomain mbPath) = cookie
     path    = maybe "" (S.append "; path=") mbPath
     domain  = maybe "" (S.append "; domain=") mbDomain
     exptime = maybe "" (S.append "; expires=" . fmt) mbExpTime
-    fmt     = fromStr . formatTime defaultTimeLocale "%a, %d-%b-%Y %H:%M:%S GMT"
+    fmt     = fromStr . formatTime defaultTimeLocale
+                                   "%a, %d-%b-%Y %H:%M:%S GMT"
 
 
 ------------------------------------------------------------------------------

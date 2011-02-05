@@ -209,7 +209,8 @@ runSession defaultTimeout handler tt lsock sock addr = do
                  eatException $ shutdown sock ShutdownBoth
                  eatException $ sClose sock
             )
-            (\s -> let writeEnd = writeOut lsock s sock (timeout defaultTimeout)
+            (\s -> let writeEnd = writeOut lsock s sock
+                                      (timeout defaultTimeout)
                    in handler sinfo
                               (enumerate lsock s sock)
                               writeEnd

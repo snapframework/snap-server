@@ -206,7 +206,8 @@ defaultConfig = Config
         finishWith $ setContentType "text/plain; charset=utf-8"
                    . setContentLength (fromIntegral $ B.length msg)
                    . setResponseStatus 500 "Internal Server Error"
-                   . modifyResponseBody (>==> enumBuilder (fromByteString msg))
+                   . modifyResponseBody
+                         (>==> enumBuilder (fromByteString msg))
                    $ emptyResponse
     , defaultTimeout = Just 60
     , other        = Nothing
