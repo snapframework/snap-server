@@ -8,6 +8,7 @@ import           Control.Monad
 import           Control.Monad.Trans
 import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
+import           Data.List
 import qualified Data.Map as Map
 import           Data.Maybe
 import           Data.Monoid
@@ -106,7 +107,7 @@ uploadHandler = do
                            c <- liftIO $ S.readFile fp
                            return (x,c)) xs
 
-        let m = Map.toAscList $ Map.fromList files
+        let m = sort files
 
         params <- liftM (Prelude.map (\(a,b) -> (a,S.concat b)) .
                          Map.toAscList .
@@ -124,7 +125,7 @@ uploadHandler = do
                 , fromByteString "\nValue:\n"
                 , fromByteString v
                 , fromByteString "\n\n"
-                , buildRqParams xs ]
+                , builder ty xs ]
 
 
     buildRqParams = builder "Param"

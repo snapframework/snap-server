@@ -7,30 +7,32 @@ module Test.Blackbox
   , ssltests
   , startTestServer ) where
 
+--------------------------------------------------------------------------------
+import           Control.Concurrent
+import           Control.Exception (SomeException, catch)
+import           Control.Monad
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Char8 as S
+import           Data.ByteString.Char8 (ByteString)
+import qualified Data.ByteString.Lazy.Char8 as L
+import           Data.Int
+import           Data.List
+import qualified Network.HTTP.Enumerator as HTTP
+import qualified Network.Socket.ByteString as N
+import           Prelude hiding (catch, take)
+import           System.Timeout
+import           Test.Framework
+import           Test.Framework.Providers.HUnit
+import           Test.Framework.Providers.QuickCheck2
+import           Test.HUnit hiding (Test, path)
+import           Test.QuickCheck
+import qualified Test.QuickCheck.Monadic as QC
+import           Test.QuickCheck.Monadic hiding (run, assert)
 ------------------------------------------------------------------------------
-import             Control.Concurrent
-import             Control.Exception (SomeException, catch)
-import             Control.Monad
-import qualified   Data.ByteString.Char8 as S
-import             Data.ByteString.Char8 (ByteString)
-import qualified   Data.ByteString.Lazy.Char8 as L
-import             Data.Int
-import qualified   Network.HTTP.Enumerator as HTTP
-import qualified   Network.Socket.ByteString as N
-import             Prelude hiding (catch, take)
-import             System.Timeout
-import             Test.Framework
-import             Test.Framework.Providers.HUnit
-import             Test.Framework.Providers.QuickCheck2
-import             Test.HUnit hiding (Test, path)
-import             Test.QuickCheck
-import qualified   Test.QuickCheck.Monadic as QC
-import             Test.QuickCheck.Monadic hiding (run, assert)
-------------------------------------------------------------------------------
-import             Snap.Http.Server
-import             Snap.Test.Common
-import             Test.Common.Rot13
-import             Test.Common.TestHandler
+import           Snap.Http.Server
+import           Snap.Test.Common
+import           Test.Common.Rot13
+import           Test.Common.TestHandler
 ------------------------------------------------------------------------------
 
 testFunctions :: [Bool -> Int -> String -> Test]
@@ -43,6 +45,7 @@ testFunctions = [ testPong
                 , testBlockingRead
                 , testBigResponse
                 , testPartial
+                , testFileUpload
                 ]
 
 
@@ -140,6 +143,78 @@ testEcho ssl port name = testProperty (name ++ "/blackbox/echo") $
 
         rsp <- QC.run $ HTTP.httpLbs req
         let doc = HTTP.responseBody rsp
+
+        QC.assert $ txt == doc
+
+
+------------------------------------------------------------------------------
+testFileUpload :: Bool -> Int -> String -> Test
+testFileUpload ssl port name = testProperty (name ++ "/blackbox/upload") $
+                               monadicIO $ forAllM arbitrary prop
+  where
+    boundary = "boundary-jdsklfjdsalkfjadlskfjldskjfldskjfdsfjdsklfldksajfl"
+
+    prefix = [ "--"
+             , boundary
+             , "\r\n"
+             , "content-disposition: form-data; name=\"submit\"\r\n"
+             , "\r\nSubmit\r\n" ]
+
+    body kvps = L.concat $ prefix ++ concatMap part kvps ++ suffix
+      where
+        part (k,v) = [ "--"
+                     , boundary
+                     , "\r\ncontent-disposition: attachment; filename=\""
+                     , k
+                     , "\"\r\nContent-Type: text/plain\r\n\r\n"
+                     , v
+                     , "\r\n" ]
+
+    suffix = [ "--", boundary, "--\r\n" ]
+
+    hdrs = [ ("Content-type", S.concat $ [ "multipart/form-data; boundary=" ]
+                                         ++ L.toChunks boundary) ]
+
+    b16 (k,v) = (ne $ e k, e v)
+      where
+        ne s = if L.null s then "file" else s
+        e s = L.fromChunks [ B16.encode $ S.concat $ L.toChunks s ]
+
+    response kvps = L.concat $ [ "Param:\n"
+                               , "submit\n"
+                               , "Value:\n"
+                               , "Submit\n\n" ] ++ concatMap responseKVP kvps
+
+    responseKVP (k,v) = [ "File:\n"
+                        , k
+                        , "\nValue:\n"
+                        , v
+                        , "\n\n" ]
+
+    prop kvps' = do
+        let kvps = sort $ map b16 kvps'
+
+        let uri = (if ssl then "https" else "http")
+                  ++ "://127.0.0.1:" ++ show port ++ "/upload/handle"
+
+        req0 <- QC.run $ HTTP.parseUrl uri
+        let req = req0 { HTTP.requestBody = body kvps
+                       , HTTP.method = "POST"
+                       , HTTP.requestHeaders = hdrs }
+
+        let txt = response kvps
+        rsp <- QC.run $ HTTP.httpLbs req
+        let doc = HTTP.responseBody rsp
+
+        when (txt /= doc) $ QC.run $ do
+                     L.putStrLn "expected:"
+                     L.putStrLn "----------------------------------------"
+                     L.putStrLn txt
+                     L.putStrLn "----------------------------------------"
+                     L.putStrLn "\ngot:"
+                     L.putStrLn "----------------------------------------"
+                     L.putStrLn doc
+                     L.putStrLn "----------------------------------------"
 
         QC.assert $ txt == doc
 
