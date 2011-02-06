@@ -13,4 +13,5 @@ dist/
 .DS_Store
 **/.DS_Store
 test/*.log
+test/log/*
 docs/templates/out
