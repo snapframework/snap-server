@@ -73,6 +73,7 @@ Executable testsuite
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
 
+   ghc-prof-options: -prof -auto-all
    ghc-options: -O2 -Wall -fhpc -fwarn-tabs
                 -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
@@ -213,11 +214,19 @@ Executable testserver
    ghc-options: -O2 -Wall -fwarn-tabs
                 -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
+   ghc-prof-options: -prof -auto-all
 
 
 Executable benchmark
    hs-source-dirs:  benchmark common ../src
    main-is:         Benchmark.hs
+
+   ghc-options: -O2 -Wall -fwarn-tabs
+                -funbox-strict-fields -threaded
+                -fno-warn-unused-do-bind
+
+   ghc-prof-options: -prof -auto-all
+
    build-depends:
      base >= 4 && < 5,
      network == 2.3.*,
