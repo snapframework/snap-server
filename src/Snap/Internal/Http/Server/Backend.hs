@@ -92,6 +92,5 @@ instance Show ListenSocket where
 data NetworkSession = NetworkSession
   { _socket     :: CInt
   , _session    :: Ptr Word
-  , _recvBuffer :: Ptr CChar
-  , _recvLen    :: CSize
+  , _recvLen    :: Int
   }

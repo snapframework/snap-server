@@ -22,8 +22,8 @@ import           Network.Socket hiding (recv, send)
 #ifdef PORTABLE
 import qualified Network.Socket.ByteString as SB
 #else
-import           Control.Monad (liftM)
-import           Data.ByteString.Unsafe (unsafeUseAsCStringLen)
+import qualified Data.ByteString.Internal as BI
+import qualified Data.ByteString.Unsafe as BI
 #endif
 
 import           Snap.Internal.Debug
@@ -56,14 +56,13 @@ getHostAddr p s = do
 
 ------------------------------------------------------------------------------
 createSession :: Int -> CInt -> IO () -> IO NetworkSession
-createSession buffSize s _ = do
-    buffer <- mallocBytes $ fromIntegral buffSize
-    return $ NetworkSession s nullPtr buffer $ fromIntegral buffSize
+createSession buffSize s _ =
+    return $ NetworkSession s nullPtr $ fromIntegral buffSize
 
 
 ------------------------------------------------------------------------------
 endSession :: NetworkSession -> IO ()
-endSession (NetworkSession {_recvBuffer = buff}) = free buff
+endSession _ = return ()
 
 #ifdef PORTABLE
 
@@ -84,24 +83,27 @@ send sock tickle _ _ bs = SB.sendAll sock bs >> tickle
 
 ------------------------------------------------------------------------------
 recv :: IO () -> NetworkSession -> IO (Maybe ByteString)
-recv onBlock (NetworkSession s _ buff buffSize) = do
-    sz <- throwErrnoIfMinus1RetryMayBlock
-              "recv"
-              (c_read s buff buffSize)
-              onBlock
+recv onBlock (NetworkSession s _ buffSize) = do
+    fp <- BI.mallocByteString $ fromEnum buffSize
+    sz <- withForeignPtr fp $ \p ->
+              throwErrnoIfMinus1RetryMayBlock
+                  "recv"
+                  (c_read s p $ toEnum buffSize)
+                  onBlock
+
     if sz == 0
-        then return Nothing
-        else liftM Just $ B.packCStringLen (buff, fromIntegral sz)
+      then return Nothing
+      else return $ Just $ BI.fromForeignPtr fp 0 $ fromEnum sz
 
 
 ------------------------------------------------------------------------------
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
-send tickleTimeout onBlock (NetworkSession s _ _ _) bs =
-    unsafeUseAsCStringLen bs $ uncurry loop
+send tickleTimeout onBlock (NetworkSession s _ _) bs =
+    BI.unsafeUseAsCStringLen bs $ uncurry loop
   where loop ptr len = do
           sent <- throwErrnoIfMinus1RetryMayBlock
                     "send"
-                    (c_write s ptr $ fromIntegral len)
+                    (c_write s ptr $ toEnum len)
                     onBlock
 
           let sent' = fromIntegral sent
