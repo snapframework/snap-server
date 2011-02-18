@@ -111,7 +111,7 @@ Library
     bytestring-nums,
     containers,
     directory-tree,
-    enumerator == 0.4.*,
+    enumerator >= 0.4.7 && <0.5,
     filepath,
     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
     mtl == 2.0.*,
