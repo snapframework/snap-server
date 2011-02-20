@@ -205,7 +205,7 @@ send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
 -- could be changed to use unsafePackCStringFinalizer if the buffer is at
 -- least 3/4 full and packCStringLen otherwise or something like that
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
-recv onBlock (NetworkSession _ session recvLen') = do
+recv onBlock (NetworkSession _ session recvLen) = do
     fp <- BI.mallocByteString recvLen
     sz <- withForeignPtr fp loop
     if sz <= 0
@@ -213,9 +213,8 @@ recv onBlock (NetworkSession _ session recvLen') = do
        else return $ Just $ BI.fromForeignPtr fp 0 $ fromEnum sz
 
   where
-    recvLen = fromEnum recvLen'
     loop recvBuf = do
-        size <- gnutls_record_recv (castPtr session) recvBuf recvLen
+        size <- gnutls_record_recv (castPtr session) recvBuf $ toEnum recvLen
         let size' = fromIntegral size
         case size' of
             x | x >= 0        -> return x
