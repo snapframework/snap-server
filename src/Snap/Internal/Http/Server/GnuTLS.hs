@@ -162,7 +162,7 @@ createSession _ _ _ _ = error "Invalid socket"
 
 ------------------------------------------------------------------------------
 endSession :: NetworkSession -> IO ()
-endSession (NetworkSession _ session _ _) = do
+endSession (NetworkSession _ session _) = do
     throwErrorIf "TLS bye" $ gnutls_bye (castPtr session) 1 `finally` do
         gnutls_deinit $ castPtr session
 
@@ -205,14 +205,15 @@ send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
 -- could be changed to use unsafePackCStringFinalizer if the buffer is at
 -- least 3/4 full and packCStringLen otherwise or something like that
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
-recv onBlock (NetworkSession _ session recvLen) = do
-    fp <- BI.mallocByteString $ fromEnum recvLen
+recv onBlock (NetworkSession _ session recvLen') = do
+    fp <- BI.mallocByteString recvLen
     sz <- withForeignPtr fp loop
     if sz <= 0
        then return Nothing
        else return $ Just $ BI.fromForeignPtr fp 0 $ fromEnum sz
 
   where
+    recvLen = fromEnum recvLen'
     loop recvBuf = do
         size <- gnutls_record_recv (castPtr session) recvBuf recvLen
         let size' = fromIntegral size
