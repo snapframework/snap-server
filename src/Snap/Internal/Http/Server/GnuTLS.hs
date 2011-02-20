@@ -29,8 +29,9 @@ import           Snap.Internal.Http.Server.Backend
 #ifdef GNUTLS
 import           Control.Monad (liftM)
 import qualified Data.ByteString as B
-import           Data.ByteString.Unsafe (unsafeUseAsCStringLen)
 import           Data.ByteString.Internal (w2c)
+import qualified Data.ByteString.Internal as BI
+import qualified Data.ByteString.Unsafe as BI
 import           Foreign
 import qualified Network.Socket as Socket
 #endif
@@ -148,8 +149,7 @@ createSession (ListenHttps _ creds _) recvSize socket on_block =
         gnutls_certificate_send_x509_rdn_sequence session 1
         gnutls_session_enable_compatibility_mode session
 
-        buffer <- mallocBytes $ fromIntegral recvSize
-        let s = NetworkSession socket (castPtr session) buffer $
+        let s = NetworkSession socket (castPtr session) $
                     fromIntegral recvSize
 
         gnutls_transport_set_ptr session $ intPtrToPtr $ fromIntegral $ socket
@@ -162,10 +162,9 @@ createSession _ _ _ _ = error "Invalid socket"
 
 ------------------------------------------------------------------------------
 endSession :: NetworkSession -> IO ()
-endSession (NetworkSession _ session buffer _) = do
+endSession (NetworkSession _ session _ _) = do
     throwErrorIf "TLS bye" $ gnutls_bye (castPtr session) 1 `finally` do
         gnutls_deinit $ castPtr session
-        free buffer
 
 
 ------------------------------------------------------------------------------
@@ -182,7 +181,7 @@ handshake s@(NetworkSession { _session = session}) on_block = do
 ------------------------------------------------------------------------------
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
-     unsafeUseAsCStringLen bs $ uncurry loop
+     BI.unsafeUseAsCStringLen bs $ uncurry loop
   where
     loop ptr len = do
         sent <- gnutls_record_send (castPtr session) ptr $ fromIntegral len
@@ -206,22 +205,26 @@ send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
 -- could be changed to use unsafePackCStringFinalizer if the buffer is at
 -- least 3/4 full and packCStringLen otherwise or something like that
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
-recv onBlock (NetworkSession _ session recvBuf recvLen) = loop
+recv onBlock (NetworkSession _ session recvLen) = do
+    fp <- BI.mallocByteString $ fromEnum recvLen
+    sz <- withForeignPtr fp loop
+    if sz <= 0
+       then return Nothing
+       else return $ Just $ BI.fromForeignPtr fp 0 $ fromEnum sz
+
   where
-    loop = do
+    loop recvBuf = do
         size <- gnutls_record_recv (castPtr session) recvBuf recvLen
         let size' = fromIntegral size
         case size' of
-            x | x == 0        -> return Nothing
-              | x > 0         -> liftM Just $ B.packCStringLen (recvBuf, x)
-              | isIntrCode x  -> loop
-              | isAgainCode x -> onBlock >> loop
+            x | x >= 0        -> return x
+              | isIntrCode x  -> loop recvBuf
+              | isAgainCode x -> onBlock >> loop recvBuf
               | otherwise     -> (throwError "TLS recv" $ fromIntegral size')
-                                 >> return Nothing
 
 
 ------------------------------------------------------------------------------
-throwError :: String -> ReturnCode -> IO ()
+throwError :: String -> ReturnCode -> IO a
 throwError prefix rc = gnutls_strerror rc >>=
                        peekCString >>=
                        throwIO . GnuTLSException . (prefix'++)
