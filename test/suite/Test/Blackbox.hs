@@ -9,7 +9,7 @@ module Test.Blackbox
 
 --------------------------------------------------------------------------------
 import           Control.Concurrent
-import           Control.Exception (SomeException, catch)
+import           Control.Exception (SomeException, catch, throwIO)
 import           Control.Monad
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as S
@@ -17,18 +17,22 @@ import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.Int
 import           Data.List
+import           Data.Monoid
 import qualified Network.HTTP.Enumerator as HTTP
 import qualified Network.Socket.ByteString as N
 import           Prelude hiding (catch, take)
 import           System.Timeout
 import           Test.Framework
+import           Test.Framework.Options
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
 import           Test.HUnit hiding (Test, path)
 import           Test.QuickCheck
+import qualified Test.QuickCheck.Property as QC
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Monadic hiding (run, assert)
 ------------------------------------------------------------------------------
+import           Snap.Internal.Debug
 import           Snap.Http.Server
 import           Snap.Test.Common
 import           Test.Common.Rot13
@@ -93,10 +97,15 @@ startTestServer port sslport backend = do
 ------------------------------------------------------------------------------
 doPong :: Bool -> Int -> IO ByteString
 doPong ssl port = do
-    let uri = (if ssl then "https" else "http")
-              ++ "://127.0.0.1:" ++ show port ++ "/pong"
+    debug "getting URI"
+    let !uri = (if ssl then "https" else "http")
+               ++ "://127.0.0.1:" ++ show port ++ "/pong"
+    debug $ "URI is: '" ++ uri ++ "', calling simpleHttp"
 
-    rsp <- HTTP.simpleHttp uri
+    rsp <- HTTP.simpleHttp uri `catch` (\(e::SomeException) -> do
+               debug $ "simpleHttp threw exception: " ++ show e
+               throwIO e)
+    debug $ "response was " ++ show rsp
     return $ S.concat $ L.toChunks rsp
 
 
@@ -149,9 +158,17 @@ testEcho ssl port name = testProperty (name ++ "/blackbox/echo") $
 
 ------------------------------------------------------------------------------
 testFileUpload :: Bool -> Int -> String -> Test
-testFileUpload ssl port name = testProperty (name ++ "/blackbox/upload") $
-                               monadicIO $ forAllM arbitrary prop
+testFileUpload ssl port name = 
+    plusTestOptions testOptions $
+    testProperty (name ++ "/blackbox/upload") $
+    QC.mapSize (if ssl then min 100 else id) $
+    monadicIO $
+    forAllM arbitrary prop
   where
+    testOptions = if ssl
+                    then mempty { topt_maximum_generated_tests = Just 100 }
+                    else mempty
+
     boundary = "boundary-jdsklfjdsalkfjadlskfjldskjfldskjfdsfjdsklfldksajfl"
 
     prefix = [ "--"

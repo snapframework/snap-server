@@ -24,10 +24,10 @@ import           Data.ByteString (ByteString)
 import           Data.Dynamic
 import           Foreign.C
 
+import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Backend
 
 #ifdef GNUTLS
-import           Control.Monad (liftM)
 import qualified Data.ByteString as B
 import           Data.ByteString.Internal (w2c)
 import qualified Data.ByteString.Internal as BI
@@ -197,24 +197,19 @@ send tickleTimeout onBlock (NetworkSession { _session = session}) bs =
 
 
 ------------------------------------------------------------------------------
--- | I originally wrote recv to use mallocBytes and unsafePackCStringFinalizer
--- to achieve zero-copy.  The downside to that method is we might waste memory
--- if a malicious adversary only sends us a few bytes, since the entire buffer
--- won't be freed until the ByteString is collected.  Thus I use
--- packCStringLen which makes a copy.  Perhaps in the future the recv function
--- could be changed to use unsafePackCStringFinalizer if the buffer is at
--- least 3/4 full and packCStringLen otherwise or something like that
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
 recv onBlock (NetworkSession _ session recvLen) = do
     fp <- BI.mallocByteString recvLen
     sz <- withForeignPtr fp loop
-    if sz <= 0
+    if (sz :: Int) <= 0
        then return Nothing
        else return $ Just $ BI.fromForeignPtr fp 0 $ fromEnum sz
 
   where
     loop recvBuf = do
+        debug $ "TLS: calling record_recv with recvLen=" ++ show recvLen
         size <- gnutls_record_recv (castPtr session) recvBuf $ toEnum recvLen
+        debug $ "TLS: record_recv returned with size=" ++ show size
         let size' = fromIntegral size
         case size' of
             x | x >= 0        -> return x
