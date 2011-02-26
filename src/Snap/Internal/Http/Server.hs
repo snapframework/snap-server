@@ -784,7 +784,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
       where
         f h = if null cookies
                 then h
-                else Map.insert "Set-Cookie" cookies h
+                else Map.insertWith (flip (++)) "Set-Cookie" cookies h
         cookies = fmap cookieToBS . Map.elems $ rspCookies r
 
 
