@@ -15,7 +15,8 @@ import           Control.Arrow (first, second)
 import           Control.Monad.State.Strict
 import           Control.Exception
 import           Data.Char
-import           Data.CIByteString
+import           Data.CaseInsensitive   (CI)
+import qualified Data.CaseInsensitive as CI
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as SC
@@ -449,7 +450,7 @@ receiveRequest = do
 
       where
         isChunked = maybe False
-                          ((== ["chunked"]) . map toCI)
+                          ((== ["chunked"]) . map CI.mk)
                           (Map.lookup "transfer-encoding" hdrs)
 
         hasContentLength :: Int64 -> ServerMonad ()
@@ -684,7 +685,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
 
     --------------------------------------------------------------------------
-    buildHdrs :: Map CIByteString [ByteString]
+    buildHdrs :: Map (CI ByteString) [ByteString]
               -> (Builder,Int)
     buildHdrs hdrs =
         {-# SCC "buildHdrs" #-}
@@ -704,7 +705,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
         h k ys = foldl' (doOne kb klen) (mempty,0) ys
           where
-            k'      = unCI k
+            k'      = CI.original k
             kb      = fromByteString k' `mappend` fromByteString ": "
             klen    = S.length k' + 2
 
@@ -867,7 +868,7 @@ checkConnectionClose ver hdrs =
 toHeaders :: [(ByteString,ByteString)] -> Headers
 toHeaders kvps = foldl' f Map.empty kvps'
   where
-    kvps'     = map (first toCI . second (:[])) kvps
+    kvps'     = map (first CI.mk . second (:[])) kvps
     f m (k,v) = Map.insertWith' (flip (++)) k v m
 
 

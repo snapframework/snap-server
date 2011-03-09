@@ -28,7 +28,6 @@ rm -Rf $DIR
 mkdir -p $DIR
 
 EXCLUDES='Main
-Data.CIByteString
 Data.Concurrent.HashMap.Internal
 Data.Concurrent.HashMap.Tests
 Paths_snap_server
