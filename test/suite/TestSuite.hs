@@ -11,9 +11,9 @@ import           Test.Framework (defaultMain, testGroup)
 import           Snap.Http.Server.Config
 
 
-import qualified Data.Concurrent.HashMap.Tests
 import qualified Snap.Internal.Http.Parser.Tests
 import qualified Snap.Internal.Http.Server.Tests
+import qualified Snap.Internal.Http.Server.TimeoutManager.Tests
 import qualified Test.Blackbox
 
 ports :: [Int]
@@ -45,12 +45,12 @@ main = HTTP.withHttpEnumerator $ do
         mapM_ takeMVar $ map snd tinfos
 
   where tests =
-            [ testGroup "Data.Concurrent.HashMap.Tests"
-                        Data.Concurrent.HashMap.Tests.tests
-            , testGroup "Snap.Internal.Http.Parser.Tests"
+            [ testGroup "Snap.Internal.Http.Parser.Tests"
                         Snap.Internal.Http.Parser.Tests.tests
             , testGroup "Snap.Internal.Http.Server.Tests"
                         Snap.Internal.Http.Server.Tests.tests
+            , testGroup "Snap.Internal.Http.Server.TimeoutManager.Tests"
+                        Snap.Internal.Http.Server.TimeoutManager.Tests.tests
             ]
         blackbox (port, sslport, b) =
             [ testGroup ("Test.Blackbox " ++ backendName)

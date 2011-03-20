@@ -23,18 +23,16 @@ import qualified Data.ByteString as S
 import           Data.ByteString.Internal (c2w)
 import           Data.Maybe
 import           Data.Typeable
-import           Data.Word
 import           Foreign hiding (new)
 import           Foreign.C
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
 import           Prelude hiding (catch)
 ------------------------------------------------------------------------------
-import           Data.Concurrent.HashMap (hashString)
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Date
-import qualified Snap.Internal.Http.Server.TimeoutTable as TT
-import           Snap.Internal.Http.Server.TimeoutTable (TimeoutTable)
+import qualified Snap.Internal.Http.Server.TimeoutManager as TM
+import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
 import           Snap.Internal.Http.Server.Backend
 import qualified Snap.Internal.Http.Server.ListenHelpers as Listen
 import           Snap.Iteratee hiding (map)
@@ -49,14 +47,12 @@ import           System.Posix.Types (Fd(..))
 ------------------------------------------------------------------------------
 -- | For each cpu, we store:
 --    * A list of accept threads, one per port.
---    * One timeout table and one timeout thread.
---      These timeout the session threads.
+--    * A TimeoutManager
 --    * An mvar to signal when the timeout thread is shutdown
 data EventLoopCpu = EventLoopCpu
     { _boundCpu        :: Int
     , _acceptThreads   :: [ThreadId]
-    , _timeoutTable    :: TimeoutTable
-    , _timeoutThread   :: ThreadId
+    , _timeoutManager  :: TimeoutManager
     , _exitMVar        :: !(MVar ())
     }
 
@@ -84,31 +80,30 @@ newLoop :: Int
         -> Int
         -> IO EventLoopCpu
 newLoop defaultTimeout sockets handler elog cpu = do
-    tt         <- TT.new
+    tmgr       <- TM.initialize defaultTimeout getCurrentDateTime
     exit       <- newEmptyMVar
     accThreads <- forM sockets $ \p -> forkOnIO cpu $
-                  acceptThread defaultTimeout handler tt elog cpu p
-    tid        <- forkOnIO cpu $ timeoutThread tt exit
+                  acceptThread defaultTimeout handler tmgr elog cpu p
 
-    return $ EventLoopCpu cpu accThreads tt tid exit
+    return $ EventLoopCpu cpu accThreads tmgr exit
 
 
 ------------------------------------------------------------------------------
 stopLoop :: EventLoopCpu -> IO ()
 stopLoop loop = block $ do
+    TM.stop $ _timeoutManager loop
     Prelude.mapM_ killThread $ _acceptThreads loop
-    killThread $ _timeoutThread loop
 
 
 ------------------------------------------------------------------------------
 acceptThread :: Int
              -> SessionHandler
-             -> TimeoutTable
+             -> TimeoutManager
              -> (S.ByteString -> IO ())
              -> Int
              -> ListenSocket
              -> IO ()
-acceptThread defaultTimeout handler tt elog cpu sock = loop
+acceptThread defaultTimeout handler tmgr elog cpu sock = loop
   where
     loop = do
         debug $ "acceptThread: calling accept() on socket " ++ show sock
@@ -117,7 +112,7 @@ acceptThread defaultTimeout handler tt elog cpu sock = loop
         _ <- forkOnIO cpu (go s addr `catches` cleanup)
         loop
 
-    go = runSession defaultTimeout handler tt sock
+    go = runSession defaultTimeout handler tmgr sock
 
     cleanup =
         [
@@ -126,30 +121,6 @@ acceptThread defaultTimeout handler tt elog cpu sock = loop
                   $ S.concat [ "SimpleBackend.acceptThread: "
                              , S.pack . map c2w $ show e]
         ]
-
-
-------------------------------------------------------------------------------
-timeoutThread :: TimeoutTable -> MVar () -> IO ()
-timeoutThread table exitMVar = do
-    go `catch` (\(_::SomeException) -> killAll)
-    putMVar exitMVar ()
-
-  where
-    go = do
-        debug "timeoutThread: waiting for activity on thread table"
-        TT.waitForActivity table
-        debug "timeoutThread: woke up, killing old connections"
-        killTooOld
-        go
-
-
-    killTooOld = do
-        now    <- getCurrentDateTime
-        TT.killOlderThan now table
-
-    killAll = do
-        debug "Backend.timeoutThread: shutdown, killing all connections"
-        TT.killAll table
 
 
 ------------------------------------------------------------------------------
@@ -165,11 +136,11 @@ instance Exception AddressNotSupportedException
 ------------------------------------------------------------------------------
 runSession :: Int
            -> SessionHandler
-           -> TimeoutTable
+           -> TimeoutManager
            -> ListenSocket
            -> Socket
            -> SockAddr -> IO ()
-runSession defaultTimeout handler tt lsock sock addr = do
+runSession defaultTimeout handler tmgr lsock sock addr = do
     let fd = fdSocket sock
     curId <- myThreadId
 
@@ -193,18 +164,17 @@ runSession defaultTimeout handler tt lsock sock addr = do
           x -> throwIO $ AddressNotSupportedException $ show x
 
     let sinfo = SessionInfo lhost lport rhost rport $ Listen.isSecure lsock
-    let curHash = hashString $ show curId
-    let timeout = tickleTimeout tt curId curHash
 
-    timeout defaultTimeout
+    timeoutHandle <- TM.register (killThread curId) tmgr
+    let timeout = TM.tickle timeoutHandle
 
     bracket (Listen.createSession lsock 8192 fd
               (threadWaitRead $ fromIntegral fd))
             (\session -> block $ do
                  debug "thread killed, closing socket"
 
-                 -- remove thread from timeout table
-                 TT.delete curHash curId tt
+                 -- cancel thread timeout
+                 TM.cancel timeoutHandle
 
                  eatException $ Listen.endSession lsock session
                  eatException $ shutdown sock ShutdownBoth
@@ -261,14 +231,6 @@ sendFile _ _ _ writeEnd fp start sz = do
     run_ $ enumFilePartial fp (start,start+sz) step
     return ()
 #endif
-
-
-------------------------------------------------------------------------------
-tickleTimeout :: TimeoutTable -> ThreadId -> Word -> Int -> IO ()
-tickleTimeout table tid thash tm = do
-    debug "Backend.tickleTimeout"
-    now   <- getCurrentDateTime
-    TT.insert thash tid (now + toEnum tm) table
 
 
 ------------------------------------------------------------------------------

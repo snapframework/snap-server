@@ -53,9 +53,9 @@ extra-source-files:
   test/pongserver/Main.hs,
   test/runTestsAndCoverage.sh,
   test/snap-server-testsuite.cabal,
-  test/suite/Data/Concurrent/HashMap/Tests.hs,
   test/suite/Snap/Internal/Http/Parser/Tests.hs,
   test/suite/Snap/Internal/Http/Server/Tests.hs,
+  test/suite/Snap/Internal/Http/Server/TimeoutManager/Tests.hs,
   test/suite/Test/Blackbox.hs,
   test/suite/TestSuite.hs,
   test/testserver/Main.hs,
@@ -85,8 +85,6 @@ Library
     System.FastLogger
 
   other-modules:
-    Data.Concurrent.HashMap,
-    Data.Concurrent.HashMap.Internal,
     Paths_snap_server,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,
@@ -95,7 +93,7 @@ Library
     Snap.Internal.Http.Server.ListenHelpers,
     Snap.Internal.Http.Server.GnuTLS,
     Snap.Internal.Http.Server.HttpPort,
-    Snap.Internal.Http.Server.TimeoutTable,
+    Snap.Internal.Http.Server.TimeoutManager,
     Snap.Internal.Http.Server.SimpleBackend,
     Snap.Internal.Http.Server.LibevBackend
 
@@ -115,7 +113,6 @@ Library
     filepath,
     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
     mtl == 2.0.*,
-    murmur-hash >= 0.1 && < 0.2,
     network >= 2.3 && <2.4,
     old-locale,
     snap-core >= 0.4.2 && <0.5,
