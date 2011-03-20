@@ -10,10 +10,10 @@ import qualified Network.HTTP.Enumerator as HTTP
 import           Test.Framework (defaultMain, testGroup)
 import           Snap.Http.Server.Config
 
-
 import qualified Data.Concurrent.HashMap.Tests
 import qualified Snap.Internal.Http.Parser.Tests
 import qualified Snap.Internal.Http.Server.Tests
+import qualified Snap.Internal.Http.Server.TimeoutManager.Tests
 import qualified Test.Blackbox
 
 ports :: [Int]
@@ -51,6 +51,8 @@ main = HTTP.withHttpEnumerator $ do
                         Snap.Internal.Http.Parser.Tests.tests
             , testGroup "Snap.Internal.Http.Server.Tests"
                         Snap.Internal.Http.Server.Tests.tests
+            , testGroup "Snap.Internal.Http.Server.TimeoutManager.Tests"
+                        Snap.Internal.Http.Server.TimeoutManager.Tests.tests
             ]
         blackbox (port, sslport, b) =
             [ testGroup ("Test.Blackbox " ++ backendName)
