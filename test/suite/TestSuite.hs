@@ -10,7 +10,7 @@ import qualified Network.HTTP.Enumerator as HTTP
 import           Test.Framework (defaultMain, testGroup)
 import           Snap.Http.Server.Config
 
-
+import qualified Data.Concurrent.HashMap.Tests
 import qualified Snap.Internal.Http.Parser.Tests
 import qualified Snap.Internal.Http.Server.Tests
 import qualified Snap.Internal.Http.Server.TimeoutManager.Tests
@@ -45,7 +45,9 @@ main = HTTP.withHttpEnumerator $ do
         mapM_ takeMVar $ map snd tinfos
 
   where tests =
-            [ testGroup "Snap.Internal.Http.Parser.Tests"
+            [ testGroup "Data.Concurrent.HashMap.Tests"
+                        Data.Concurrent.HashMap.Tests.tests
+            , testGroup "Snap.Internal.Http.Parser.Tests"
                         Snap.Internal.Http.Parser.Tests.tests
             , testGroup "Snap.Internal.Http.Server.Tests"
                         Snap.Internal.Http.Server.Tests.tests

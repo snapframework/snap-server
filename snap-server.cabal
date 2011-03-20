@@ -86,6 +86,8 @@ Library
 
   other-modules:
     Paths_snap_server,
+    Data.Concurrent.HashMap,
+    Data.Concurrent.HashMap.Internal,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,
     Snap.Internal.Http.Server.Date,
