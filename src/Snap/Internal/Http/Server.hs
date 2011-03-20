@@ -1,7 +1,8 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server where
@@ -27,10 +28,11 @@ import           Data.IORef
 import           Data.List (foldl')
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromJust, catMaybes, fromMaybe)
+import           Data.Maybe (catMaybes, fromJust, fromMaybe)
 import           Data.Monoid
-import           Data.Version
 import           Data.Time
+import           Data.Typeable
+import           Data.Version
 import           GHC.Conc
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
@@ -85,6 +87,14 @@ data ListenPort =
 data EventLoopType = EventLoopSimple
                    | EventLoopLibEv
   deriving (Show)
+
+
+------------------------------------------------------------------------------
+-- This exception will be thrown if we decided to terminate the request before
+-- running the user handler.
+data TerminatedBeforeHandlerException = TerminatedBeforeHandlerException
+  deriving (Show, Typeable)
+instance Exception TerminatedBeforeHandlerException
 
 
 ------------------------------------------------------------------------------
@@ -250,9 +260,10 @@ runHTTP :: Int                           -- ^ default timeout
         -> IO ()
 runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         tickle =
-    go `catches` [ Handler $ \(e :: AsyncException) -> do
+    go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
+                       return ()
+                 , Handler $ \(e :: AsyncException) -> do
                        throwIO e
-
                  , Handler $ \(e :: SomeException) ->
                        logE elog $ S.concat [ logPrefix , bshow e ] ]
 
@@ -310,7 +321,7 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
     let writeEnd = iterateeDebugWrapper "writeEnd" writeEnd'
 
     liftIO $ debug "Server.httpSession: entered"
-    mreq  <- receiveRequest
+    mreq  <- receiveRequest writeEnd
     liftIO $ debug "Server.httpSession: receiveRequest finished"
 
     -- successfully got a request, so restart timer
@@ -408,8 +419,30 @@ checkExpect100Continue req writeEnd = do
 
 
 ------------------------------------------------------------------------------
-receiveRequest :: ServerMonad (Maybe Request)
-receiveRequest = do
+return411 :: Request
+          -> Iteratee ByteString IO ()
+          -> ServerMonad a
+return411 req writeEnd = do
+    go
+    liftIO $ throwIO $ TerminatedBeforeHandlerException
+
+  where
+    go = do
+        let (major,minor) = rqVersion req
+        let hl = mconcat [ fromByteString "HTTP/"
+                         , fromShow major
+                         , fromWord8 $ c2w '.'
+                         , fromShow minor
+                         , fromByteString " 411 Length Required\r\n\r\n"
+                         , fromByteString "411 Length Required\r\n" ]
+        liftIO $ runIteratee
+                   ((enumBS (toByteString hl) >==> enumEOF) $$ writeEnd)
+        return ()
+
+
+------------------------------------------------------------------------------
+receiveRequest :: Iteratee ByteString IO () -> ServerMonad (Maybe Request)
+receiveRequest writeEnd = do
     debug "receiveRequest: entered"
     mreq <- {-# SCC "receiveRequest/parseRequest" #-} lift $
             iterateeDebugWrapper "parseRequest" parseRequest
@@ -469,15 +502,17 @@ receiveRequest = do
                 joinI $ takeExactly len st'
 
         noContentLength :: Request -> ServerMonad ()
-        noContentLength rq = liftIO $ do
+        noContentLength rq = do
             debug ("receiveRequest/setEnumerator: " ++
                    "request did NOT have content-length")
+
+            when (rqMethod rq == POST || rqMethod rq == PUT) $
+                 return411 req writeEnd
+
             let enum = SomeEnumerator $
-                       if rqMethod rq == POST || rqMethod rq == PUT
-                         then returnI
-                         else iterateeDebugWrapper "noContentLength" .
-                              joinI . I.take 0
-            writeIORef (rqBody rq) enum
+                       iterateeDebugWrapper "noContentLength" .
+                       joinI . I.take 0
+            liftIO $ writeIORef (rqBody rq) enum
             debug "receiveRequest/setEnumerator: body enumerator set"
 
 
@@ -542,7 +577,6 @@ receiveRequest = do
 
             -- will override in "setEnumerator"
             enum <- liftIO $ newIORef $ SomeEnumerator (enumBS "")
-
 
             return $ Request serverName
                              serverPort

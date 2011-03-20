@@ -71,6 +71,7 @@ tests = [ testHttpRequest1
         , testHttp1
         , testHttp2
         , testHttp100
+        , test411
         , testExpectGarbage
         , testPartialParse
         , testMethodParsing
@@ -112,6 +113,14 @@ sampleRequestExpectContinue =
              , "\r\n"
              , "0123456789" ]
 
+sampleRequest411 :: ByteString
+sampleRequest411 =
+    S.concat [ "\r\nPOST /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
+             , "Host: www.zabble.com:7777\r\n"
+             , "X-Random-Other-Header: foo\r\n bar\r\n"
+             , "Cookie: foo=\"bar\\\"\"\r\n"
+             , "\r\n" ]
+
 sampleRequestExpectGarbage :: ByteString
 sampleRequestExpectGarbage =
     S.concat [ "\r\nGET /foo/bar.html?param1=abc&param2=def%20+&param1=abc HTTP/1.1\r\n"
@@ -140,17 +149,20 @@ testMethodParsing =
     ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT ]
 
 
+dummyIter :: Iteratee ByteString IO ()
+dummyIter = consume >> return ()
+
 
 mkRequest :: ByteString -> IO Request
 mkRequest s = do
-    step <- runIteratee $ liftM fromJust $ rsm receiveRequest
+    step <- runIteratee $ liftM fromJust $ rsm $ receiveRequest dummyIter
     let iter = enumBS s step
     run_ iter
 
 
 testReceiveRequest :: Iteratee ByteString IO (Request,L.ByteString)
 testReceiveRequest = do
-    r  <- liftM fromJust $ rsm receiveRequest
+    r  <- liftM fromJust $ rsm $ receiveRequest dummyIter
     se <- liftIO $ readIORef (rqBody r)
     let (SomeEnumerator e) = se
     it  <- liftM e $ lift $ runIteratee copyingStream2Stream
@@ -230,7 +242,7 @@ testMultiRequest =
 
 testOneMethod :: Method -> IO ()
 testOneMethod m = do
-    step    <- runIteratee $ liftM fromJust $ rsm receiveRequest
+    step    <- runIteratee $ liftM fromJust $ rsm $ receiveRequest dummyIter
     let iter = enumLBS txt step
     req     <- run_ iter
 
@@ -253,7 +265,7 @@ expectException m = do
 
 testPartialParse :: Test
 testPartialParse = testCase "server/short" $ do
-    step <- runIteratee $ liftM fromJust $ rsm receiveRequest
+    step <- runIteratee $ liftM fromJust $ rsm $ receiveRequest dummyIter
     let iter = enumBS sampleShortRequest step
 
     expectException $ run_ iter
@@ -261,7 +273,7 @@ testPartialParse = testCase "server/short" $ do
 
 methodTestText :: Method -> L.ByteString
 methodTestText m = L.concat [ (L.pack $ map c2w $ show m)
-                        , " / HTTP/1.1\r\n\r\n" ]
+                        , " / HTTP/1.1\r\nContent-Length: 0\r\n\r\n" ]
 
 
 sampleRequest2 :: ByteString
@@ -725,6 +737,41 @@ testHttp100 = testCase "server/expect100" $ do
         LC.putStrLn s
 
     assertBool "100 Continue" ok
+
+
+test411 :: Test
+test411 = testCase "server/expect411" $ do
+    let enumBody = enumBS sampleRequest411
+
+    ref <- newIORef ""
+
+    let (iter,onSendFile) = mkIter ref
+
+    runHTTP 60
+            Nothing
+            Nothing
+            echoServer2
+            "localhost"
+            (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58384 False)
+            enumBody
+            iter
+            onSendFile
+            (const $ return ())
+
+    s <- readIORef ref
+
+    let lns = LC.lines s
+
+    let ok = case lns of
+               ("HTTP/1.1 411 Length Required\r":_) -> True
+               _ -> False
+
+    when (not ok) $ do
+        putStrLn "expect411 fail! got:"
+        LC.putStrLn s
+
+    assertBool "411 Length Required" ok
+
 
 
 testExpectGarbage :: Test
