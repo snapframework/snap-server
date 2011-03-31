@@ -109,7 +109,7 @@ pLine = continue $ k S.empty
       where
         (!a,!b) = S.breakSubstring "\r\n" s
         !s      = S.append pre s'
-        !s      = S.concat xs
+        !s'     = S.concat xs
 
 
 ------------------------------------------------------------------------------
