@@ -83,7 +83,7 @@ newLoop defaultTimeout sockets handler elog cpu = do
     tmgr       <- TM.initialize defaultTimeout getCurrentDateTime
     exit       <- newEmptyMVar
     accThreads <- forM sockets $ \p -> forkOnIO cpu $
-                  acceptThread defaultTimeout handler tmgr elog cpu p
+                  acceptThread defaultTimeout handler tmgr elog cpu p exit
 
     return $ EventLoopCpu cpu accThreads tmgr exit
 
@@ -102,8 +102,10 @@ acceptThread :: Int
              -> (S.ByteString -> IO ())
              -> Int
              -> ListenSocket
+             -> MVar ()
              -> IO ()
-acceptThread defaultTimeout handler tmgr elog cpu sock = loop
+acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
+    loop `finally` (tryPutMVar exitMVar () >> return ())
   where
     loop = do
         debug $ "acceptThread: calling accept() on socket " ++ show sock
