@@ -54,6 +54,7 @@ import           Data.Monoid
 import           Prelude hiding (catch)
 import           Snap.Types
 import           Snap.Iteratee ((>==>), enumBuilder)
+import           Snap.Internal.Debug (debug)
 import           System.Console.GetOpt
 import           System.Environment hiding (getEnv)
 #ifndef PORTABLE
@@ -192,27 +193,35 @@ instance MonadSnap m => Monoid (Config m a) where
 --
 defaultConfig :: MonadSnap m => Config m a
 defaultConfig = Config
-    { hostname     = Just "localhost"
-    , listen       = []
-    , accessLog    = Just $ Just "log/access.log"
-    , errorLog     = Just $ Just "log/error.log"
-    , locale       = Just "en_US"
-    , backend      = Nothing
-    , compression  = Just True
-    , verbose      = Just True
-    , errorHandler = Just $ \e -> do
-        let err = U.fromString $ show e
-            msg = mappend "A web handler threw an exception. Details:\n" err
-        finishWith $ setContentType "text/plain; charset=utf-8"
-                   . setContentLength (fromIntegral $ B.length msg)
-                   . setResponseStatus 500 "Internal Server Error"
-                   . modifyResponseBody
-                         (>==> enumBuilder (fromByteString msg))
-                   $ emptyResponse
+    { hostname       = Just "localhost"
+    , listen         = []
+    , accessLog      = Just $ Just "log/access.log"
+    , errorLog       = Just $ Just "log/error.log"
+    , locale         = Just "en_US"
+    , backend        = Nothing
+    , compression    = Just True
+    , verbose        = Just True
+    , errorHandler   = Just defaultErrorHandler
     , defaultTimeout = Just 60
-    , other        = Nothing
+    , other          = Nothing
     }
 
+
+------------------------------------------------------------------------------
+defaultErrorHandler :: MonadSnap m => SomeException -> m ()
+defaultErrorHandler e = do
+    debug "Snap.Http.Server.Config errorHandler: got exception:"
+    debug $ show e
+    logError msg
+    finishWith $ setContentType "text/plain; charset=utf-8"
+               . setContentLength (fromIntegral $ B.length msg)
+               . setResponseStatus 500 "Internal Server Error"
+               . modifyResponseBody
+                     (>==> enumBuilder (fromByteString msg))
+               $ emptyResponse
+  where    
+    err = U.fromString $ show e
+    msg = mappend "A web handler threw an exception. Details:\n" err
 
 ------------------------------------------------------------------------------
 -- | Completes a partial 'Config' by filling in the unspecified values with
