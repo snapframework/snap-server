@@ -364,10 +364,10 @@ options defaults =
              (ReqArg (\s -> Just $ mempty { sslport = Just $ read s}) "PORT")
              $ "ssl port to listen on" ++ defaultO sslport
     , Option [] ["ssl-cert"]
-             (ReqArg (\s -> Just $ mempty { sslcert = Just $ read s}) "PATH")
+             (ReqArg (\s -> Just $ mempty { sslcert = Just s}) "PATH")
              $ "path to ssl certificate in PEM format" ++ defaultO sslcert
     , Option [] ["ssl-key"]
-             (ReqArg (\s -> Just $ mempty { sslkey = Just $ read s}) "PATH")
+             (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey
     , Option [] ["access-log"]
              (ReqArg (Just . setConfig setAccessLog . Just) "PATH")
