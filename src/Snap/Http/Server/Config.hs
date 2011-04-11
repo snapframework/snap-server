@@ -266,7 +266,7 @@ instance MonadSnap m => Monoid (OptionData m a) where
         }
 
     a `mappend` b = OptionData
-        { config       = (config       b) `mappend` (config       a)
+        { config       = (config       a) `mappend` (config       b)
         , bind         = (bind         b) `mplus`   (bind         a)
         , port         = (port         b) `mplus`   (port         a)
         , sslbind      = (sslbind      b) `mplus`   (sslbind      a)
@@ -376,10 +376,10 @@ options defaults =
              (ReqArg (Just . setConfig setErrorLog . Just) "PATH")
              $ "error log" ++ (defaultC $ join . getErrorLog)
     , Option [] ["no-access-log"]
-             (NoArg $ Just $ setConfig setErrorLog Nothing)
+             (NoArg $ Just $ setConfig setAccessLog Nothing)
              $ "don't have an access log"
     , Option [] ["no-error-log"]
-             (NoArg $ Just $ setConfig setAccessLog Nothing)
+             (NoArg $ Just $ setConfig setErrorLog Nothing)
              $ "don't have an error log"
     , Option ['c'] ["compression"]
              (NoArg $ Just $ setConfig setCompression True)
