@@ -278,8 +278,13 @@ enumerate port session sock = loop
           (Error e)      -> throwError e
 
     fd = fdSocket sock
+#ifdef PORTABLE
+    timeoutRecv = Listen.recv port sock (threadWaitRead $
+                  fromIntegral fd) session
+#else
     timeoutRecv = Listen.recv port (threadWaitRead $
                   fromIntegral fd) session
+#endif
 
 
 ------------------------------------------------------------------------------
@@ -312,5 +317,10 @@ writeOut port session sock tickle = loop
               loop
 
     fd = fdSocket sock
+#ifdef PORTABLE
+    timeoutSend = Listen.send port sock tickle
+                              (threadWaitWrite $ fromIntegral fd) session
+#else
     timeoutSend = Listen.send port tickle
                               (threadWaitWrite $ fromIntegral fd) session
+#endif
