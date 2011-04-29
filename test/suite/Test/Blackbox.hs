@@ -89,7 +89,7 @@ startTestServer port sslport backend = do
                 (httpServe cfg' testHandler)
                   `catch` \(_::SomeException) -> return ()
                 putMVar mvar ()
-    waitabit
+    threadDelay $ 4*seconds
 
     return (tid,mvar)
 
@@ -161,7 +161,7 @@ testFileUpload :: Bool -> Int -> String -> Test
 testFileUpload ssl port name = 
     plusTestOptions testOptions $
     testProperty (name ++ "/blackbox/upload") $
-    QC.mapSize (if ssl then min 100 else id) $
+    QC.mapSize (if ssl then min 100 else min 300) $
     monadicIO $
     forAllM arbitrary prop
   where
