@@ -167,7 +167,7 @@ testFileUpload ssl port name =
   where
     testOptions = if ssl
                     then mempty { topt_maximum_generated_tests = Just 100 }
-                    else mempty
+                    else mempty { topt_maximum_generated_tests = Just 300 }
 
     boundary = "boundary-jdsklfjdsalkfjadlskfjldskjfldskjfdsfjdsklfldksajfl"
 
