@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.4.2
+version:        0.4.3
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -117,7 +117,7 @@ Library
     murmur-hash >= 0.1 && < 0.2,
     network >= 2.3 && <2.4,
     old-locale,
-    snap-core >= 0.4.2 && <0.5,
+    snap-core >= 0.4.3 && <0.5,
     template-haskell,
     time,
     transformers,
