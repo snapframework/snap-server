@@ -1,11 +1,13 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE PackageImports     #-}
+{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE ViewPatterns       #-}
 
 module Snap.Internal.Http.Parser
   ( IRequest(..)
+  , HttpParseException
   , parseRequest
   , readChunkedTransferEncoding
   , iterParser
@@ -17,6 +19,7 @@ module Snap.Internal.Http.Parser
 
 ------------------------------------------------------------------------------
 import           Control.Arrow (second)
+import           Control.Exception
 import           Control.Monad (liftM)
 import           Control.Monad.Trans
 import           Data.Attoparsec hiding (many, Result(..))
@@ -33,6 +36,7 @@ import           Data.Int
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes)
+import           Data.Typeable
 import           Prelude hiding (head, take, takeWhile)
 ----------------------------------------------------------------------------
 import           Snap.Internal.Http.Types
@@ -63,6 +67,10 @@ instance Show IRequest where
                , " "
                , show r ]
 
+
+------------------------------------------------------------------------------
+data HttpParseException = HttpParseException String deriving (Typeable, Show)
+instance Exception HttpParseException
 
 ------------------------------------------------------------------------------
 parseRequest :: (Monad m) => Iteratee ByteString m (Maybe IRequest)
@@ -101,7 +109,8 @@ parseRequest = do
 pLine :: (Monad m) => Iteratee ByteString m ByteString
 pLine = continue $ k S.empty
   where
-    k _ EOF = error "FIXME: parse error: expected line ending in crlf"
+    k _ EOF = throwError $
+              HttpParseException "parse error: expected line ending in crlf"
     k !pre (Chunks xs) =
         if S.null b
           then continue $ k a
@@ -168,7 +177,8 @@ methodFromString "DELETE"  = return DELETE
 methodFromString "TRACE"   = return TRACE
 methodFromString "OPTIONS" = return OPTIONS
 methodFromString "CONNECT" = return CONNECT
-methodFromString s         = fail $ "Bad method '" ++ S.unpack s ++ "'"
+methodFromString s         = 
+    throwError $ HttpParseException $ "Bad method '" ++ S.unpack s ++ "'"
 
 
 ------------------------------------------------------------------------------

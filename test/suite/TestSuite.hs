@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
@@ -6,8 +7,10 @@ import           Control.Exception
 import           Control.Concurrent (killThread)
 import           Control.Concurrent.MVar
 import           Control.Monad
+import           Prelude hiding (catch)
 import qualified Network.HTTP.Enumerator as HTTP
 import           Test.Framework (defaultMain, testGroup)
+import           System.Environment
 import           Snap.Http.Server.Config
 
 import qualified Data.Concurrent.HashMap.Tests
@@ -16,31 +19,42 @@ import qualified Snap.Internal.Http.Server.Tests
 import qualified Snap.Internal.Http.Server.TimeoutManager.Tests
 import qualified Test.Blackbox
 
-ports :: [Int]
-ports = [8195..]
+ports :: Int -> [Int]
+ports sp = [sp..]
 
 #ifdef GNUTLS
-sslports :: [Maybe Int]
-sslports = map Just [8295..]
+sslports :: Int -> [Maybe Int]
+sslports sp = map Just [(sp + 100)..]
 #else
-sslports :: [Maybe Int]
-sslports = repeat Nothing
+sslports :: Int -> [Maybe Int]
+sslports _ = repeat Nothing
 #endif
 
 #ifdef LIBEV
-backends :: [(Int,Maybe Int,ConfigBackend)]
-backends = zip3 ports sslports [ConfigSimpleBackend, ConfigLibEvBackend]
+backends :: Int -> [(Int,Maybe Int,ConfigBackend)]
+backends sp = zip3 (ports sp)
+                   (sslports sp)
+                   [ConfigSimpleBackend, ConfigLibEvBackend]
 #else
-backends :: [(Int,Maybe Int,ConfigBackend)]
-backends = zip3 ports sslports [ConfigSimpleBackend]
+backends :: Int -> [(Int,Maybe Int,ConfigBackend)]
+backends sp = zip3 (ports sp)
+                   (sslports sp)
+                   [ConfigSimpleBackend]
 #endif
+
+getStartPort :: IO Int
+getStartPort = (liftM read (getEnv "STARTPORT") >>= evaluate)
+                 `catch` \(_::SomeException) -> return 8111
+
 
 main :: IO ()
 main = HTTP.withHttpEnumerator $ do
-    tinfos <- forM backends $ \(port,sslport,b) ->
+    sp <- getStartPort
+    let bends = backends sp
+    tinfos <- forM bends $ \(port,sslport,b) ->
         Test.Blackbox.startTestServer port sslport b
 
-    defaultMain (tests ++ concatMap blackbox backends) `finally` do
+    defaultMain (tests ++ concatMap blackbox bends) `finally` do
         mapM_ killThread $ map fst tinfos
         mapM_ takeMVar $ map snd tinfos
 

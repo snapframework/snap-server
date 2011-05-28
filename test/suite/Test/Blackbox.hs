@@ -59,6 +59,13 @@ tests port name = map (\f -> f False port name) testFunctions
 
 
 ------------------------------------------------------------------------------
+slowTestOptions ssl =
+    if ssl
+      then mempty { topt_maximum_generated_tests = Just 75 }
+      else mempty { topt_maximum_generated_tests = Just 300 }
+
+
+------------------------------------------------------------------------------
 ssltests :: String -> Maybe Int -> [Test]
 ssltests name = maybe [] httpsTests
     where httpsTests port = map (\f -> f True port sslname) testFunctions
@@ -89,7 +96,7 @@ startTestServer port sslport backend = do
                 (httpServe cfg' testHandler)
                   `catch` \(_::SomeException) -> return ()
                 putMVar mvar ()
-    waitabit
+    threadDelay $ 4*seconds
 
     return (tid,mvar)
 
@@ -139,8 +146,11 @@ testPong ssl port name = testCase (name ++ "/blackbox/pong") $ do
 
 ------------------------------------------------------------------------------
 testEcho :: Bool -> Int -> String -> Test
-testEcho ssl port name = testProperty (name ++ "/blackbox/echo") $
-                         monadicIO $ forAllM arbitrary prop
+testEcho ssl port name =
+    plusTestOptions (slowTestOptions ssl) $
+    testProperty (name ++ "/blackbox/echo") $
+    QC.mapSize (if ssl then min 100 else min 300) $
+    monadicIO $ forAllM arbitrary prop
   where
     prop txt = do
         let uri = (if ssl then "https" else "http")
@@ -159,16 +169,12 @@ testEcho ssl port name = testProperty (name ++ "/blackbox/echo") $
 ------------------------------------------------------------------------------
 testFileUpload :: Bool -> Int -> String -> Test
 testFileUpload ssl port name = 
-    plusTestOptions testOptions $
+    plusTestOptions (slowTestOptions ssl) $
     testProperty (name ++ "/blackbox/upload") $
-    QC.mapSize (if ssl then min 100 else id) $
+    QC.mapSize (if ssl then min 100 else min 300) $
     monadicIO $
     forAllM arbitrary prop
   where
-    testOptions = if ssl
-                    then mempty { topt_maximum_generated_tests = Just 100 }
-                    else mempty
-
     boundary = "boundary-jdsklfjdsalkfjadlskfjldskjfldskjfdsfjdsklfldksajfl"
 
     prefix = [ "--"
@@ -238,8 +244,10 @@ testFileUpload ssl port name =
 
 ------------------------------------------------------------------------------
 testRot13 :: Bool -> Int -> String -> Test
-testRot13 ssl port name = testProperty (name ++ "/blackbox/rot13") $
-                          monadicIO $ forAllM arbitrary prop
+testRot13 ssl port name =
+    plusTestOptions (slowTestOptions ssl) $
+    testProperty (name ++ "/blackbox/rot13") $
+    monadicIO $ forAllM arbitrary prop
   where
     prop txt = do
         let uri = (if ssl then "https" else "http")

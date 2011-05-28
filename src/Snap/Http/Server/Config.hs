@@ -31,6 +31,7 @@ module Snap.Http.Server.Config
 
   , setHostname
   , addListen
+  , setListen
   , setAccessLog
   , setErrorLog
   , setLocale
@@ -509,6 +510,11 @@ setHostname a m = m {hostname = Just a}
 ------------------------------------------------------------------------------
 addListen :: MonadSnap m => ConfigListen -> Config m a -> Config m a
 addListen a m = m {listen = a : listen m}
+
+
+------------------------------------------------------------------------------
+setListen :: MonadSnap m => [ConfigListen] -> Config m a -> Config m a
+setListen a m = m {listen = a}
 
 
 ------------------------------------------------------------------------------
