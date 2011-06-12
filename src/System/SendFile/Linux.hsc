@@ -29,7 +29,7 @@ sendfile onBlock out_fd in_fd poff bytes = do
     if nsent <= -1
       then do errno <- getErrno
               if errno == eAGAIN
-                then onBlock >> sendfile out_fd in_fd poff bytes
+                then onBlock >> sendfile onBlock out_fd in_fd poff bytes
                 else throwErrno "System.SendFile.Linux"
       else return nsent
 
