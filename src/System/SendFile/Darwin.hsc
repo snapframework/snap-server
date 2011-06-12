@@ -10,23 +10,26 @@ import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
 import System.Posix.Types (Fd, COff)
 
-sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFile out_fd in_fd off count
+sendFile :: IO () -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFile onBlock out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do
         poke pbytes $ min maxBytes (fromIntegral count)
-        sbytes <- sendfile out_fd in_fd (fromIntegral off) pbytes
+        sbytes <- sendfile onBlock out_fd in_fd (fromIntegral off) pbytes
         return $ fromIntegral sbytes
 
-sendfile :: Fd -> Fd -> COff -> Ptr COff -> IO COff
-sendfile out_fd in_fd off pbytes = do
+sendfile :: IO () -> Fd -> Fd -> COff -> Ptr COff -> IO COff
+sendfile onBlock out_fd in_fd off pbytes = do
     status <- c_sendfile out_fd in_fd off pbytes
     nsent <- peek pbytes
     if status == 0
       then return nsent
       else do errno <- getErrno
               if (errno == eAGAIN) || (errno == eINTR)
-                then return nsent
+                then do
+                    if nsent == 0
+                      then onBlock >> sendfile onBlock out_fd in_fd off pbytes
+                      else return nsent
                 else throwErrno "System.SendFile.Darwin"
 
 -- max num of bytes in one send
@@ -38,4 +41,5 @@ foreign import ccall unsafe "sys/uio.h sendfile" c_sendfile_darwin
     :: Fd -> Fd -> COff -> Ptr COff -> Ptr () -> CInt -> IO CInt
 
 c_sendfile :: Fd -> Fd -> COff -> Ptr COff -> IO CInt
-c_sendfile out_fd in_fd off pbytes = c_sendfile_darwin in_fd out_fd off pbytes nullPtr 0
+c_sendfile out_fd in_fd off pbytes =
+    c_sendfile_darwin in_fd out_fd off pbytes nullPtr 0

@@ -662,7 +662,7 @@ sendFile defaultTimeout c s fp start sz = do
     go off bytes fd
       | bytes == 0 = return ()
       | otherwise  = do
-            sent <- SF.sendFile sfd fd off bytes
+            sent <- SF.sendFile (waitForLock False c) sfd fd off bytes
             if sent < bytes
               then tickleTimeout c defaultTimeout >>
                    go (off+sent) (bytes-sent) fd
