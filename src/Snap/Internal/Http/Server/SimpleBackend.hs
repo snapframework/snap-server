@@ -220,7 +220,7 @@ sendFile lsock tickle sock writeEnd fp start sz =
     go off bytes fd
       | bytes == 0 = return ()
       | otherwise  = do
-            sent <- SF.sendFile (threadWaitWrite $ fromIntegral fd)
+            sent <- SF.sendFile (threadWaitWrite $ fromIntegral sock)
                                 sfd fd off bytes
             if sent < bytes
               then tickle >> go (off+sent) (bytes-sent) fd
