@@ -46,7 +46,7 @@ Executable testsuite
      old-locale,
      parallel > 2,
      process,
-     snap-core >= 0.4.3 && <0.5,
+     snap-core >= 0.4.4 && <0.5,
      template-haskell,
      test-framework >= 0.3.1 && <0.4,
      test-framework-hunit >= 0.2.5 && < 0.3,
