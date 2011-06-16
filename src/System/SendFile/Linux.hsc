@@ -10,26 +10,26 @@ import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (poke)
 import System.Posix.Types (Fd, COff, CSsize)
 
-sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFile out_fd in_fd off count
+sendFile :: IO () -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFile onBlock out_fd in_fd off count
   | count == 0 = return 0
   | off == 0   = do
-        sbytes <- sendfile out_fd in_fd nullPtr bytes
+        sbytes <- sendfile onBlock out_fd in_fd nullPtr bytes
         return $ fromIntegral sbytes
   | otherwise  = alloca $ \poff -> do
         poke poff (fromIntegral off)
-        sbytes <- sendfile out_fd in_fd poff bytes
+        sbytes <- sendfile onBlock out_fd in_fd poff bytes
         return $ fromIntegral sbytes
     where
       bytes = min (fromIntegral count) maxBytes
 
-sendfile :: Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
-sendfile out_fd in_fd poff bytes = do
+sendfile :: IO () -> Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
+sendfile onBlock out_fd in_fd poff bytes = do
     nsent <- c_sendfile out_fd in_fd poff bytes
     if nsent <= -1
       then do errno <- getErrno
               if errno == eAGAIN
-                then sendfile out_fd in_fd poff bytes
+                then onBlock >> sendfile onBlock out_fd in_fd poff bytes
                 else throwErrno "System.SendFile.Linux"
       else return nsent
 

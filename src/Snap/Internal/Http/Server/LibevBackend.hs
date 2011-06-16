@@ -112,10 +112,10 @@ libEvEventLoop defaultTimeout sockets cap elog handler = do
                              [0..(cap-1)]
 
     debug "libevEventLoop: waiting for loop exit"
-    Prelude.mapM_ (takeMVar . _loopExit) backends `finally` do
-        debug "libevEventLoop: stopping all backends"
-        mapM stop backends
-        mapM Listen.closeSocket sockets
+    ignoreException (Prelude.mapM_ (takeMVar . _loopExit) backends)
+    debug "libevEventLoop: stopping all backends"
+    ignoreException $ mapM stop backends
+    ignoreException $ mapM Listen.closeSocket sockets
 
 
 ------------------------------------------------------------------------------
@@ -382,11 +382,6 @@ freeConnection conn = ignoreException $ do
 
 
 ------------------------------------------------------------------------------
-ignoreException :: IO () -> IO ()
-ignoreException = handle (\(_::SomeException) -> return ())
-
-
-------------------------------------------------------------------------------
 freeBackend :: Backend -> IO ()
 freeBackend backend = ignoreException $ block $ do
     -- note: we only get here after an unloop, so we have the loop lock
@@ -527,8 +522,8 @@ runSession defaultTimeout backend handler lsock fd = do
             (\session -> block $ do
                 debug "runSession: thread killed, closing socket"
 
-                eatException $ Listen.endSession lsock session
-                eatException $ freeConnection conn
+                ignoreException $ Listen.endSession lsock session
+                ignoreException $ freeConnection conn
             )
             (\session -> do H.update tid conn (_connectionThreads backend)
                             handler sinfo
@@ -540,8 +535,9 @@ runSession defaultTimeout backend handler lsock fd = do
 
 
 ------------------------------------------------------------------------------
-eatException :: IO a -> IO ()
-eatException act = (act >> return ()) `catch` \(_::SomeException) -> return ()
+ignoreException :: IO a -> IO ()
+ignoreException act =
+    (act >> return ()) `catch` \(_::SomeException) -> return ()
 
 
 ------------------------------------------------------------------------------
@@ -666,7 +662,7 @@ sendFile defaultTimeout c s fp start sz = do
     go off bytes fd
       | bytes == 0 = return ()
       | otherwise  = do
-            sent <- SF.sendFile sfd fd off bytes
+            sent <- SF.sendFile (waitForLock False c) sfd fd off bytes
             if sent < bytes
               then tickleTimeout c defaultTimeout >>
                    go (off+sent) (bytes-sent) fd

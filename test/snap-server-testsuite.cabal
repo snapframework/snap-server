@@ -28,7 +28,7 @@ Executable testsuite
      base >= 4 && < 5,
      base16-bytestring == 0.1.*,
      binary >= 0.5 && < 0.6,
-     blaze-builder >= 0.2.1.4 && <0.3,
+     blaze-builder >= 0.2.1.4 && <0.4,
      blaze-builder-enumerator >= 0.2.0 && <0.3,
      bytestring,
      bytestring-nums >= 0.3.1 && < 0.4,
@@ -46,7 +46,7 @@ Executable testsuite
      old-locale,
      parallel > 2,
      process,
-     snap-core >= 0.4.1 && <0.5,
+     snap-core >= 0.4.4 && <0.5,
      template-haskell,
      test-framework >= 0.3.1 && <0.4,
      test-framework-hunit >= 0.2.5 && < 0.3,
@@ -73,6 +73,7 @@ Executable testsuite
    if flag(portable) || os(windows)
      cpp-options: -DPORTABLE
 
+   ghc-prof-options: -prof -auto-all
    ghc-options: -O2 -Wall -fhpc -fwarn-tabs
                 -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
@@ -89,7 +90,7 @@ Executable pongserver
      attoparsec-enumerator >= 0.2.0.1 && < 0.3,
      base >= 4 && < 5,
      base16-bytestring == 0.1.*,
-     blaze-builder >= 0.2.1.4 && <0.3,
+     blaze-builder >= 0.2.1.4 && <0.4,
      blaze-builder-enumerator >= 0.2.0 && <0.3,
      bytestring,
      bytestring-nums >= 0.3.1 && < 0.4,
@@ -167,7 +168,7 @@ Executable testserver
      attoparsec-enumerator >= 0.2.0.1 && < 0.3,
      base >= 4 && < 5,
      binary >= 0.5 && < 0.6,
-     blaze-builder >= 0.2.1.4 && <0.3,
+     blaze-builder >= 0.2.1.4 && <0.4,
      blaze-builder-enumerator >= 0.2.0 && <0.3,
      bytestring,
      bytestring-nums >= 0.3.1 && < 0.4,
@@ -213,11 +214,19 @@ Executable testserver
    ghc-options: -O2 -Wall -fwarn-tabs
                 -funbox-strict-fields -threaded
                 -fno-warn-unused-do-bind
+   ghc-prof-options: -prof -auto-all
 
 
 Executable benchmark
    hs-source-dirs:  benchmark common ../src
    main-is:         Benchmark.hs
+
+   ghc-options: -O2 -Wall -fwarn-tabs
+                -funbox-strict-fields -threaded
+                -fno-warn-unused-do-bind
+
+   ghc-prof-options: -prof -auto-all
+
    build-depends:
      base >= 4 && < 5,
      network == 2.3.*,

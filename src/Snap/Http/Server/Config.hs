@@ -31,6 +31,7 @@ module Snap.Http.Server.Config
 
   , setHostname
   , addListen
+  , setListen
   , setAccessLog
   , setErrorLog
   , setLocale
@@ -54,6 +55,7 @@ import           Data.Monoid
 import           Prelude hiding (catch)
 import           Snap.Types
 import           Snap.Iteratee ((>==>), enumBuilder)
+import           Snap.Internal.Debug (debug)
 import           System.Console.GetOpt
 import           System.Environment hiding (getEnv)
 #ifndef PORTABLE
@@ -192,27 +194,35 @@ instance MonadSnap m => Monoid (Config m a) where
 --
 defaultConfig :: MonadSnap m => Config m a
 defaultConfig = Config
-    { hostname     = Just "localhost"
-    , listen       = []
-    , accessLog    = Just $ Just "log/access.log"
-    , errorLog     = Just $ Just "log/error.log"
-    , locale       = Just "en_US"
-    , backend      = Nothing
-    , compression  = Just True
-    , verbose      = Just True
-    , errorHandler = Just $ \e -> do
-        let err = U.fromString $ show e
-            msg = mappend "A web handler threw an exception. Details:\n" err
-        finishWith $ setContentType "text/plain; charset=utf-8"
-                   . setContentLength (fromIntegral $ B.length msg)
-                   . setResponseStatus 500 "Internal Server Error"
-                   . modifyResponseBody
-                         (>==> enumBuilder (fromByteString msg))
-                   $ emptyResponse
+    { hostname       = Just "localhost"
+    , listen         = []
+    , accessLog      = Just $ Just "log/access.log"
+    , errorLog       = Just $ Just "log/error.log"
+    , locale         = Just "en_US"
+    , backend        = Nothing
+    , compression    = Just True
+    , verbose        = Just True
+    , errorHandler   = Just defaultErrorHandler
     , defaultTimeout = Just 60
-    , other        = Nothing
+    , other          = Nothing
     }
 
+
+------------------------------------------------------------------------------
+defaultErrorHandler :: MonadSnap m => SomeException -> m ()
+defaultErrorHandler e = do
+    debug "Snap.Http.Server.Config errorHandler: got exception:"
+    debug $ show e
+    logError msg
+    finishWith $ setContentType "text/plain; charset=utf-8"
+               . setContentLength (fromIntegral $ B.length msg)
+               . setResponseStatus 500 "Internal Server Error"
+               . modifyResponseBody
+                     (>==> enumBuilder (fromByteString msg))
+               $ emptyResponse
+  where    
+    err = U.fromString $ show e
+    msg = mappend "A web handler threw an exception. Details:\n" err
 
 ------------------------------------------------------------------------------
 -- | Completes a partial 'Config' by filling in the unspecified values with
@@ -355,10 +365,10 @@ options defaults =
              (ReqArg (\s -> Just $ mempty { sslport = Just $ read s}) "PORT")
              $ "ssl port to listen on" ++ defaultO sslport
     , Option [] ["ssl-cert"]
-             (ReqArg (\s -> Just $ mempty { sslcert = Just $ read s}) "PATH")
+             (ReqArg (\s -> Just $ mempty { sslcert = Just s}) "PATH")
              $ "path to ssl certificate in PEM format" ++ defaultO sslcert
     , Option [] ["ssl-key"]
-             (ReqArg (\s -> Just $ mempty { sslkey = Just $ read s}) "PATH")
+             (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey
     , Option [] ["access-log"]
              (ReqArg (Just . setConfig setAccessLog . Just) "PATH")
@@ -500,6 +510,11 @@ setHostname a m = m {hostname = Just a}
 ------------------------------------------------------------------------------
 addListen :: MonadSnap m => ConfigListen -> Config m a -> Config m a
 addListen a m = m {listen = a : listen m}
+
+
+------------------------------------------------------------------------------
+setListen :: MonadSnap m => [ConfigListen] -> Config m a -> Config m a
+setListen a m = m {listen = a}
 
 
 ------------------------------------------------------------------------------
