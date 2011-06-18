@@ -8,6 +8,7 @@ import           Control.Concurrent (killThread)
 import           Control.Concurrent.MVar
 import           Control.Monad
 import           Prelude hiding (catch)
+import           Network (withSocketsDo)
 import qualified Network.HTTP.Enumerator as HTTP
 import           Test.Framework (defaultMain, testGroup)
 import           System.Environment
@@ -48,7 +49,7 @@ getStartPort = (liftM read (getEnv "STARTPORT") >>= evaluate)
 
 
 main :: IO ()
-main = HTTP.withHttpEnumerator $ do
+main = withSocketsDo $ do
     sp <- getStartPort
     let bends = backends sp
     tinfos <- forM bends $ \(port,sslport,b) ->

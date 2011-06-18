@@ -83,6 +83,13 @@ data ListenPort =
     -- (bind address, port, path to certificate, path to key)
     HttpsPort ByteString Int FilePath FilePath
 
+------------------------------------------------------------------------------
+instance Show ListenPort where
+    show (HttpPort b p) =
+        concat [ "http://", SC.unpack b, ":", show p, "/" ]
+    show (HttpsPort b p _ _) =
+        concat [ "https://", SC.unpack b, ":", show p, "/" ]
+
 
 ------------------------------------------------------------------------------
 data EventLoopType = EventLoopSimple

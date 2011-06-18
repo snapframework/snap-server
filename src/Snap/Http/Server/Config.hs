@@ -3,55 +3,68 @@
 
 {-|
 
-This module exports the 'Config' datatype which represents partially-specified
-configurations of \"serve\" functions which run 'Snap' actions in 'IO'.
+This module exports the 'Config' datatype, which you can use to configure the
+Snap HTTP server.
 
 -}
 
 module Snap.Http.Server.Config
   ( Config
-  , ConfigListen(..)
   , ConfigBackend(..)
+
   , emptyConfig
   , defaultConfig
-  , completeConfig
   , commandLineConfig
+  , completeConfig
 
-  , getHostname
-  , getListen
   , getAccessLog
-  , getErrorLog
-  , getLocale
   , getBackend
+  , getBind
   , getCompression
-  , getVerbose
-  , getErrorHandler
   , getDefaultTimeout
+  , getErrorHandler
+  , getErrorLog
+  , getHostname
+  , getLocale
   , getOther
+  , getPort
+  , getSSLBind
+  , getSSLCert
+  , getSSLKey
+  , getSSLPort
+  , getVerbose
 
-  , setHostname
-  , addListen
-  , setListen
   , setAccessLog
-  , setErrorLog
-  , setLocale
   , setBackend
+  , setBind
   , setCompression
-  , setVerbose
-  , setErrorHandler
   , setDefaultTimeout
+  , setErrorHandler
+  , setErrorLog
+  , setHostname
+  , setLocale
   , setOther
+  , setPort
+  , setSSLBind
+  , setSSLCert
+  , setSSLKey
+  , setSSLPort
+  , setVerbose
   ) where
+
 
 import           Blaze.ByteString.Builder
 import           Control.Exception (SomeException)
 import           Control.Monad
-import qualified Data.ByteString.UTF8 as U
 import qualified Data.ByteString.Char8 as B
 import           Data.ByteString (ByteString)
 import           Data.Char
+import           Data.Function
 import           Data.List
+import           Data.Maybe
 import           Data.Monoid
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import           Prelude hiding (catch)
 import           Snap.Types
 import           Snap.Iteratee ((>==>), enumBuilder)
@@ -64,301 +77,306 @@ import           System.Posix.Env
 import           System.Exit
 import           System.IO
 
+
 ------------------------------------------------------------------------------
--- | A data type to store the bind address and port to listen on.
+-- | This datatype allows you to override which backend (either simple or
+-- libev) to use. Most users will not want to set this, preferring to rely on
+-- the compile-type default.
 --
---  For SSL support, it also stores the path to the certificate in PEM format
---  and the path to the private key in PEM format
-data ConfigListen = ListenHttp  ByteString Int
-                  | ListenHttps ByteString Int FilePath FilePath
-
-
-instance Show ConfigListen where
-    show (ListenHttp b p) = "http://" ++ U.toString b ++ ":" ++ show p
-    show (ListenHttps b p c k) =
-        "https://" ++ U.toString b ++ ":" ++ show p ++
-        " (cert = " ++ show c ++ ", key = " ++ show k ++ ")"
-
-
-------------------------------------------------------------------------------
--- | A data type to record which backend event loop should be used when
--- serving data.
+-- Note that if you specify the libev backend and have not compiled in support
+-- for it, your server will fail at runtime.
 data ConfigBackend = ConfigSimpleBackend
                    | ConfigLibEvBackend
-    deriving (Eq,Show)
-
+  deriving (Show, Eq)
 
 ------------------------------------------------------------------------------
 -- | A record type which represents partial configurations (for 'httpServe')
 -- by wrapping all of its fields in a 'Maybe'. Values of this type are usually
 -- constructed via its 'Monoid' instance by doing something like:
 --
--- > addListen (ListenHttp "0.0.0.0" 9000) mempty
+-- > setPort 1234 mempty
 --
 -- Any fields which are unspecified in the 'Config' passed to 'httpServe' (and
 -- this is the norm) are filled in with default values from 'defaultConfig'.
-data MonadSnap m => Config m a = Config
+data Config m a = Config
     { hostname       :: Maybe ByteString
-      -- ^ The name of the server
-    , listen         :: [ConfigListen]
-      -- ^ The local interfaces to listen on
     , accessLog      :: Maybe (Maybe FilePath)
-      -- ^ The path to the access log
     , errorLog       :: Maybe (Maybe FilePath)
-      -- ^ The path to the error log
     , locale         :: Maybe String
-      -- ^ The locale to use
-    , backend        :: Maybe ConfigBackend
-      -- ^ The backend to use
+    , port           :: Maybe Int
+    , bind           :: Maybe ByteString
+    , sslport        :: Maybe Int
+    , sslbind        :: Maybe ByteString
+    , sslcert        :: Maybe FilePath
+    , sslkey         :: Maybe FilePath
     , compression    :: Maybe Bool
-      -- ^ Whether to use compression
     , verbose        :: Maybe Bool
-      -- ^ Whether to write server status updates to stderr
     , errorHandler   :: Maybe (SomeException -> m ())
-      -- ^ A MonadSnap action to handle 500 errors
     , defaultTimeout :: Maybe Int
     , other          :: Maybe a
-      -- ^ This is for any other state needed to initialize a custom server
+    , backend        :: Maybe ConfigBackend
     }
 
+instance Show (Config m a) where
+    show c = unlines [ "Config:"
+                     , "hostname: "       ++ _hostname
+                     , "accessLog: "      ++ _accessLog
+                     , "errorLog: "       ++ _errorLog
+                     , "locale: "         ++ _locale
+                     , "port: "           ++ _port
+                     , "bind: "           ++ _bind
+                     , "sslport: "        ++ _sslport
+                     , "sslbind: "        ++ _sslbind
+                     , "sslcert: "        ++ _sslcert
+                     , "sslkey: "         ++ _sslkey
+                     , "compression: "    ++ _compression
+                     , "verbose: "        ++ _verbose
+                     , "defaultTimeout: " ++ _defaultTimeout
+                     , "backend: "        ++ _backend
+                     ]
 
-------------------------------------------------------------------------------
-instance MonadSnap m => Show (Config m a) where
-    show c = "Config {" ++ concat (intersperse ", " $ filter (/="") $ map ($c)
-        [ showM "hostname" . hostname
-        , showL "listen" . listen
-        , showM "accessLog" . accessLog
-        , showM "errorLog" . errorLog
-        , showM "locale" . locale
-        , showM "backend" . backend
-        , showM "compression" . compression
-        , showM "verbose" . verbose
-        , showM "errorHandler" . fmap (const ()) . errorHandler
-        , showM "defaultTimeout" . fmap (const ()) . defaultTimeout
-        ]) ++ "}"
       where
-        showM s   = maybe "" ((++) (s ++ " = ") . show)
-        showL s l = s ++ " = " ++ show l
+        _hostname       = show $ hostname       c
+        _accessLog      = show $ accessLog      c
+        _errorLog       = show $ errorLog       c
+        _locale         = show $ locale         c
+        _port           = show $ port           c
+        _bind           = show $ bind           c
+        _sslport        = show $ sslport        c
+        _sslbind        = show $ sslbind        c
+        _sslcert        = show $ sslcert        c
+        _sslkey         = show $ sslkey         c
+        _compression    = show $ compression    c
+        _verbose        = show $ verbose        c
+        _defaultTimeout = show $ defaultTimeout c
+        _backend        = show $ backend        c
 
 
 ------------------------------------------------------------------------------
 -- | Returns a completely empty 'Config'. Equivalent to 'mempty' from
 -- 'Config''s 'Monoid' instance.
-emptyConfig :: MonadSnap m => Config m a
+emptyConfig :: Config m a
 emptyConfig = mempty
 
 
 ------------------------------------------------------------------------------
-instance MonadSnap m => Monoid (Config m a) where
+instance Monoid (Config m a) where
     mempty = Config
         { hostname       = Nothing
-        , listen         = []
         , accessLog      = Nothing
         , errorLog       = Nothing
         , locale         = Nothing
-        , backend        = Nothing
+        , port           = Nothing
+        , bind           = Nothing
+        , sslport        = Nothing
+        , sslbind        = Nothing
+        , sslcert        = Nothing
+        , sslkey         = Nothing
         , compression    = Nothing
         , verbose        = Nothing
         , errorHandler   = Nothing
         , defaultTimeout = Nothing
         , other          = Nothing
+        , backend        = Nothing
         }
 
     a `mappend` b = Config
-        { hostname       = (hostname       b) `mplus` (hostname       a)
-        , listen         = (listen         b)   ++    (listen         a)
-        , accessLog      = (accessLog      b) `mplus` (accessLog      a)
-        , errorLog       = (errorLog       b) `mplus` (errorLog       a)
-        , locale         = (locale         b) `mplus` (locale         a)
-        , backend        = (backend        b) `mplus` (backend        a)
-        , compression    = (compression    b) `mplus` (compression    a)
-        , verbose        = (verbose        b) `mplus` (verbose        a)
-        , errorHandler   = (errorHandler   b) `mplus` (errorHandler   a)
-        , defaultTimeout = (defaultTimeout b) `mplus` (defaultTimeout a)
-        , other          = (other          b) `mplus` (other          a)
+        { hostname       = ov hostname       a b
+        , accessLog      = ov accessLog      a b
+        , errorLog       = ov errorLog       a b
+        , locale         = ov locale         a b
+        , port           = ov port           a b
+        , bind           = ov bind           a b
+        , sslport        = ov sslport        a b
+        , sslbind        = ov sslbind        a b
+        , sslcert        = ov sslcert        a b
+        , sslkey         = ov sslkey         a b
+        , compression    = ov compression    a b
+        , verbose        = ov verbose        a b
+        , errorHandler   = ov errorHandler   a b
+        , defaultTimeout = ov defaultTimeout a b
+        , other          = ov other          a b
+        , backend        = ov backend        a b
         }
-
-
-------------------------------------------------------------------------------
--- | These are the default values for all the fields in 'Config'.
---
--- > hostname     = "localhost"
--- > listen       = []
--- > accessLog    = "log/access.log"
--- > errorLog     = "log/error.log"
--- > locale       = "en_US"
--- > backend      = Nothing (the backend is selected based on compile options)
--- > compression  = True
--- > verbose      = True
--- > errorHandler = prints the error message
---
-defaultConfig :: MonadSnap m => Config m a
-defaultConfig = Config
-    { hostname       = Just "localhost"
-    , listen         = []
-    , accessLog      = Just $ Just "log/access.log"
-    , errorLog       = Just $ Just "log/error.log"
-    , locale         = Just "en_US"
-    , backend        = Nothing
-    , compression    = Just True
-    , verbose        = Just True
-    , errorHandler   = Just defaultErrorHandler
-    , defaultTimeout = Just 60
-    , other          = Nothing
-    }
-
-
-------------------------------------------------------------------------------
-defaultErrorHandler :: MonadSnap m => SomeException -> m ()
-defaultErrorHandler e = do
-    debug "Snap.Http.Server.Config errorHandler: got exception:"
-    debug $ show e
-    logError msg
-    finishWith $ setContentType "text/plain; charset=utf-8"
-               . setContentLength (fromIntegral $ B.length msg)
-               . setResponseStatus 500 "Internal Server Error"
-               . modifyResponseBody
-                     (>==> enumBuilder (fromByteString msg))
-               $ emptyResponse
-  where    
-    err = U.fromString $ show e
-    msg = mappend "A web handler threw an exception. Details:\n" err
-
-------------------------------------------------------------------------------
--- | Completes a partial 'Config' by filling in the unspecified values with
--- the default values from 'defaultConfig'.  Also, if no listeners are
--- specified, adds a http listener on 0.0.0.0:8000
-completeConfig :: MonadSnap m => Config m a -> Config m a
-completeConfig c = case listen c' of
-                    [] -> addListen (ListenHttp "0.0.0.0" 8000) c'
-                    _  -> c'
-    where c' = mappend defaultConfig c
-
-
-------------------------------------------------------------------------------
--- | A data structure used during command-line option parsing
---
--- The Config data type allows a list of listen ports, but the command line
--- options only allow one http and one https listener.  This data structure
--- is used during option parsing
-data MonadSnap m => OptionData m a = OptionData
-    { config  :: Config m a
-    , bind    :: Maybe ByteString
-    , port    :: Maybe Int
-    , sslbind :: Maybe ByteString
-    , sslport :: Maybe Int
-    , sslcert :: Maybe FilePath
-    , sslkey  :: Maybe FilePath
-    , tout    :: Maybe Int
-    }
-
-
-------------------------------------------------------------------------------
-instance MonadSnap m => Monoid (OptionData m a) where
-    mempty = OptionData
-        { config  = mempty
-        , bind    = Nothing
-        , port    = Nothing
-        , sslbind = Nothing
-        , sslport = Nothing
-        , sslcert = Nothing
-        , sslkey  = Nothing
-        , tout    = Nothing
-        }
-
-    a `mappend` b = OptionData
-        { config       = (config       b) `mappend` (config       a)
-        , bind         = (bind         b) `mplus`   (bind         a)
-        , port         = (port         b) `mplus`   (port         a)
-        , sslbind      = (sslbind      b) `mplus`   (sslbind      a)
-        , sslport      = (sslport      b) `mplus`   (sslport      a)
-        , sslcert      = (sslcert      b) `mplus`   (sslcert      a)
-        , sslkey       = (sslkey       b) `mplus`   (sslkey       a)
-        , tout         = (tout         b) `mplus`   (tout         a)
-        }
+      where
+        ov f x y = getLast $! (mappend `on` (Last . f)) x y
 
 
 ------------------------------------------------------------------------------
 -- | These are the default values for the options
-defaultOptions :: MonadSnap m => OptionData m a
-defaultOptions = OptionData
-    { config  = defaultConfig
-    , bind    = Just "0.0.0.0"
-    , port    = Just 8000
-    , sslbind = Just "0.0.0.0"
-    , sslport = Nothing
-    , sslcert = Just "cert.pem"
-    , sslkey  = Just "key.pem"
-    , tout    = Just 60
+defaultConfig :: MonadSnap m => Config m a
+defaultConfig = mempty
+    { hostname       = Just "localhost"
+    , accessLog      = Just $ Just "log/access.log"
+    , errorLog       = Just $ Just "log/error.log"
+    , locale         = Just "en_US"
+    , compression    = Just True
+    , verbose        = Just True
+    , errorHandler   = Just defaultErrorHandler
+    , bind           = Just "0.0.0.0"
+    , sslbind        = Just "0.0.0.0"
+    , sslcert        = Just "cert.pem"
+    , sslkey         = Just "key.pem"
+    , defaultTimeout = Just 60
     }
 
 
 ------------------------------------------------------------------------------
--- | Convert options to config
-optionsToConfig :: MonadSnap m => OptionData m a -> Config m a
-optionsToConfig o = mconcat $ [config o] ++ http ++ https ++ [tmOut]
-    where lhttp  = maybe2 [] ListenHttp  (bind o) (port o)
-          lhttps = maybe4 [] ListenHttps (sslbind o)
-                                         (sslport o)
-                                         (sslcert o)
-                                         (sslkey  o)
-          http  = map (flip addListen mempty) lhttp
-          https = map (flip addListen mempty) lhttps
+-- | The hostname of the HTTP server
+getHostname       :: Config m a -> Maybe ByteString
+getHostname = hostname
 
-          maybe2 _ f (Just a) (Just b) = [f a b]
-          maybe2 d _ _        _        = d
-          maybe4 _ f (Just a) (Just b) (Just c) (Just d) = [f a b c d]
-          maybe4 d _ _        _        _        _        = d
+-- | Path to the access log
+getAccessLog      :: Config m a -> Maybe (Maybe FilePath)
+getAccessLog = accessLog
 
-          tmOut = maybe mempty
-                        (\t -> mempty { defaultTimeout = Just t })
-                        (tout o)
+-- | Path to the error log
+getErrorLog       :: Config m a -> Maybe (Maybe FilePath)
+getErrorLog = errorLog
+
+-- | The locale to use
+getLocale         :: Config m a -> Maybe String
+getLocale = locale
+
+-- | Returns the port to listen on (for http)
+getPort           :: Config m a -> Maybe Int
+getPort = port
+
+-- | Returns the address to bind to (for http)
+getBind           :: Config m a -> Maybe ByteString
+getBind = bind
+
+-- | Returns the port to listen on (for https)
+getSSLPort        :: Config m a -> Maybe Int
+getSSLPort = sslport
+
+-- | Returns the address to bind to (for https)
+getSSLBind        :: Config m a -> Maybe ByteString
+getSSLBind = sslbind
+
+-- | Path to the SSL certificate file
+getSSLCert        :: Config m a -> Maybe FilePath
+getSSLCert = sslcert
+
+-- | Path to the SSL key file
+getSSLKey         :: Config m a -> Maybe FilePath
+getSSLKey = sslkey
+
+-- | If set and set to True, compression is turned on when applicable
+getCompression    :: Config m a -> Maybe Bool
+getCompression = compression
+
+-- | Whether to write server status updates to stderr
+getVerbose        :: Config m a -> Maybe Bool
+getVerbose = verbose
+
+-- | A MonadSnap action to handle 500 errors
+getErrorHandler   :: Config m a -> Maybe (SomeException -> m ())
+getErrorHandler = errorHandler
+
+getDefaultTimeout :: Config m a -> Maybe Int
+getDefaultTimeout = defaultTimeout
+
+getOther :: Config m a -> Maybe a
+getOther = other
+
+getBackend :: Config m a -> Maybe ConfigBackend
+getBackend = backend
+
 
 ------------------------------------------------------------------------------
--- | Convert config to options
-configToOptions :: MonadSnap m => Config m a -> OptionData m a
-configToOptions c = OptionData
-    { config  = c
-    , bind    = Nothing
-    , port    = Nothing
-    , sslbind = Nothing
-    , sslport = Nothing
-    , sslcert = Nothing
-    , sslkey  = Nothing
-    , tout    = (defaultTimeout c)
-    }
+setHostname       :: ByteString              -> Config m a -> Config m a
+setHostname x c = c { hostname = Just x }
+
+setAccessLog      :: (Maybe FilePath)        -> Config m a -> Config m a
+setAccessLog x c = c { accessLog = Just x }
+
+setErrorLog       :: (Maybe FilePath)        -> Config m a -> Config m a
+setErrorLog x c = c { errorLog = Just x }
+
+setLocale         :: String                  -> Config m a -> Config m a
+setLocale x c = c { locale = Just x }
+
+setPort           :: Int                     -> Config m a -> Config m a
+setPort x c = c { port = Just x }
+
+setBind           :: ByteString              -> Config m a -> Config m a
+setBind x c = c { bind = Just x }
+
+setSSLPort        :: Int                     -> Config m a -> Config m a
+setSSLPort x c = c { sslport = Just x }
+
+setSSLBind        :: ByteString              -> Config m a -> Config m a
+setSSLBind x c = c { sslbind = Just x }
+
+setSSLCert        :: FilePath                -> Config m a -> Config m a
+setSSLCert x c = c { sslcert = Just x }
+
+setSSLKey         :: FilePath                -> Config m a -> Config m a
+setSSLKey x c = c { sslkey = Just x }
+
+setCompression    :: Bool                    -> Config m a -> Config m a
+setCompression x c = c { compression = Just x }
+
+setVerbose        :: Bool                    -> Config m a -> Config m a
+setVerbose x c = c { verbose = Just x }
+
+setErrorHandler   :: (SomeException -> m ()) -> Config m a -> Config m a
+setErrorHandler x c = c { errorHandler = Just x }
+
+setDefaultTimeout :: Int                     -> Config m a -> Config m a
+setDefaultTimeout x c = c { defaultTimeout = Just x }
+
+setOther          :: a                       -> Config m a -> Config m a
+setOther x c = c { other = Just x }
+
+setBackend        :: ConfigBackend           -> Config m a -> Config m a
+setBackend x c = c { backend = Just x }
 
 
 ------------------------------------------------------------------------------
--- | A description of the command-line options accepted by
--- 'commandLineConfig'.
---
--- The 'OptionData' parameter is just for specifying any default values which
--- are to override those in 'defaultOptions'. This is so the usage message can
--- accurately inform the user what the default values for the options are. In
--- most cases, you will probably just end up passing 'mempty' for this
--- parameter.
---
--- The return type is a list of options describing @'Maybe' ('OptionData' m)@
--- as opposed to @'OptionData' m@, because if the @--help@ option is given,
--- the set of command-line options no longer describe a config, but an action
--- (printing out the usage message).
-options :: MonadSnap m
-        => OptionData m a
-        -> [OptDescr (Maybe (OptionData m a))]
+completeConfig :: (MonadSnap m) => Config m a -> IO (Config m a)
+completeConfig config = do
+    when noPort $ hPutStrLn stderr "no port specified, defaulting to port 8000"
+
+    return $ cfg `mappend` cfg'
+
+  where
+    cfg = defaultConfig `mappend` config
+
+    sslVals = map ($ cfg) [ isJust . getSSLPort
+                          , isJust . getSSLBind
+                          , isJust . getSSLKey
+                          , isJust . getSSLCert ]
+
+    sslValid   = and sslVals
+    noPort = isNothing (getPort cfg) && not sslValid
+
+    cfg' = emptyConfig { port = if noPort then Just 8000 else Nothing }
+
+
+------------------------------------------------------------------------------
+fromString :: String -> ByteString
+fromString = T.encodeUtf8 . T.pack
+
+
+------------------------------------------------------------------------------
+options :: MonadSnap m =>
+           Config m a
+        -> [OptDescr (Maybe (Config m a))]
 options defaults =
     [ Option [] ["hostname"]
-             (ReqArg (Just . setConfig setHostname . U.fromString) "NAME")
+             (ReqArg (Just . setConfig setHostname . fromString) "NAME")
              $ "local hostname" ++ defaultC getHostname
     , Option ['b'] ["address"]
-             (ReqArg (\s -> Just $ mempty { bind = Just $ U.fromString s })
+             (ReqArg (\s -> Just $ mempty { bind = Just $ fromString s })
                      "ADDRESS")
              $ "address to bind to" ++ defaultO bind
     , Option ['p'] ["port"]
              (ReqArg (\s -> Just $ mempty { port = Just $ read s}) "PORT")
              $ "port to listen on" ++ defaultO port
     , Option [] ["ssl-address"]
-             (ReqArg (\s -> Just $ mempty { sslbind = Just $ U.fromString s })
+             (ReqArg (\s -> Just $ mempty { sslbind = Just $ fromString s })
                      "ADDRESS")
              $ "ssl address to bind to" ++ defaultO sslbind
     , Option [] ["ssl-port"]
@@ -386,7 +404,9 @@ options defaults =
              (NoArg $ Just $ setConfig setCompression True)
              $ "use gzip compression on responses"
     , Option ['t'] ["timeout"]
-             (ReqArg (\t -> Just $ mempty { tout = Just $ read t}) "SECS")
+             (ReqArg (\t -> Just $ mempty {
+                              defaultTimeout = Just $ read t
+                            }) "SECS")
              $ "set default timeout in seconds"
     , Option [] ["no-compression"]
              (NoArg $ Just $ setConfig setCompression False)
@@ -402,162 +422,72 @@ options defaults =
              $ "display this help and exit"
     ]
   where
-    setConfig f c = configToOptions $ f c mempty
-    conf          = completeConfig $ config defaults
-    opts          = mappend defaultOptions defaults
+    setConfig f c = f c mempty
+    conf          = defaultConfig `mappend` defaults
     defaultC f    = maybe "" ((", default " ++) . show) $ f conf
-    defaultO f    = maybe ", default off" ((", default " ++) . show) $ f opts
+    defaultO f    = maybe ", default off" ((", default " ++) . show) $ f conf
+
+
 
 
 ------------------------------------------------------------------------------
--- | This returns a 'Config' gotten from parsing the options specified on the
+defaultErrorHandler :: MonadSnap m => SomeException -> m ()
+defaultErrorHandler e = do
+    debug "Snap.Http.Server.Config errorHandler: got exception:"
+    debug $ show e
+    logError msg
+    finishWith $ setContentType "text/plain; charset=utf-8"
+               . setContentLength (fromIntegral $ B.length msg)
+               . setResponseStatus 500 "Internal Server Error"
+               . modifyResponseBody
+                     (>==> enumBuilder (fromByteString msg))
+               $ emptyResponse
+  where
+    err = fromString $ show e
+    msg = mappend "A web handler threw an exception. Details:\n" err
+
+
+
+------------------------------------------------------------------------------
+-- | Returns a 'Config' obtained from parsing the options specified on the
 -- command-line.
 --
--- The 'Config' parameter is just for specifying any default values which are
--- to override those in 'defaultConfig'. This is so the usage message can
--- accurately inform the user what the default values for the options are. In
--- most cases, you will probably just end up passing 'mempty' for this
--- parameter.
---
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
-commandLineConfig :: MonadSnap m => Config m a -> IO (Config m a)
+commandLineConfig :: MonadSnap m =>
+                     Config m a   -- ^ default configuration. This is combined
+                                  -- with 'defaultConfig' to obtain default
+                                  -- values to use if the given parameter is not
+                                  -- specified on the command line. Usually it is
+                                  -- fine to use 'emptyConfig' here.
+                  -> IO (Config m a)
 commandLineConfig defaults = do
     args <- getArgs
     prog <- getProgName
 
-    result <- either (usage prog) return $ case getOpt Permute opts args of
-        (f, _, []  ) -> maybe (Left []) Right $ fmap mconcat $ sequence f
-        (_, _, errs) -> Left errs
+    let opts = options defaults
 
-    let result' = optionsToConfig $ mappend defaultOptions result
+    result <- either (usage prog opts)
+                     return
+                     (case getOpt Permute opts args of
+                        (f, _, []  ) -> maybe (Left []) Right $
+                                        fmap mconcat $ sequence f
+                        (_, _, errs) -> Left errs)
 
 #ifndef PORTABLE
     lang <- getEnv "LANG"
-    return $ mconcat [defaults, result', mempty {locale = fmap upToUtf8 lang}]
+    completeConfig $ mconcat [defaults,
+                              mempty {locale = fmap upToUtf8 lang},
+                              result]
 #else
-    return $ mconcat [defaults, result']
+    completeConfig $ mconcat [defaults, result]
 #endif
 
   where
-    opts = options $ configToOptions defaults
-    usage prog errs = do
+    usage prog opts errs = do
         let hdr = "Usage:\n  " ++ prog ++ " [OPTION...]\n\nOptions:"
         let msg = concat errs ++ usageInfo hdr opts
         hPutStrLn stderr msg
         exitFailure
+#ifndef PORTABLE
     upToUtf8 = takeWhile $ \c -> isAlpha c || '_' == c
-
-
-------------------------------------------------------------------------------
-getHostname :: MonadSnap m => Config m a -> Maybe ByteString
-getHostname = hostname
-
-
-------------------------------------------------------------------------------
-getListen :: MonadSnap m => Config m a -> [ConfigListen]
-getListen = listen
-
-
-------------------------------------------------------------------------------
-getAccessLog :: MonadSnap m => Config m a -> Maybe (Maybe FilePath)
-getAccessLog = accessLog
-
-
-------------------------------------------------------------------------------
-getErrorLog :: MonadSnap m => Config m a -> Maybe (Maybe FilePath)
-getErrorLog = errorLog
-
-
-------------------------------------------------------------------------------
-getLocale :: MonadSnap m => Config m a -> Maybe String
-getLocale = locale
-
-
-------------------------------------------------------------------------------
-getBackend :: MonadSnap m => Config m a -> Maybe ConfigBackend
-getBackend = backend
-
-------------------------------------------------------------------------------
-getCompression :: MonadSnap m => Config m a -> Maybe Bool
-getCompression = compression
-
-
-------------------------------------------------------------------------------
-getVerbose :: MonadSnap m => Config m a -> Maybe Bool
-getVerbose = verbose
-
-
-------------------------------------------------------------------------------
-getErrorHandler :: MonadSnap m => Config m a -> Maybe (SomeException -> m ())
-getErrorHandler = errorHandler
-
-
-------------------------------------------------------------------------------
-getOther :: MonadSnap m => Config m a -> Maybe a
-getOther = other
-
-
-------------------------------------------------------------------------------
-getDefaultTimeout :: MonadSnap m => Config m a -> Maybe Int
-getDefaultTimeout = defaultTimeout
-
-
-------------------------------------------------------------------------------
-setHostname :: MonadSnap m => ByteString -> Config m a -> Config m a
-setHostname a m = m {hostname = Just a}
-
-
-------------------------------------------------------------------------------
-addListen :: MonadSnap m => ConfigListen -> Config m a -> Config m a
-addListen a m = m {listen = a : listen m}
-
-
-------------------------------------------------------------------------------
-setListen :: MonadSnap m => [ConfigListen] -> Config m a -> Config m a
-setListen a m = m {listen = a}
-
-
-------------------------------------------------------------------------------
-setAccessLog :: MonadSnap m => Maybe FilePath -> Config m a -> Config m a
-setAccessLog a m = m {accessLog = Just a}
-
-
-------------------------------------------------------------------------------
-setErrorLog :: MonadSnap m => Maybe FilePath -> Config m a -> Config m a
-setErrorLog a m = m {errorLog = Just a}
-
-
-------------------------------------------------------------------------------
-setLocale :: MonadSnap m => String -> Config m a -> Config m a
-setLocale a m = m {locale = Just a}
-
-
-------------------------------------------------------------------------------
-setBackend :: MonadSnap m => ConfigBackend -> Config m a -> Config m a
-setBackend a m = m { backend = Just a}
-
-
-------------------------------------------------------------------------------
-setCompression :: MonadSnap m => Bool -> Config m a -> Config m a
-setCompression a m = m {compression = Just a}
-
-
-------------------------------------------------------------------------------
-setVerbose :: MonadSnap m => Bool -> Config m a -> Config m a
-setVerbose a m = m {verbose = Just a}
-
-
-------------------------------------------------------------------------------
-setErrorHandler :: MonadSnap m => (SomeException -> m ()) -> Config m a
-                -> Config m a
-setErrorHandler a m = m {errorHandler = Just a}
-
-
-------------------------------------------------------------------------------
-setOther :: MonadSnap m => a -> Config m a -> Config m a
-setOther a m = m {other = Just a}
-
-
-------------------------------------------------------------------------------
-setDefaultTimeout :: MonadSnap m => Int -> Config m a -> Config m a
-setDefaultTimeout t m = m {defaultTimeout = Just t}
+#endif

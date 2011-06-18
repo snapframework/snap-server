@@ -28,7 +28,7 @@ main = do
 
   where
     go m   = httpServe config pongServer `finally` putMVar m ()
-    config = addListen (ListenHttp "*" 8000) $
+    config = setPort 8000 $
              setErrorLog Nothing $
              setAccessLog Nothing $
              setCompression False $ emptyConfig

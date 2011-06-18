@@ -79,7 +79,8 @@ startTestServer :: Int
 startTestServer port sslport backend = do
     let cfg = setAccessLog (Just $ "ts-access." ++ show backend ++ ".log") .
               setErrorLog  (Just $ "ts-error." ++ show backend ++ ".log")  .
-              addListen    (ListenHttp "*" port)                           .
+              setBind      "*"                                             .
+              setPort      port                                            .
               setBackend   backend                                         .
               setDefaultTimeout 10                                         .
               setVerbose   False                                           $
@@ -87,8 +88,10 @@ startTestServer port sslport backend = do
 
     let cfg' = case sslport of
                 Nothing -> cfg
-                Just p  -> addListen
-                           (ListenHttps "*" p "cert.pem" "key.pem")
+                Just p  -> setSSLPort p          .
+                           setSSLBind "*"        . 
+                           setSSLCert "cert.pem" .
+                           setSSLKey  "key.pem"  $
                            cfg
 
     mvar <- newEmptyMVar
@@ -157,10 +160,10 @@ testEcho ssl port name =
                   ++ "://127.0.0.1:" ++ show port ++ "/echo"
 
         req0 <- QC.run $ HTTP.parseUrl uri
-        let req = req0 { HTTP.requestBody = txt
+        let req = req0 { HTTP.requestBody = HTTP.RequestBodyLBS txt
                        , HTTP.method = "POST" }
 
-        rsp <- QC.run $ HTTP.httpLbs req
+        rsp <- QC.run $ HTTP.withManager $ HTTP.httpLbs req
         let doc = HTTP.responseBody rsp
 
         QC.assert $ txt == doc
@@ -221,12 +224,12 @@ testFileUpload ssl port name =
                   ++ "://127.0.0.1:" ++ show port ++ "/upload/handle"
 
         req0 <- QC.run $ HTTP.parseUrl uri
-        let req = req0 { HTTP.requestBody = body kvps
+        let req = req0 { HTTP.requestBody = HTTP.RequestBodyLBS $ body kvps
                        , HTTP.method = "POST"
                        , HTTP.requestHeaders = hdrs }
 
         let txt = response kvps
-        rsp <- QC.run $ HTTP.httpLbs req
+        rsp <- QC.run $ HTTP.withManager $ HTTP.httpLbs req
         let doc = HTTP.responseBody rsp
 
         when (txt /= doc) $ QC.run $ do
@@ -254,10 +257,11 @@ testRot13 ssl port name =
                   ++ "://127.0.0.1:" ++ show port ++ "/rot13"
 
         req0 <- QC.run $ HTTP.parseUrl uri
-        let req = req0 { HTTP.requestBody = L.fromChunks [txt]
+        let req = req0 { HTTP.requestBody = HTTP.RequestBodyLBS $
+                                            L.fromChunks [txt]
                        , HTTP.method = "POST" }
 
-        rsp <- QC.run $ HTTP.httpLbs req
+        rsp <- QC.run $ HTTP.withManager $ HTTP.httpLbs req
         let doc = S.concat $ L.toChunks $ HTTP.responseBody rsp
 
         QC.assert $ txt == rot13 doc

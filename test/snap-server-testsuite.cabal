@@ -17,218 +17,219 @@ Flag gnutls
   Default: False
 
 Executable testsuite
-   hs-source-dirs:  suite common ../src
-   main-is:         TestSuite.hs
+  hs-source-dirs:  suite common ../src
+  main-is:         TestSuite.hs
 
-   build-depends:
-     QuickCheck >= 2,
-     array >= 0.3 && <0.4,
-     attoparsec >= 0.8.1 && < 0.9,
-     attoparsec-enumerator >= 0.2.0.1 && < 0.3,
-     base >= 4 && < 5,
-     base16-bytestring == 0.1.*,
-     binary >= 0.5 && < 0.6,
-     blaze-builder >= 0.2.1.4 && <0.4,
-     blaze-builder-enumerator >= 0.2.0 && <0.3,
-     bytestring,
-     bytestring-nums >= 0.3.1 && < 0.4,
-     containers,
-     directory,
-     directory-tree,
-     enumerator >= 0.4.7 && <0.5,
-     filepath,
-     haskell98,
-     http-enumerator >= 0.3.1 && <0.4,
-     HUnit >= 1.2 && < 2,
-     monads-fd >= 0.1.0.4 && <0.2,
-     murmur-hash >= 0.1 && < 0.2,
-     network == 2.3.*,
-     old-locale,
-     parallel > 2,
-     process,
-     snap-core >= 0.4.4 && <0.5,
-     template-haskell,
-     test-framework >= 0.3.1 && <0.4,
-     test-framework-hunit >= 0.2.5 && < 0.3,
-     test-framework-quickcheck2 >= 0.2.6 && < 0.3,
-     time,
-     transformers,
-     utf8-string >= 0.3.6 && <0.4,
-     vector >= 0.7 && <0.8,
-     vector-algorithms >= 0.4 && <0.5,
-     PSQueue >= 1.1 && <1.2
+  build-depends:
+    QuickCheck >= 2,
+    array >= 0.3 && <0.4,
+    attoparsec >= 0.8.1 && < 0.9,
+    attoparsec-enumerator >= 0.2.0.1 && < 0.3,
+    base >= 4 && < 5,
+    base16-bytestring == 0.1.*,
+    binary >= 0.5 && < 0.6,
+    blaze-builder >= 0.2.1.4 && <0.4,
+    blaze-builder-enumerator >= 0.2.0 && <0.3,
+    bytestring,
+    bytestring-nums >= 0.3.1 && < 0.4,
+    containers,
+    directory,
+    directory-tree,
+    enumerator >= 0.4.7 && <0.5,
+    filepath,
+    haskell98,
+    http-enumerator >= 0.6.5.3 && <0.7,
+    HUnit >= 1.2 && < 2,
+    monads-fd >= 0.1.0.4 && <0.2,
+    murmur-hash >= 0.1 && < 0.2,
+    network == 2.3.*,
+    old-locale,
+    parallel > 2,
+    process,
+    snap-core >= 0.5 && <0.6,
+    template-haskell,
+    test-framework >= 0.3.1 && <0.4,
+    test-framework-hunit >= 0.2.5 && < 0.3,
+    test-framework-quickcheck2 >= 0.2.6 && < 0.3,
+    text >= 0.11 && <0.12,
+    time,
+    transformers,
+    vector >= 0.7 && <0.8,
+    vector-algorithms >= 0.4 && <0.5,
+    PSQueue >= 1.1 && <1.2
 
-   if !os(windows)
-     build-depends: unix
+  if !os(windows)
+    build-depends: unix
 
-   if flag(libev)
-     build-depends: hlibev >= 0.2.5 && < 0.3
-     cpp-options: -DLIBEV
+  if flag(libev)
+    build-depends: hlibev >= 0.2.5 && < 0.3
+    cpp-options: -DLIBEV
 
-   if flag(gnutls)
-     extra-libraries: gnutls
-     cpp-options: -DGNUTLS
-     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(gnutls)
+    extra-libraries: gnutls
+    cpp-options: -DGNUTLS
+    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
-   if flag(portable) || os(windows)
-     cpp-options: -DPORTABLE
+  if flag(portable) || os(windows)
+    cpp-options: -DPORTABLE
 
-   ghc-prof-options: -prof -auto-all
-   ghc-options: -O2 -Wall -fhpc -fwarn-tabs
-                -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind
+  ghc-prof-options: -prof -auto-all
+  ghc-options: -O2 -Wall -fhpc -fwarn-tabs
+               -funbox-strict-fields -threaded
+               -fno-warn-unused-do-bind
 
 
 Executable pongserver
-   hs-source-dirs:  pongserver common ../src
-   main-is:         Main.hs
+  hs-source-dirs:  pongserver common ../src
+  main-is:         Main.hs
 
-   build-depends:
-     QuickCheck >= 2,
-     array >= 0.3 && <0.4,
-     attoparsec >= 0.8.1 && < 0.9,
-     attoparsec-enumerator >= 0.2.0.1 && < 0.3,
-     base >= 4 && < 5,
-     base16-bytestring == 0.1.*,
-     blaze-builder >= 0.2.1.4 && <0.4,
-     blaze-builder-enumerator >= 0.2.0 && <0.3,
-     bytestring,
-     bytestring-nums >= 0.3.1 && < 0.4,
-     cereal >= 0.3 && < 0.4,
-     containers,
-     directory-tree,
-     enumerator >= 0.4.7 && <0.5,
-     filepath,
-     haskell98,
-     HUnit >= 1.2 && < 2,
-     monads-fd >= 0.1.0.4 && <0.2,
-     murmur-hash >= 0.1 && < 0.2,
-     old-locale,
-     parallel > 2,
-     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
-     network == 2.3.*,
-     snap-core >= 0.4.1 && <0.5,
-     template-haskell,
-     time,
-     transformers,
-     unix-compat == 0.2.*,
-     utf8-string >= 0.3.6 && <0.4,
-     vector >= 0.7 && <0.8,
-     vector-algorithms >= 0.4 && <0.5,
-     PSQueue >= 1.1 && <1.2
+  build-depends:
+    QuickCheck >= 2,
+    array >= 0.3 && <0.4,
+    attoparsec >= 0.8.1 && < 0.9,
+    attoparsec-enumerator >= 0.2.0.1 && < 0.3,
+    base >= 4 && < 5,
+    base16-bytestring == 0.1.*,
+    blaze-builder >= 0.2.1.4 && <0.4,
+    blaze-builder-enumerator >= 0.2.0 && <0.3,
+    bytestring,
+    bytestring-nums >= 0.3.1 && < 0.4,
+    cereal >= 0.3 && < 0.4,
+    containers,
+    directory-tree,
+    enumerator >= 0.4.7 && <0.5,
+    filepath,
+    haskell98,
+    HUnit >= 1.2 && < 2,
+    monads-fd >= 0.1.0.4 && <0.2,
+    murmur-hash >= 0.1 && < 0.2,
+    old-locale,
+    parallel > 2,
+    MonadCatchIO-transformers >= 0.2.1 && < 0.3,
+    network == 2.3.*,
+    snap-core >= 0.5 && <0.6,
+    template-haskell,
+    time,
+    transformers,
+    unix-compat == 0.2.*,
+    utf8-string >= 0.3.6 && <0.4,
+    vector >= 0.7 && <0.8,
+    vector-algorithms >= 0.4 && <0.5,
+    PSQueue >= 1.1 && <1.2
 
-   if flag(portable) || os(windows)
-     cpp-options: -DPORTABLE
-   else
-     build-depends: unix
+  if flag(portable) || os(windows)
+    cpp-options: -DPORTABLE
+  else
+    build-depends: unix
 
-   if flag(libev)
-     build-depends: hlibev >= 0.2.5 && < 0.3
-     cpp-options: -DLIBEV
+  if flag(libev)
+    build-depends: hlibev >= 0.2.5 && < 0.3
+    cpp-options: -DLIBEV
 
-   if flag(gnutls)
-     extra-libraries: gnutls
-     cpp-options: -DGNUTLS
-     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(gnutls)
+    extra-libraries: gnutls
+    cpp-options: -DGNUTLS
+    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
-   if os(linux) && !flag(portable)
-     cpp-options: -DLINUX -DHAS_SENDFILE
-     other-modules:
-       System.SendFile,
-       System.SendFile.Linux
+  if os(linux) && !flag(portable)
+    cpp-options: -DLINUX -DHAS_SENDFILE
+    other-modules:
+      System.SendFile,
+      System.SendFile.Linux
 
-   if os(darwin) && !flag(portable)
-     cpp-options: -DOSX -DHAS_SENDFILE
-     other-modules:
-       System.SendFile,
-       System.SendFile.Darwin
+  if os(darwin) && !flag(portable)
+    cpp-options: -DOSX -DHAS_SENDFILE
+    other-modules:
+      System.SendFile,
+      System.SendFile.Darwin
 
-   if os(freebsd) && !flag(portable)
-     cpp-options: -DFREEBSD -DHAS_SENDFILE
-     other-modules:
-       System.SendFile,
-       System.SendFile.FreeBSD
+  if os(freebsd) && !flag(portable)
+    cpp-options: -DFREEBSD -DHAS_SENDFILE
+    other-modules:
+      System.SendFile,
+      System.SendFile.FreeBSD
 
-   if flag(portable) || os(windows)
-     cpp-options: -DPORTABLE
+  if flag(portable) || os(windows)
+    cpp-options: -DPORTABLE
 
-   ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind
-   ghc-prof-options: -prof -auto-all
+  ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
+               -fno-warn-unused-do-bind
+  ghc-prof-options: -prof -auto-all
 
 
 Executable testserver
-   hs-source-dirs:  testserver common ../src
-   main-is:         Main.hs
+  hs-source-dirs:  testserver common ../src
+  main-is:         Main.hs
 
-   build-depends:
-     QuickCheck >= 2,
-     array >= 0.3 && <0.4,
-     attoparsec >= 0.8.1 && < 0.9,
-     attoparsec-enumerator >= 0.2.0.1 && < 0.3,
-     base >= 4 && < 5,
-     binary >= 0.5 && < 0.6,
-     blaze-builder >= 0.2.1.4 && <0.4,
-     blaze-builder-enumerator >= 0.2.0 && <0.3,
-     bytestring,
-     bytestring-nums >= 0.3.1 && < 0.4,
-     containers,
-     directory-tree,
-     enumerator >= 0.4.7 && <0.5,
-     filepath,
-     haskell98,
-     HUnit >= 1.2 && < 2,
-     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
-     monads-fd >= 0.1.0.4 && <0.2,
-     murmur-hash >= 0.1 && < 0.2,
-     network == 2.3.*,
-     old-locale,
-     parallel > 2,
-     snap-core >= 0.4.1 && <0.5,
-     template-haskell,
-     test-framework >= 0.3.1 && <0.4,
-     test-framework-hunit >= 0.2.5 && < 0.3,
-     test-framework-quickcheck2 >= 0.2.6 && < 0.3,
-     time,
-     transformers,
-     utf8-string >= 0.3.6 && <0.4,
-     vector >= 0.7 && <0.8,
-     vector-algorithms >= 0.4 && <0.5,
-     PSQueue >= 1.1 && <1.2
+  build-depends:
+    QuickCheck >= 2,
+    array >= 0.3 && <0.4,
+    attoparsec >= 0.8.1 && < 0.9,
+    attoparsec-enumerator >= 0.2.0.1 && < 0.3,
+    base >= 4 && < 5,
+    binary >= 0.5 && < 0.6,
+    blaze-builder >= 0.2.1.4 && <0.4,
+    blaze-builder-enumerator >= 0.2.0 && <0.3,
+    bytestring,
+    bytestring-nums >= 0.3.1 && < 0.4,
+    case-insensitive >= 0.2 && < 0.3,
+    containers,
+    directory-tree,
+    enumerator >= 0.4.7 && <0.5,
+    filepath,
+    haskell98,
+    HUnit >= 1.2 && < 2,
+    MonadCatchIO-transformers >= 0.2.1 && < 0.3,
+    monads-fd >= 0.1.0.4 && <0.2,
+    murmur-hash >= 0.1 && < 0.2,
+    network == 2.3.*,
+    old-locale,
+    parallel > 2,
+    snap-core >= 0.5 && <0.6,
+    template-haskell,
+    test-framework >= 0.3.1 && <0.4,
+    test-framework-hunit >= 0.2.5 && < 0.3,
+    test-framework-quickcheck2 >= 0.2.6 && < 0.3,
+    text >= 0.11 && <0.12,
+    time,
+    transformers,
+    vector >= 0.7 && <0.8,
+    vector-algorithms >= 0.4 && <0.5,
+    PSQueue >= 1.1 && <1.2
 
-   if !os(windows)
-     build-depends: unix
+  if !os(windows)
+    build-depends: unix
 
-   if flag(libev)
-     build-depends: hlibev >= 0.2.5 && < 0.3
-     cpp-options: -DLIBEV
+  if flag(libev)
+    build-depends: hlibev >= 0.2.5 && < 0.3
+    cpp-options: -DLIBEV
 
-   if flag(gnutls)
-     extra-libraries: gnutls
-     cpp-options: -DGNUTLS
-     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(gnutls)
+    extra-libraries: gnutls
+    cpp-options: -DGNUTLS
+    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
-   if flag(portable) || os(windows)
-     cpp-options: -DPORTABLE
+  if flag(portable) || os(windows)
+    cpp-options: -DPORTABLE
 
-   ghc-options: -O2 -Wall -fwarn-tabs
-                -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind
-   ghc-prof-options: -prof -auto-all
+  ghc-options: -O2 -Wall -fwarn-tabs
+               -funbox-strict-fields -threaded
+               -fno-warn-unused-do-bind
+  ghc-prof-options: -prof -auto-all
 
 
 Executable benchmark
-   hs-source-dirs:  benchmark common ../src
-   main-is:         Benchmark.hs
+  hs-source-dirs:  benchmark common ../src
+  main-is:         Benchmark.hs
 
-   ghc-options: -O2 -Wall -fwarn-tabs
-                -funbox-strict-fields -threaded
-                -fno-warn-unused-do-bind
+  ghc-options: -O2 -Wall -fwarn-tabs
+               -funbox-strict-fields -threaded
+               -fno-warn-unused-do-bind
 
-   ghc-prof-options: -prof -auto-all
+  ghc-prof-options: -prof -auto-all
 
-   build-depends:
-     base >= 4 && < 5,
-     network == 2.3.*,
-     http-enumerator >= 0.3.1 && <0.4,
-     criterion >= 0.5 && <0.6
+  build-depends:
+    base >= 4 && < 5,
+    network == 2.3.*,
+    http-enumerator >= 0.6.5.3 && <0.7,
+    criterion >= 0.5 && <0.6

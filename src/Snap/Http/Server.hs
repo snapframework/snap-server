@@ -43,44 +43,70 @@ snapServerVersion = Int.snapServerVersion
 
 
 ------------------------------------------------------------------------------
--- | Starts serving HTTP requests using the given handler. Uses only the basic
--- settings from the given config; error handling and compression are ignored.
--- This function never returns; to shut down the HTTP server, kill the
--- controlling thread.
+-- | Starts serving HTTP requests using the given handler. This function never
+-- returns; to shut down the HTTP server, kill the controlling thread.
+--
+-- This function is like 'httpServe' except it doesn't setup compression or the
+-- error handler; this allows it to be used from 'MonadSnap'.
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
-simpleHttpServe config handler = do
-    setUnicodeLocale $ fromJust $ getLocale conf
-    Int.httpServe tout
-                  (map listenToInt $ getListen conf)
-                  (fmap backendToInt $ getBackend conf)
-                  (fromJust $ getHostname  conf)
-                  (fromJust $ getAccessLog conf)
-                  (fromJust $ getErrorLog  conf)
-                  (runSnap handler)
+simpleHttpServe config handler = do 
+    conf <- completeConfig config
+    let output   = when (fromJust $ getVerbose conf) . hPutStrLn stderr
+    mapM_ (output . ("Listening on "++) . show) $ listeners conf
+
+    go conf `finally` output "\nShutting down..."
   where
-    tout = fromMaybe 60 $ getDefaultTimeout config
-    conf = completeConfig config
-    listenToInt (ListenHttp b p) = Int.HttpPort b p
-    listenToInt (ListenHttps b p c k) = Int.HttpsPort b p c k
-    backendToInt ConfigSimpleBackend = Int.EventLoopSimple
-    backendToInt ConfigLibEvBackend  = Int.EventLoopLibEv
+    go conf = do
+        let tout = fromMaybe 60 $ getDefaultTimeout conf
+        setUnicodeLocale $ fromJust $ getLocale conf
+        Int.httpServe tout
+                      (listeners conf)
+                      (fmap backendToInternal $ getBackend conf)
+                      (fromJust $ getHostname  conf)
+                      (fromJust $ getAccessLog conf)
+                      (fromJust $ getErrorLog  conf)
+                      (runSnap handler)
+{-# INLINE simpleHttpServe #-}
+
+
+listeners :: Config m a -> [Int.ListenPort]
+listeners conf = catMaybes [ httpListener, httpsListener ]
+  where
+    httpsListener = do
+        b    <- getSSLBind conf
+        p    <- getSSLPort conf
+        cert <- getSSLCert conf
+        key  <- getSSLKey conf
+        return $ Int.HttpsPort b p cert key
+
+    httpListener = do
+        p <- getPort conf
+        b <- getBind conf
+        return $ Int.HttpPort b p
 
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP requests using the given handler, with settings from
 -- the 'Config' passed in. This function never returns; to shut down the HTTP
 -- server, kill the controlling thread.
-httpServe :: Config Snap () -> Snap () -> IO ()
+httpServe :: Config Snap a -> Snap () -> IO ()
 httpServe config handler = do
-    mapM_ (output . ("Listening on "++) . show) $ getListen conf
-    serve handler `finally` output "\nShutting down..."
-  where
-    conf     = completeConfig config
-    output   = when (fromJust $ getVerbose conf) . hPutStrLn stderr
-    serve    = simpleHttpServe config . compress . catch500
-    catch500 = flip catch $ fromJust $ getErrorHandler conf
-    compress = if fromJust $ getCompression conf then withCompression else id
+    conf <- completeConfig config
+    let serve = compress conf . catch500 conf $ handler
+    simpleHttpServe conf serve
+{-# INLINE httpServe #-}
 
+
+------------------------------------------------------------------------------
+catch500 :: MonadSnap m => Config m a -> m () -> m ()
+catch500 conf = flip catch $ fromJust $ getErrorHandler conf
+{-# INLINE catch500 #-}
+
+
+------------------------------------------------------------------------------
+compress :: MonadSnap m => Config m a -> m () -> m ()
+compress conf = if fromJust $ getCompression conf then withCompression else id
+{-# INLINE compress #-}
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP using the given handler. The configuration is read
@@ -95,23 +121,29 @@ quickHttpServe m = commandLineConfig emptyConfig >>= \c -> httpServe c m
 -- | Given a string like \"en_US\", this sets the locale to \"en_US.UTF-8\".
 -- This doesn't work on Windows.
 setUnicodeLocale :: String -> IO ()
-setUnicodeLocale lang =
+setUnicodeLocale =
 #ifndef PORTABLE
-    mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
-          [ "LANG"
-          , "LC_CTYPE"
-          , "LC_NUMERIC"
-          , "LC_TIME"
-          , "LC_COLLATE"
-          , "LC_MONETARY"
-          , "LC_MESSAGES"
-          , "LC_PAPER"
-          , "LC_NAME"
-          , "LC_ADDRESS"
-          , "LC_TELEPHONE"
-          , "LC_MEASUREMENT"
-          , "LC_IDENTIFICATION"
-          , "LC_ALL" ]
+    \lang -> mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
+               [ "LANG"
+               , "LC_CTYPE"
+               , "LC_NUMERIC"
+               , "LC_TIME"
+               , "LC_COLLATE"
+               , "LC_MONETARY"
+               , "LC_MESSAGES"
+               , "LC_PAPER"
+               , "LC_NAME"
+               , "LC_ADDRESS"
+               , "LC_TELEPHONE"
+               , "LC_MEASUREMENT"
+               , "LC_IDENTIFICATION"
+               , "LC_ALL" ]
 #else
-    return ()
+    const $ return ()
 #endif
+
+
+------------------------------------------------------------------------------
+backendToInternal :: ConfigBackend -> Int.EventLoopType
+backendToInternal ConfigSimpleBackend = Int.EventLoopSimple
+backendToInternal ConfigLibEvBackend  = Int.EventLoopLibEv

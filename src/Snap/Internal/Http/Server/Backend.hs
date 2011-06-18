@@ -88,6 +88,7 @@ instance Show ListenSocket where
     show (ListenHttp s) = "ListenHttp (" ++ show s ++ ")"
     show (ListenHttps s _ _) = "ListenHttps (" ++ show s ++ ")"
 
+
 ------------------------------------------------------------------------------
 data NetworkSession = NetworkSession
   { _socket     :: CInt
