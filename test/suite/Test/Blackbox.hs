@@ -15,6 +15,7 @@ import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as S
 import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as L
+import           Data.CaseInsensitive (CI)
 import           Data.Int
 import           Data.List
 import           Data.Monoid
@@ -59,6 +60,7 @@ tests port name = map (\f -> f False port name) testFunctions
 
 
 ------------------------------------------------------------------------------
+slowTestOptions :: Bool -> TestOptions' Maybe
 slowTestOptions ssl =
     if ssl
       then mempty { topt_maximum_generated_tests = Just 75 }
@@ -89,7 +91,7 @@ startTestServer port sslport backend = do
     let cfg' = case sslport of
                 Nothing -> cfg
                 Just p  -> setSSLPort p          .
-                           setSSLBind "*"        . 
+                           setSSLBind "*"        .
                            setSSLCert "cert.pem" .
                            setSSLKey  "key.pem"  $
                            cfg
@@ -112,9 +114,8 @@ doPong ssl port = do
                ++ "://127.0.0.1:" ++ show port ++ "/pong"
     debug $ "URI is: '" ++ uri ++ "', calling simpleHttp"
 
-    rsp <- HTTP.simpleHttp uri `catch` (\(e::SomeException) -> do
-               debug $ "simpleHttp threw exception: " ++ show e
-               throwIO e)
+    rsp <- fetch uri
+
     debug $ "response was " ++ show rsp
     return $ S.concat $ L.toChunks rsp
 
@@ -159,19 +160,13 @@ testEcho ssl port name =
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/echo"
 
-        req0 <- QC.run $ HTTP.parseUrl uri
-        let req = req0 { HTTP.requestBody = HTTP.RequestBodyLBS txt
-                       , HTTP.method = "POST" }
-
-        rsp <- QC.run $ HTTP.withManager $ HTTP.httpLbs req
-        let doc = HTTP.responseBody rsp
-
+        doc <- QC.run $ post uri txt []
         QC.assert $ txt == doc
 
 
 ------------------------------------------------------------------------------
 testFileUpload :: Bool -> Int -> String -> Test
-testFileUpload ssl port name = 
+testFileUpload ssl port name =
     plusTestOptions (slowTestOptions ssl) $
     testProperty (name ++ "/blackbox/upload") $
     QC.mapSize (if ssl then min 100 else min 300) $
@@ -222,6 +217,7 @@ testFileUpload ssl port name =
 
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/upload/handle"
+
 
         req0 <- QC.run $ HTTP.parseUrl uri
         let req = req0 { HTTP.requestBody = HTTP.RequestBodyLBS $ body kvps
@@ -383,3 +379,46 @@ waitabit = threadDelay $ 2*seconds
 ------------------------------------------------------------------------------
 seconds :: Int
 seconds = (10::Int) ^ (6::Int)
+
+
+------------------------------------------------------------------------------
+parseURL :: String -> IO (HTTP.Request IO)
+parseURL url = do
+    req <- HTTP.parseUrl url
+    return $ req { HTTP.checkCerts = const $ return True }
+
+
+------------------------------------------------------------------------------
+fetchReq :: HTTP.Request IO -> IO (L.ByteString)
+fetchReq req = go `catch` (\(e::SomeException) -> do
+                 debug $ "simpleHttp threw exception: " ++ show e
+                 throwIO e)
+  where
+    go = do
+        rsp <- HTTP.withManager $ HTTP.httpLbs req
+        return $ HTTP.responseBody rsp
+
+
+------------------------------------------------------------------------------
+fetch :: String -> IO (L.ByteString)
+fetch url = do
+    req <- parseURL url `catch` (\(e::SomeException) -> do
+                 debug $ "parseURL threw exception: " ++ show e
+                 throwIO e)
+    fetchReq req
+
+
+------------------------------------------------------------------------------
+post :: String
+     -> L.ByteString
+     -> [(CI ByteString, ByteString)]
+     -> IO (L.ByteString)
+post url body hdrs = do
+    req <- parseURL url `catch` (\(e::SomeException) -> do
+                 debug $ "parseURL threw exception: " ++ show e
+                 throwIO e)
+    fetchReq $ req { HTTP.requestBody = HTTP.RequestBodyLBS body
+                   , HTTP.method = "POST"
+                   , HTTP.requestHeaders = hdrs }
+
+

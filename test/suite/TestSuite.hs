@@ -9,7 +9,6 @@ import           Control.Concurrent.MVar
 import           Control.Monad
 import           Prelude hiding (catch)
 import           Network (withSocketsDo)
-import qualified Network.HTTP.Enumerator as HTTP
 import           Test.Framework (defaultMain, testGroup)
 import           System.Environment
 import           Snap.Http.Server.Config
