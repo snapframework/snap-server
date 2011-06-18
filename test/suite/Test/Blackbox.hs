@@ -218,15 +218,8 @@ testFileUpload ssl port name =
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/upload/handle"
 
-
-        req0 <- QC.run $ HTTP.parseUrl uri
-        let req = req0 { HTTP.requestBody = HTTP.RequestBodyLBS $ body kvps
-                       , HTTP.method = "POST"
-                       , HTTP.requestHeaders = hdrs }
-
         let txt = response kvps
-        rsp <- QC.run $ HTTP.withManager $ HTTP.httpLbs req
-        let doc = HTTP.responseBody rsp
+        doc <- QC.run $ post uri (body kvps) hdrs
 
         when (txt /= doc) $ QC.run $ do
                      L.putStrLn "expected:"
@@ -252,14 +245,8 @@ testRot13 ssl port name =
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/rot13"
 
-        req0 <- QC.run $ HTTP.parseUrl uri
-        let req = req0 { HTTP.requestBody = HTTP.RequestBodyLBS $
-                                            L.fromChunks [txt]
-                       , HTTP.method = "POST" }
-
-        rsp <- QC.run $ HTTP.withManager $ HTTP.httpLbs req
-        let doc = S.concat $ L.toChunks $ HTTP.responseBody rsp
-
+        doc <- QC.run $ liftM (S.concat . L.toChunks)
+                      $ post uri (L.fromChunks [txt]) []
         QC.assert $ txt == rot13 doc
 
 
