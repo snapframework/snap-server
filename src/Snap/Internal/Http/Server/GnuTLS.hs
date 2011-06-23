@@ -141,22 +141,22 @@ freePort _ = return ()
 createSession :: ListenSocket -> Int -> CInt -> IO () -> IO NetworkSession
 createSession (ListenHttps _ creds _) recvSize socket on_block =
     alloca $ \sPtr -> do
-        throwErrorIf "TLS alloacte" $ gnutls_init sPtr 1
+        throwErrorIf "TLS allocate" $ gnutls_init sPtr 1
         session <- peek sPtr
+        finishInit session `onException` gnutls_deinit session
+  where
+    finishInit session = do
         throwErrorIf "TLS session" $
             gnutls_credentials_set session 1 $ castPtr creds
         throwErrorIf "TLS session" $ gnutls_set_default_priority session
         gnutls_certificate_send_x509_rdn_sequence session 1
         gnutls_session_enable_compatibility_mode session
-
         let s = NetworkSession socket (castPtr session) $
                     fromIntegral recvSize
-
         gnutls_transport_set_ptr session $ intPtrToPtr $ fromIntegral $ socket
-
         handshake s on_block
-
         return s
+
 createSession _ _ _ _ = error "Invalid socket"
 
 
