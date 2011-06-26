@@ -150,7 +150,7 @@ testCookie =
 
 testFormEncoded :: Test
 testFormEncoded = testCase "parser/formEncoded" $ do
-    let bs = "foo1=bar1&foo2=bar2+baz2&foo3=foo%20bar"
+    let bs = "foo1=bar1&foo2=bar2+baz2;foo3=foo%20bar"
     let mp = parseUrlEncoded bs
 
     assertEqual "foo1" (Just ["bar1"]     ) $ Map.lookup "foo1" mp
