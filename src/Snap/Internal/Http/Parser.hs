@@ -264,7 +264,7 @@ parseUrlEncoded s = foldl' (\m (k,v) -> Map.insertWith' (++) k [v] m)
     breakApart = (second (S.drop 1)) . S.break (== '=')
 
     parts :: [(ByteString,ByteString)]
-    parts = map breakApart $ S.split '&' s
+    parts = map breakApart $ S.splitWith (\c -> c == '&' || c == ';') s
 
     urldecode = parseToCompletion pUrlEscaped
 
