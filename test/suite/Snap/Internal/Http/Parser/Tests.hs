@@ -137,15 +137,13 @@ testCookie =
         assertEqual "cookie parsing" (Just [cv]) cv2
 
   where
-    cv  = Cookie nm v Nothing Nothing Nothing
+    cv  = Cookie nm v Nothing Nothing Nothing False False
     cv2 = parseCookie ct
 
     nm     = "foo"
     v      = "bar"
 
-    ct = S.concat [ nm
-                  , "="
-                  , v ]
+    ct = S.concat [ nm , "=" , v ]
 
 
 testFormEncoded :: Test

@@ -243,7 +243,7 @@ pCookies = do
     return $ map toCookie $ filter (not . S.isPrefixOf "$" . fst) kvps
 
   where
-    toCookie (nm,val) = Cookie nm val Nothing Nothing Nothing
+    toCookie (nm,val) = Cookie nm val Nothing Nothing Nothing False False
 
 
 ------------------------------------------------------------------------------

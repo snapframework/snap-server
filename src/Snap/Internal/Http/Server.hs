@@ -918,12 +918,14 @@ toHeaders kvps = foldl' f Map.empty kvps'
 ------------------------------------------------------------------------------
 -- | Convert 'Cookie' into 'ByteString' for output.
 cookieToBS :: Cookie -> ByteString
-cookieToBS (Cookie k v mbExpTime mbDomain mbPath) = cookie
+cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
   where
-    cookie  = S.concat [k, "=", v, path, exptime, domain]
+    cookie  = S.concat [k, "=", v, path, exptime, domain, secure, hOnly]
     path    = maybe "" (S.append "; path=") mbPath
     domain  = maybe "" (S.append "; domain=") mbDomain
     exptime = maybe "" (S.append "; expires=" . fmt) mbExpTime
+    secure  = if isSec then "; Secure" else ""
+    hOnly   = if isHOnly then "; HttpOnly" else ""
     fmt     = fromStr . formatTime defaultTimeLocale
                                    "%a, %d-%b-%Y %H:%M:%S GMT"
 
