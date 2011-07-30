@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.5.2
+version:        0.6.0
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -108,7 +108,7 @@ Library
     blaze-builder-enumerator >= 0.2.0 && <0.3,
     bytestring,
     bytestring-nums,
-    case-insensitive >= 0.2 && < 0.3,
+    case-insensitive >= 0.3 && < 0.4,
     containers,
     directory-tree,
     enumerator >= 0.4.13.1 && <0.5,
@@ -118,7 +118,7 @@ Library
     murmur-hash >= 0.1 && < 0.2,
     network >= 2.3 && <2.4,
     old-locale,
-    snap-core >= 0.5.2 && <0.6,
+    snap-core >= 0.6 && < 0.7,
     template-haskell,
     text >= 0.11 && <0.12,
     time,
