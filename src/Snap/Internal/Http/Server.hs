@@ -567,7 +567,8 @@ receiveRequest writeEnd = do
                 e st'
 
             liftIO $ writeIORef (rqBody req) $ SomeEnumerator e'
-            return $ req { rqParams = rqParams req `mappend` newParams }
+            return $ req { rqParams = Map.unionWith (++) (rqParams req)
+                                        newParams }
 
 
     --------------------------------------------------------------------------
