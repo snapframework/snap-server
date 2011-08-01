@@ -21,6 +21,7 @@ import           Data.List
 import           Data.Monoid
 import qualified Network.HTTP.Enumerator as HTTP
 import qualified Network.Socket.ByteString as N
+import           Network.TLS (TLSCertificateUsage(..))
 import           Prelude hiding (catch, take)
 import           System.Timeout
 import           Test.Framework
@@ -372,7 +373,7 @@ seconds = (10::Int) ^ (6::Int)
 parseURL :: String -> IO (HTTP.Request IO)
 parseURL url = do
     req <- HTTP.parseUrl url
-    return $ req { HTTP.checkCerts = const $ return True }
+    return $ req { HTTP.checkCerts = const $ return CertificateUsageAccept }
 
 
 ------------------------------------------------------------------------------

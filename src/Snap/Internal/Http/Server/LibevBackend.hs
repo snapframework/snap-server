@@ -461,7 +461,6 @@ runSession defaultTimeout backend handler lsock fd = do
     ra    <- newMVar ()
     wa    <- newMVar ()
 
-
     -----------------
     -- setup timer --
     -----------------
@@ -499,39 +498,45 @@ runSession defaultTimeout backend handler lsock fd = do
          evAsyncSend lp $ _asyncObj backend
 
     let sinfo = SessionInfo laddr lport raddr rport $
-                    Listen.isSecure lsock
-    let conn = Connection backend
-                          lsock
-                          fd
-                          sinfo
-                          ra
-                          wa
-                          tmr
-                          tcb
-                          timeoutTime
-                          readActive
-                          writeActive
-                          evioRead
-                          ioReadCb
-                          evioWrite
-                          ioWriteCb
-                          tid
+                Listen.isSecure lsock
+    let conn  = Connection backend
+                           lsock
+                           fd
+                           sinfo
+                           ra
+                           wa
+                           tmr
+                           tcb
+                           timeoutTime
+                           readActive
+                           writeActive
+                           evioRead
+                           ioReadCb
+                           evioWrite
+                           ioWriteCb
+                           tid
 
-    bracket (Listen.createSession lsock bLOCKSIZE fd $
-                   waitForLock True conn)
-            (\session -> block $ do
-                debug "runSession: thread killed, closing socket"
-
-                ignoreException $ Listen.endSession lsock session
-                ignoreException $ freeConnection conn
-            )
-            (\session -> do H.update tid conn (_connectionThreads backend)
-                            handler sinfo
-                                    (enumerate conn session)
-                                    (writeOut defaultTimeout conn session)
-                                    (sendFile defaultTimeout conn session)
-                                    (tickleTimeout conn)
-            )
+    go sinfo conn `finally` (block $ do
+        debug "runSession: thread finished, freeing connection"
+        ignoreException $ freeConnection conn)
+        
+  where
+    go sinfo conn =
+        bracket (Listen.createSession lsock bLOCKSIZE fd $
+                     waitForLock True conn)
+                (\session -> block $ do
+                    debug "runSession: session finished, cleaning up"
+                    ignoreException $ Listen.endSession lsock session
+                )
+                (\session -> do H.update (_connThread conn)
+                                         conn
+                                         (_connectionThreads backend)
+                                handler sinfo
+                                      (enumerate conn session)
+                                      (writeOut defaultTimeout conn session)
+                                      (sendFile defaultTimeout conn session)
+                                      (tickleTimeout conn)
+                )
 
 
 ------------------------------------------------------------------------------

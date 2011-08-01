@@ -189,8 +189,9 @@ testHttpRequest1 =
 
         assertEqual "parse body" "0123456789" body
 
-        assertEqual "cookie" [Cookie "foo" "bar\"" Nothing Nothing Nothing] $
-                    rqCookies req
+        assertEqual "cookie" 
+                    [Cookie "foo" "bar\"" Nothing Nothing Nothing False False] 
+                    (rqCookies req)
 
         assertEqual "continued headers" (Just ["foo bar"]) $
                     Map.lookup "x-random-other-header" $ rqHeaders req
@@ -491,37 +492,30 @@ testHttpResponseCookies :: Test
 testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
     buf <- allocBuffer 16384
     req <- mkRequest sampleRequest
+
     b <- run_ $ rsm $
-         sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
-                      return . snd
-    b2 <- run_ $ rsm $
-          sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
+          sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
-    assertEqual "http response cookie" (L.concat [
+    -- Having some weird issues here with lazy ByteString comparison; run thru
+    -- strict ByteString to get around it. Slow/lame, but whatever.
+    assertEqual "http response multi-cookies" (L.fromChunks . return . S.concat $ [
                       "HTTP/1.0 304 Test\r\n"
                     , "Content-Length: 0\r\n"
-                    , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n\r\n"
-                    ]) b
-
-
-    assertEqual "http response multi-cookies" (L.concat [
-                      "HTTP/1.0 304 Test\r\n"
-                    , "Content-Length: 0\r\n"
-                    , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n"
-                    , "Set-Cookie: zoo=baz; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n\r\n"
-                    ]) b2
+                    , "Set-Cookie: ck1=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; Secure\r\n"
+                    , "Set-Cookie: ck2=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; HttpOnly\r\n"
+                    , "Set-Cookie: ck3=bar\r\n\r\n"
+                    ]) (L.fromChunks . return . S.concat . L.toChunks $ b)
 
   where
-    rsp1 = setResponseStatus 304 "Test" $
-           emptyResponse { rspHttpVersion = (1,0) }
-    rsp2 = addResponseCookie cook rsp1
-    rsp3 = addResponseCookie cook2 rsp2
+    rsp1 = setResponseStatus 304 "Test" $ emptyResponse { rspHttpVersion = (1,0) }
+    rsp2 = addResponseCookie cook3 . addResponseCookie cook2 
+         . addResponseCookie cook $ rsp1
 
     utc   = UTCTime (ModifiedJulianDay 55226) 0
-    cook  = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
-    cook2 = Cookie "zoo" "baz" (Just utc) (Just ".foo.com") (Just "/")
-    cook3 = Cookie "boo" "baz" Nothing Nothing Nothing
+    cook  = Cookie "ck1" "bar" (Just utc) (Just ".foo.com") (Just "/") True False
+    cook2 = Cookie "ck2" "bar" (Just utc) (Just ".foo.com") (Just "/") False True
+    cook3 = Cookie "ck3" "bar" Nothing Nothing Nothing False False
 
 
 
@@ -548,7 +542,7 @@ echoServer2 _ _ req = do
     (rq,rsp) <- echoServer (const $ return ()) (const $ return ()) req
     return (rq, addResponseCookie cook rsp)
   where
-    cook = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
+    cook = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/") False False
     utc = UTCTime (ModifiedJulianDay 55226) 0
 
 

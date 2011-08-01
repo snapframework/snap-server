@@ -137,20 +137,18 @@ testCookie =
         assertEqual "cookie parsing" (Just [cv]) cv2
 
   where
-    cv  = Cookie nm v Nothing Nothing Nothing
+    cv  = Cookie nm v Nothing Nothing Nothing False False
     cv2 = parseCookie ct
 
     nm     = "foo"
     v      = "bar"
 
-    ct = S.concat [ nm
-                  , "="
-                  , v ]
+    ct = S.concat [ nm , "=" , v ]
 
 
 testFormEncoded :: Test
 testFormEncoded = testCase "parser/formEncoded" $ do
-    let bs = "foo1=bar1&foo2=bar2+baz2&foo3=foo%20bar"
+    let bs = "foo1=bar1&foo2=bar2+baz2;foo3=foo%20bar"
     let mp = parseUrlEncoded bs
 
     assertEqual "foo1" (Just ["bar1"]     ) $ Map.lookup "foo1" mp
