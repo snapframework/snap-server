@@ -19,9 +19,9 @@ import           System.PosixCompat.Time
 import           Snap.Internal.Http.Types (formatHttpTime, formatLogTime)
 
 -- Here comes a dirty hack. We don't want to be wasting context switches
--- building date strings, so we're only going to compute one every two
--- seconds. (Approximate timestamps to within a couple of seconds are OK here,
--- and we'll reduce overhead.)
+-- building date strings, so we're only going to compute one every second.
+-- (Approximate timestamps to within a second are OK here, and we'll reduce
+-- overhead.)
 --
 -- Note that we also don't want to wake up a potentially sleeping CPU by just
 -- running the computation on a timer. We'll allow client traffic to trigger
@@ -33,7 +33,8 @@ data DateState = DateState {
     , _cachedLogString  :: !(IORef ByteString)
     , _cachedDate       :: !(IORef CTime)
     , _valueIsOld       :: !(IORef Bool)
-    , _morePlease       :: !(MVar ())
+    , _clientActivity   :: !(IORef Bool)
+    , _wakeUpThread     :: !(MVar ())
     , _dateThread       :: !(MVar ThreadId)
     }
 
@@ -46,10 +47,11 @@ dateState = unsafePerformIO $ do
     bs2 <- newIORef s2
     dt  <- newIORef date
     ov  <- newIORef False
+    act <- newIORef True
     th  <- newEmptyMVar
-    mp  <- newMVar ()
+    wu  <- newMVar ()
 
-    let d = DateState bs1 bs2 dt ov mp th
+    let d = DateState bs1 bs2 dt ov act wu th
 
     t  <- forkIO $ dateThread d
     putMVar th t
@@ -68,11 +70,12 @@ fetchTime = do
 
 ------------------------------------------------------------------------------
 updateState :: DateState -> IO ()
-updateState (DateState dateString logString time valueIsOld _ _) = do
+updateState (DateState dateString logString time valueIsOld activity _ _) = do
     (s1,s2,now) <- fetchTime
     atomicModifyIORef dateString $ const (s1,())
     atomicModifyIORef logString  $ const (s2,())
     atomicModifyIORef time       $ const (now,())
+    writeIORef activity False
     writeIORef valueIsOld False
 
     -- force values in the iorefs to prevent thunk buildup
@@ -85,16 +88,16 @@ updateState (DateState dateString logString time valueIsOld _ _) = do
 
 ------------------------------------------------------------------------------
 dateThread :: DateState -> IO ()
-dateThread ds@(DateState _ _ _ valueIsOld morePlease _) = loop
+dateThread ds@(DateState _ _ _ valueIsOld activityRef wakeUpThread _) = loop
   where
     loop = do
-        b <- tryTakeMVar morePlease
-        when (isNothing b) $ do
+        activity <- readIORef activityRef
+        when (not activity) $ do
             writeIORef valueIsOld True
-            takeMVar morePlease
+            takeMVar wakeUpThread
 
         updateState ds
-        threadDelay 2000000
+        threadDelay 1000000
         loop
 
 
@@ -102,12 +105,14 @@ dateThread ds@(DateState _ _ _ valueIsOld morePlease _) = loop
 ensureFreshDate :: IO ()
 ensureFreshDate = block $ do
     old <- readIORef $ _valueIsOld dateState
-    _ <- tryPutMVar (_morePlease dateState) ()
-
-    -- if the value is not fresh we will tickle the date thread but also fetch
-    -- the new value immediately; we used to block but we'll do a little extra
-    -- work to avoid a delay
-    when old $ updateState dateState
+    if old 
+      then do
+        -- if the value is not fresh we will tickle the date thread but also fetch
+        -- the new value immediately; we used to block but we'll do a little extra
+        -- work to avoid a delay
+        _ <- tryPutMVar (_wakeUpThread dateState) ()
+        updateState dateState
+      else writeIORef (_clientActivity dateState) True
 
 
 ------------------------------------------------------------------------------
