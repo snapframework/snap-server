@@ -108,7 +108,7 @@ Library
     blaze-builder-enumerator >= 0.2.0 && <0.3,
     bytestring,
     bytestring-nums,
-    case-insensitive >= 0.2 && < 0.3,
+    case-insensitive >= 0.2 && < 0.4,
     containers,
     directory-tree,
     enumerator >= 0.4.13.1 && <0.5,
