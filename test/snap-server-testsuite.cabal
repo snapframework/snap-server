@@ -67,7 +67,7 @@ Executable testsuite
     cpp-options: -DLIBEV
 
   if flag(gnutls)
-    extra-libraries: gnutls
+    extra-libraries: gnutls gcrypt
     cpp-options: -DGNUTLS
     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
@@ -128,7 +128,7 @@ Executable pongserver
     cpp-options: -DLIBEV
 
   if flag(gnutls)
-    extra-libraries: gnutls
+    extra-libraries: gnutls gcrypt
     cpp-options: -DGNUTLS
     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
@@ -206,7 +206,7 @@ Executable testserver
     cpp-options: -DLIBEV
 
   if flag(gnutls)
-    extra-libraries: gnutls
+    extra-libraries: gnutls gcrypt
     cpp-options: -DGNUTLS
     c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
 
