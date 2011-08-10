@@ -270,7 +270,7 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         tickle =
     go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
                        return ()
-                 , Handler $ \(e :: HttpParseException) -> do
+                 , Handler $ \(_ :: HttpParseException) -> do
                        return ()
                  , Handler $ \(e :: AsyncException) -> do
                        throwIO e
