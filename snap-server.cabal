@@ -70,8 +70,8 @@ Flag portable
                optimizations such as C routines will be used.
   Default: False
 
-Flag gnutls
-  Description: Enable https support using the libgnutls library.
+Flag openssl
+  Description: Enable https support using the HsOpenSSL library.
   Default: False
 
 
@@ -92,10 +92,10 @@ Library
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Backend,
     Snap.Internal.Http.Server.ListenHelpers,
-    Snap.Internal.Http.Server.GnuTLS,
     Snap.Internal.Http.Server.HttpPort,
-    Snap.Internal.Http.Server.TimeoutManager,
     Snap.Internal.Http.Server.SimpleBackend,
+    Snap.Internal.Http.Server.TimeoutManager,
+    Snap.Internal.Http.Server.TLS,
     Snap.Internal.Http.Server.LibevBackend
 
   build-depends:
@@ -137,10 +137,9 @@ Library
     build-depends: hlibev >= 0.2.8 && < 0.3
     cpp-options: -DLIBEV
 
-  if flag(gnutls)
-    extra-libraries: gnutls gcrypt
-    cpp-options: -DGNUTLS
-    c-sources: src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE

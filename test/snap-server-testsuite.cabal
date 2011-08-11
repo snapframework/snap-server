@@ -12,8 +12,8 @@ Flag portable
                optimizations such as C routines will be used.
   Default: False
 
-Flag gnutls
-  Description: Enable https support using the libgnutls library.
+Flag openssl
+  Description: Enable https support using the HsOpenSSL library.
   Default: False
 
 Executable testsuite
@@ -66,10 +66,9 @@ Executable testsuite
     build-depends: hlibev >= 0.2.5 && < 0.3
     cpp-options: -DLIBEV
 
-  if flag(gnutls)
-    extra-libraries: gnutls gcrypt
-    cpp-options: -DGNUTLS
-    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
 
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
@@ -127,10 +126,9 @@ Executable pongserver
     build-depends: hlibev >= 0.2.5 && < 0.3
     cpp-options: -DLIBEV
 
-  if flag(gnutls)
-    extra-libraries: gnutls gcrypt
-    cpp-options: -DGNUTLS
-    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE
@@ -205,10 +203,9 @@ Executable testserver
     build-depends: hlibev >= 0.2.5 && < 0.3
     cpp-options: -DLIBEV
 
-  if flag(gnutls)
-    extra-libraries: gnutls gcrypt
-    cpp-options: -DGNUTLS
-    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
 
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE

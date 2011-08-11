@@ -47,7 +47,7 @@ import           Snap.Internal.Http.Server.Date
 
 import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Server.HttpPort
-import qualified Snap.Internal.Http.Server.GnuTLS as TLS
+import qualified Snap.Internal.Http.Server.TLS as TLS
 import           Snap.Internal.Http.Server.SimpleBackend
 import           Snap.Internal.Http.Server.LibevBackend
 
