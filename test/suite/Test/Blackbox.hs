@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PackageImports #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Test.Blackbox
   ( tests
