@@ -121,7 +121,7 @@ Library
     snap-core >= 0.5.3 && <0.6,
     template-haskell,
     text >= 0.11 && <0.12,
-    time,
+    time >= 1.0 && < 1.4,
     transformers,
     unix-compat == 0.2.*,
     vector >= 0.7 && <0.8,
