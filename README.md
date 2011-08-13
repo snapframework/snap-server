@@ -36,7 +36,7 @@ The `snap-server` library can optionally use the
 scalable socket event processing.
 
 If you would like SSL support, `snap-server` requires the
-[gnutls](http://www.gnu.org/software/gnutls/) library.
+[openssl](http://www.openssl.org/) library.
 
 
 ## Building snap-server
@@ -51,11 +51,11 @@ to get the "stock" version of Snap. If you would like to try the optional
 
     cabal install -flibev
 
-And if you would like SSL support, pass the `gnutls` flag to `cabal install`:
+And if you would like SSL support, pass the `openssl` flag to `cabal install`:
 
-    cabal install -fgnutls
+    cabal install -fopenssl
 
-Note that the "`-flibev`" and "`-fgnutls`" flags are not mutually-exclusive,
+Note that the "`-flibev`" and "`-fopenssl`" flags are not mutually-exclusive,
 and if you would like you can use them together.
 
 
@@ -76,7 +76,8 @@ The `snap-server` has a fairly comprehensive test suite. To build and run it,
 
     $ cabal configure            # for the stock backend, or..
     $ cabal configure -flibev    # for the libev backend, and/or..
-    $ cabal configure -fgnutls   # for the SSL backend
+    $ cabal configure -fopenssl  # for the SSL backend
+    
     $ cabal build
 
 From here you can invoke the testsuite by running:

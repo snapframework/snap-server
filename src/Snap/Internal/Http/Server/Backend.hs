@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Snap.Internal.Http.Server.Backend where
 
 {-
@@ -13,6 +14,11 @@ The server backend is made up of two APIs.
 
 -}
 
+#ifdef OPENSSL
+import OpenSSL.Session
+#endif
+
+import GHC.Exts (Any)
 import Data.ByteString (ByteString)
 import Foreign
 import Foreign.C
@@ -82,16 +88,19 @@ class ListenSocket a where
 
 ------------------------------------------------------------------------------
 data ListenSocket = ListenHttp  Socket
-                  | ListenHttps Socket (Ptr Word) (Ptr Word)
-
+#ifdef OPENSSL
+                  | ListenHttps Socket SSLContext
+#else
+                  | ListenHttps Socket ()
+#endif
 instance Show ListenSocket where
-    show (ListenHttp s) = "ListenHttp (" ++ show s ++ ")"
-    show (ListenHttps s _ _) = "ListenHttps (" ++ show s ++ ")"
+    show (ListenHttp s)    = "ListenHttp ("  ++ show s ++ ")"
+    show (ListenHttps s _) = "ListenHttps (" ++ show s ++ ")"
 
 
 ------------------------------------------------------------------------------
 data NetworkSession = NetworkSession
   { _socket     :: CInt
-  , _session    :: Ptr Word
+  , _session    :: Any          -- ^ brutal hack.
   , _recvLen    :: Int
   }

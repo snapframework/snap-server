@@ -22,7 +22,7 @@ import qualified Test.Blackbox
 ports :: Int -> [Int]
 ports sp = [sp..]
 
-#ifdef GNUTLS
+#ifdef OPENSSL
 sslports :: Int -> [Maybe Int]
 sslports sp = map Just [(sp + 100)..]
 #else

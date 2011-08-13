@@ -12,8 +12,8 @@ Flag portable
                optimizations such as C routines will be used.
   Default: False
 
-Flag gnutls
-  Description: Enable https support using the libgnutls library.
+Flag openssl
+  Description: Enable https support using the HsOpenSSL library.
   Default: False
 
 Executable testsuite
@@ -37,7 +37,6 @@ Executable testsuite
     directory-tree,
     enumerator >= 0.4.13.1 && <0.5,
     filepath,
-    haskell98,
     http-enumerator >= 0.6.5.4 && <0.7,
     HUnit >= 1.2 && < 2,
     monads-fd >= 0.2,
@@ -66,10 +65,9 @@ Executable testsuite
     build-depends: hlibev >= 0.2.5 && < 0.3
     cpp-options: -DLIBEV
 
-  if flag(gnutls)
-    extra-libraries: gnutls
-    cpp-options: -DGNUTLS
-    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
 
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
@@ -100,7 +98,6 @@ Executable pongserver
     directory-tree,
     enumerator >= 0.4.7 && <0.5,
     filepath,
-    haskell98,
     HUnit >= 1.2 && < 2,
     monads-fd >= 0.2,
     murmur-hash >= 0.1 && < 0.2,
@@ -127,10 +124,9 @@ Executable pongserver
     build-depends: hlibev >= 0.2.5 && < 0.3
     cpp-options: -DLIBEV
 
-  if flag(gnutls)
-    extra-libraries: gnutls
-    cpp-options: -DGNUTLS
-    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE
@@ -178,7 +174,6 @@ Executable testserver
     directory-tree,
     enumerator >= 0.4.7 && <0.5,
     filepath,
-    haskell98,
     HUnit >= 1.2 && < 2,
     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
     monads-fd >= 0.2,
@@ -205,10 +200,9 @@ Executable testserver
     build-depends: hlibev >= 0.2.5 && < 0.3
     cpp-options: -DLIBEV
 
-  if flag(gnutls)
-    extra-libraries: gnutls
-    cpp-options: -DGNUTLS
-    c-sources: ../src/Snap/Internal/Http/Server/gnutls_helpers.c
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
 
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE

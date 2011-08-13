@@ -47,7 +47,7 @@ import           Snap.Internal.Http.Server.Date
 
 import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Server.HttpPort
-import qualified Snap.Internal.Http.Server.GnuTLS as TLS
+import qualified Snap.Internal.Http.Server.TLS as TLS
 import           Snap.Internal.Http.Server.SimpleBackend
 import           Snap.Internal.Http.Server.LibevBackend
 
@@ -270,7 +270,7 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         tickle =
     go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
                        return ()
-                 , Handler $ \(e :: HttpParseException) -> do
+                 , Handler $ \(_ :: HttpParseException) -> do
                        return ()
                  , Handler $ \(e :: AsyncException) -> do
                        throwIO e

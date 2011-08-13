@@ -18,6 +18,7 @@ import           Data.ByteString.Internal (w2c)
 import           Foreign
 import           Foreign.C
 import           Network.Socket hiding (recv, send)
+import           Unsafe.Coerce
 
 #ifdef PORTABLE
 import qualified Network.Socket.ByteString as SB
@@ -57,7 +58,7 @@ getHostAddr p s = do
 ------------------------------------------------------------------------------
 createSession :: Int -> CInt -> IO () -> IO NetworkSession
 createSession buffSize s _ =
-    return $ NetworkSession s nullPtr $ fromIntegral buffSize
+    return $ NetworkSession s (unsafeCoerce ()) $ fromIntegral buffSize
 
 
 ------------------------------------------------------------------------------
