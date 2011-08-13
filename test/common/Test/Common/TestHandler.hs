@@ -139,13 +139,13 @@ uploadHandler = do
 
 testHandler :: Snap ()
 testHandler = withCompression $
-    route [ ("pong"           , pongHandler                  )
-          , ("echo"           , echoHandler                  )
-          , ("rot13"          , rot13Handler                 )
-          , ("echoUri"        , echoUriHandler               )
-          , ("fileserve"      , fileServe "testserver/static")
-          , ("bigresponse"    , bigResponseHandler           )
-          , ("respcode/:code" , responseHandler              )
-          , ("upload/form"    , uploadForm                   )
-          , ("upload/handle"  , uploadHandler                )
+    route [ ("pong"           , pongHandler                       )
+          , ("echo"           , echoHandler                       )
+          , ("rot13"          , rot13Handler                      )
+          , ("echoUri"        , echoUriHandler                    )
+          , ("fileserve"      , serveDirectory "testserver/static")
+          , ("bigresponse"    , bigResponseHandler                )
+          , ("respcode/:code" , responseHandler                   )
+          , ("upload/form"    , uploadForm                        )
+          , ("upload/handle"  , uploadHandler                     )
           ]

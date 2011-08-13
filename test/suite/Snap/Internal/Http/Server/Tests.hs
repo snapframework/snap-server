@@ -52,6 +52,7 @@ import qualified Snap.Iteratee as I
 import           Snap.Iteratee hiding (map)
 import           Snap.Internal.Http.Server.Backend
 import           Snap.Test.Common
+import qualified Snap.Types.Headers as H
 
 data TestException = TestException
   deriving (Show, Typeable)
@@ -195,7 +196,7 @@ testHttpRequest1 =
                     (rqCookies req)
 
         assertEqual "continued headers" (Just ["foo bar"]) $
-                    Map.lookup "x-random-other-header" $ rqHeaders req
+                    H.lookup "x-random-other-header" $ rqHeaders req
 
         assertEqual "parse URI"
                     "/foo/bar.html?param1=abc&param2=def%20+&param1=abc"
@@ -308,7 +309,7 @@ testHttpRequest3 =
         assertEqual "no cookies" [] $ rqCookies req
 
         assertEqual "multiheader" (Just ["1","2"]) $
-                    Map.lookup "Multiheader" (rqHeaders req)
+                    H.lookup "Multiheader" (rqHeaders req)
 
         assertEqual "host" ("localhost", 80) $
                     (rqServerName req, rqServerPort req)
@@ -397,7 +398,7 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
                     ]) b
 
   where
-    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+    rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
@@ -427,7 +428,7 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
                     , "0123456789"
                     ]) b2
   where
-    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+    rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
@@ -458,7 +459,7 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
 
 
   where
-    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+    rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
