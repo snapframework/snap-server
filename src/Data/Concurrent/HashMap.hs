@@ -2,7 +2,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Data.Concurrent.HashMap
   ( HashMap
@@ -43,38 +42,33 @@ import GHC.Exts ( Word(..), Int(..), shiftRL# )
 import Data.Word
 #endif
 
-import           Data.Concurrent.HashMap.Internal
-
-
 hashString :: String -> Word
-hashString = $(whichHash [| Murmur.asWord32 . Murmur.hash32 |]
-                         [| Murmur.asWord64 . Murmur.hash64 |])
+hashString = if bitSize (undefined :: Word) == 32
+               then fromIntegral . Murmur.asWord32 . Murmur.hash32
+               else fromIntegral . Murmur.asWord64 . Murmur.hash64
 {-# INLINE hashString #-}
 
 
 hashInt :: Int -> Word
-hashInt = $(whichHash [| Murmur.asWord32 . Murmur.hash32 |]
-                      [| Murmur.asWord64 . Murmur.hash64 |])
+hashInt = if bitSize (undefined :: Word) == 32
+            then fromIntegral . Murmur.asWord32 . Murmur.hash32
+            else fromIntegral . Murmur.asWord64 . Murmur.hash64
 {-# INLINE hashInt #-}
 
 
 hashBS :: B.ByteString -> Word
-hashBS =
-    $(let h32 = [| \s -> s `seq`
-                         Murmur.asWord32 $
-                         B.foldl' (\h c -> h `seq` c `seq`
-                                           Murmur.hash32AddInt (fromEnum c) h)
-                                  (Murmur.hash32 ([] :: [Int]))
-                                  s
-                |]
-          h64 = [| \s -> s `seq`
-                         Murmur.asWord64 $
-                         B.foldl' (\h c -> h `seq` c `seq`
-                                           Murmur.hash64AddInt (fromEnum c) h)
-                                  (Murmur.hash64 ([] :: [Int]))
-                                  s
-                |]
-      in whichHash h32 h64)
+hashBS = if bitSize (undefined :: Word) == 32 then h32 else h64
+  where
+    h32 s = fromIntegral $ Murmur.asWord32 $
+            B.foldl' (\h c -> h `seq` c `seq`
+                              Murmur.hash32AddInt (fromEnum c) h)
+                     (Murmur.hash32 ([] :: [Int]))
+                     s
+    h64 s = fromIntegral $ Murmur.asWord64 $
+            B.foldl' (\h c -> h `seq` c `seq`
+                              Murmur.hash64AddInt (fromEnum c) h)
+                     (Murmur.hash64 ([] :: [Int]))
+                     s
 {-# INLINE hashBS #-}
 
 
