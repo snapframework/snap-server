@@ -28,7 +28,7 @@ import           Data.Maybe
 import           Prelude hiding (catch)
 import           Snap.Http.Server.Config
 import qualified Snap.Internal.Http.Server as Int
-import           Snap.Types
+import           Snap.Core
 import           Snap.Util.GZip
 #ifndef PORTABLE
 import           System.Posix.Env

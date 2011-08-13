@@ -6,7 +6,7 @@ import           Control.Concurrent
 import           Control.Exception (finally)
 
 import           Snap.Iteratee
-import           Snap.Types
+import           Snap.Core
 import           Snap.Http.Server
 
 -- FIXME: need better primitives for output

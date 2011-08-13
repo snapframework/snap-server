@@ -66,7 +66,7 @@ import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Prelude hiding (catch)
-import           Snap.Types
+import           Snap.Core
 import           Snap.Iteratee ((>==>), enumBuilder)
 import           Snap.Internal.Debug (debug)
 import           System.Console.GetOpt

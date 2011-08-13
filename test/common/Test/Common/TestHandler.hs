@@ -14,7 +14,7 @@ import           Data.Maybe
 import           Data.Monoid
 import           Snap.Iteratee hiding (Enumerator)
 import qualified Snap.Iteratee as I
-import           Snap.Types
+import           Snap.Core
 import           Snap.Util.FileServe
 import           Snap.Util.FileUploads
 import           Snap.Util.GZip

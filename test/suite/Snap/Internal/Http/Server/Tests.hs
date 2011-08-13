@@ -44,6 +44,7 @@ import           Test.HUnit hiding (Test, path)
 
 import qualified Snap.Http.Server as Svr
 
+import           Snap.Core
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Http.Server
@@ -51,7 +52,6 @@ import qualified Snap.Iteratee as I
 import           Snap.Iteratee hiding (map)
 import           Snap.Internal.Http.Server.Backend
 import           Snap.Test.Common
-import           Snap.Types
 
 data TestException = TestException
   deriving (Show, Typeable)
