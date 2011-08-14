@@ -75,7 +75,7 @@ Executable testsuite
   ghc-prof-options: -prof -auto-all
   ghc-options: -O2 -Wall -fhpc -fwarn-tabs
                -funbox-strict-fields -threaded
-               -fno-warn-unused-do-bind
+               -fno-warn-unused-do-bind -rtsopts
 
 
 Executable pongserver
@@ -150,7 +150,7 @@ Executable pongserver
     cpp-options: -DPORTABLE
 
   ghc-options: -Wall -O2 -fwarn-tabs -funbox-strict-fields -threaded
-               -fno-warn-unused-do-bind
+               -fno-warn-unused-do-bind -rtsopts
   ghc-prof-options: -prof -auto-all
 
 
@@ -209,7 +209,7 @@ Executable testserver
 
   ghc-options: -O2 -Wall -fwarn-tabs
                -funbox-strict-fields -threaded
-               -fno-warn-unused-do-bind
+               -fno-warn-unused-do-bind -rtsopts
   ghc-prof-options: -prof -auto-all
 
 
@@ -219,7 +219,7 @@ Executable benchmark
 
   ghc-options: -O2 -Wall -fwarn-tabs
                -funbox-strict-fields -threaded
-               -fno-warn-unused-do-bind
+               -fno-warn-unused-do-bind -rtsopts
 
   ghc-prof-options: -prof -auto-all
 
