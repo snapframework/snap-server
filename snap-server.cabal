@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.5.3
+version:        0.5.3.1
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -102,8 +102,8 @@ Library
     array >= 0.2 && <0.4,
     attoparsec >= 0.8.1 && < 0.10,
     attoparsec-enumerator >= 0.2.0.1 && < 0.3,
-    base >= 4 && < 5,
-    binary >=0.5 && <0.6,
+    base >= 4.3 && < 5,
+    binary >= 0.5 && <0.6,
     blaze-builder >= 0.2.1.4 && <0.4,
     blaze-builder-enumerator >= 0.2.0 && <0.3,
     bytestring,
