@@ -25,6 +25,7 @@ import           Data.Dynamic
 import           Foreign.C
 
 import           Snap.Internal.Debug
+import           Snap.Internal.Http.Server.Address
 import           Snap.Internal.Http.Server.Backend
 
 #ifdef OPENSSL
@@ -90,8 +91,8 @@ bindHttps :: ByteString
           -> FilePath
           -> IO ListenSocket
 bindHttps bindAddress bindPort cert key = do
-    sock <- Socket.socket Socket.AF_INET Socket.Stream 0
-    addr <- getHostAddr bindPort bindAddress
+    (family, addr) <- getSockAddr bindPort bindAddress
+    sock <- Socket.socket family Socket.Stream 0
     Socket.setSocketOption sock Socket.ReuseAddr 1
     Socket.bindSocket sock addr
     Socket.listen sock 150
@@ -154,18 +155,6 @@ recv _ (NetworkSession _ aSSL recvLen) = do
     if S.null b then return Nothing else return $ Just b
   where
     ssl = unsafeCoerce aSSL
-
-
-------------------------------------------------------------------------------
-getHostAddr :: Int
-            -> ByteString
-            -> IO Socket.SockAddr
-getHostAddr p s = do
-    h <- if s == "*"
-          then return Socket.iNADDR_ANY
-          else Socket.inet_addr (S.unpack $ s)
-
-    return $ Socket.SockAddrInet (fromIntegral p) h
 
 
 #endif

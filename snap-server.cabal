@@ -88,6 +88,7 @@ Library
     Data.Concurrent.HashMap,
     Snap.Internal.Http.Parser,
     Snap.Internal.Http.Server,
+    Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Backend,
     Snap.Internal.Http.Server.ListenHelpers,

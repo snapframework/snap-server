@@ -57,6 +57,7 @@ import             Snap.Iteratee hiding (map)
 import             Snap.Internal.Debug
 import             Snap.Internal.Http.Server.Date
 import             Snap.Internal.Http.Server.Backend
+import             Snap.Internal.Http.Server.Address
 import qualified   Snap.Internal.Http.Server.ListenHelpers as Listen
 
 #if defined(HAS_SENDFILE)
@@ -289,17 +290,6 @@ stop b = ignoreException $ do
 
 
 ------------------------------------------------------------------------------
-getAddr :: SockAddr -> IO (ByteString, Int)
-getAddr addr =
-    case addr of
-      SockAddrInet p ha -> do
-          s <- liftM (S.pack . map c2w) (inet_ntoa ha)
-          return (s, fromIntegral p)
-
-      a -> throwIO $ AddressNotSupportedException (show a)
-
-
-------------------------------------------------------------------------------
 -- | Throws a timeout exception to the handling thread.  The thread will clean
 -- up everything.
 timerCallback :: EvLoopPtr         -- ^ loop obj
@@ -451,8 +441,8 @@ runSession defaultTimeout backend handler lsock fd = do
     -- set_linger fd
     c_setnonblocking fd
 
-    (raddr, rport) <- getAddr peerName
-    (laddr, lport) <- getAddr sockName
+    (rport, raddr) <- getAddress peerName
+    (lport, laddr) <- getAddress sockName
 
     let lp = _evLoop backend
 

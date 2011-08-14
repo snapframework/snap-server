@@ -21,6 +21,7 @@ tests = [ testFromTo
         , testLookup
         , testDeletes
         , testUpdate
+        , testNull
         ]
 
 
@@ -29,6 +30,21 @@ bogoHash :: ByteString -> Word
 bogoHash "qqq" = 12345
 bogoHash "zzz" = 12345
 bogoHash x = H.hashBS x
+
+testNull :: Test
+testNull = testProperty "HashMap/null" $
+           monadicIO $ forAllM arbitrary prop
+  where
+    prop :: [(Int,Int)] -> PropertyM IO ()
+    prop l = do
+        pre $ not $ null l
+        ht <- run $ H.new H.hashInt
+        b  <- run $ H.null ht
+        assert b
+
+        run $ mapM_ (\(k,v) -> H.insert k v ht) l
+        b' <- run $ H.null ht
+        assert $ not b'
 
 
 testFromTo :: Test

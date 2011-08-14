@@ -13,8 +13,13 @@ import           Blaze.ByteString.Builder.Char8
 import           Blaze.ByteString.Builder.Enumerator
 import           Blaze.ByteString.Builder.HTTP
 import           Control.Arrow (first, second)
+import           Control.Monad.CatchIO hiding ( bracket
+                                              , catches
+                                              , finally
+                                              , Handler
+                                              )
 import           Control.Monad.State.Strict
-import           Control.Exception
+import           Control.Exception hiding (catch, throw)
 import           Data.Char
 import qualified Data.CaseInsensitive as CI
 import           Data.ByteString (ByteString)
@@ -34,6 +39,7 @@ import           Data.Time
 import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
+import           Prelude hiding (catch)
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
 import           System.Locale
@@ -105,6 +111,12 @@ data EventLoopType = EventLoopSimple
 data TerminatedBeforeHandlerException = TerminatedBeforeHandlerException
   deriving (Show, Typeable)
 instance Exception TerminatedBeforeHandlerException
+
+
+-- We throw this if we get an exception that escaped from the user handler.
+data ExceptionAlreadyCaught = ExceptionAlreadyCaught
+  deriving (Show, Typeable)
+instance Exception ExceptionAlreadyCaught
 
 
 ------------------------------------------------------------------------------
@@ -272,15 +284,22 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         tickle =
     go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
                        return ()
+                 , Handler $ \(_ :: ExceptionAlreadyCaught) -> do
+                       return ()
                  , Handler $ \(_ :: HttpParseException) -> do
                        return ()
                  , Handler $ \(e :: AsyncException) -> do
                        throwIO e
                  , Handler $ \(e :: SomeException) ->
-                       logE elog $ S.concat [ logPrefix , bshow e ] ]
+                       logE elog $ toByteString $ lmsg e
+                 ]
 
   where
-    logPrefix = S.concat [ "[", remoteAddress sinfo, "]: error: " ]
+    lmsg e = mconcat [ fromByteString "["
+                     , fromShow $ remoteAddress sinfo
+                     , fromByteString "]: "
+                     , fromByteString "an exception escaped to toplevel:\n"
+                     , fromShow e ]
 
     go = do
         buf <- allocBuffer 16384
@@ -296,6 +315,24 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         debug "runHTTP/go: running..."
         run_ $ readEnd step
         debug "runHTTP/go: finished"
+
+
+------------------------------------------------------------------------------
+requestErrorMessage :: Request -> SomeException -> Builder
+requestErrorMessage req e =
+    mconcat [ fromByteString "During processing of request from "
+            , fromByteString $ rqRemoteAddr req
+            , fromByteString ":"
+            , fromShow $ rqRemotePort req
+            , fromByteString "\nrequest:\n"
+            , fromShow $ show req
+            , fromByteString "\n"
+            , msgB ]
+  where
+    msgB = mconcat [
+             fromByteString "A web handler threw an exception. Details:\n"
+           , fromShow e
+           ]
 
 
 ------------------------------------------------------------------------------
@@ -332,28 +369,29 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
 
     let writeEnd = iterateeDebugWrapper "writeEnd" writeEnd'
 
-    liftIO $ debug "Server.httpSession: entered"
+    debug "Server.httpSession: entered"
     mreq  <- receiveRequest writeEnd
-    liftIO $ debug "Server.httpSession: receiveRequest finished"
+    debug "Server.httpSession: receiveRequest finished"
 
     -- successfully got a request, so restart timer
     liftIO $ tickle defaultTimeout
 
     case mreq of
       (Just req) -> do
-          liftIO $ debug $ "Server.httpSession: got request: " ++
-                           show (rqMethod req) ++
-                           " " ++ SC.unpack (rqURI req) ++
-                           " " ++ show (rqVersion req)
+          debug $ "Server.httpSession: got request: " ++
+                   show (rqMethod req) ++
+                   " " ++ SC.unpack (rqURI req) ++
+                   " " ++ show (rqVersion req)
 
           -- check for Expect: 100-continue
           checkExpect100Continue req writeEnd
 
           logerr <- gets _logError
 
-          (req',rspOrig) <- lift $ handler logerr tickle req
+          (req',rspOrig) <- (lift $ handler logerr tickle req) `catch`
+                            errCatch "user hander" req
 
-          liftIO $ debug $ "Server.httpSession: finished running user handler"
+          debug $ "Server.httpSession: finished running user handler"
 
           let rspTmp = rspOrig { rspHttpVersion = rqVersion req }
           checkConnectionClose (rspHttpVersion rspTmp) (rspHeaders rspTmp)
@@ -363,21 +401,23 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
                       then (setHeader "Connection" "close" rspTmp)
                       else rspTmp
 
-          liftIO $ debug "Server.httpSession: handled, skipping request body"
+          debug "Server.httpSession: handled, skipping request body"
 
           if rspTransformingRqBody rsp
-             then liftIO $ debug $
+             then debug $
                       "Server.httpSession: not skipping " ++
                       "request body, transforming."
              else do
                srqEnum <- liftIO $ readIORef $ rqBody req'
                let (SomeEnumerator rqEnum) = srqEnum
 
-               skipStep <- liftIO $ runIteratee $ iterateeDebugWrapper
-                               "httpSession/skipToEof" skipToEof
-               lift $ rqEnum skipStep
+               skipStep <- (liftIO $ runIteratee $ iterateeDebugWrapper
+                               "httpSession/skipToEof" skipToEof)
+                           `catch` errCatch "skipping request body" req
+               (lift $ rqEnum skipStep) `catch`
+                      errCatch "skipping request body" req
 
-          liftIO $ debug $ "Server.httpSession: request body skipped, " ++
+          debug $ "Server.httpSession: request body skipped, " ++
                            "sending response"
 
           date <- liftIO getDateString
@@ -385,9 +425,10 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
                     H.set "Server" sERVER_HEADER
           let rsp' = updateHeaders ins rsp
           (bytesSent,_) <- sendResponse req rsp' buffer writeEnd onSendFile
+                           `catch` errCatch "sending response" req
 
-          liftIO . debug $ "Server.httpSession: sent " ++
-                           (show bytesSent) ++ " bytes"
+          debug $ "Server.httpSession: sent " ++
+                  (show bytesSent) ++ " bytes"
 
           maybe (logAccess req rsp')
                 (\_ -> logAccess req $ setContentLength bytesSent rsp')
@@ -401,9 +442,18 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
                               tickle handler
 
       Nothing -> do
-          liftIO $ debug $ "Server.httpSession: parser did not produce a " ++
+          debug $ "Server.httpSession: parser did not produce a " ++
                            "request, ending session"
           return ()
+
+  where
+    errCatch phase req e = do
+        logError $ toByteString $
+          mconcat [ fromByteString "httpSession caught an exception during "
+                  , fromByteString phase
+                  , fromByteString " phase:\n"
+                  , requestErrorMessage req e ]
+        throw ExceptionAlreadyCaught
 
 
 ------------------------------------------------------------------------------
@@ -485,7 +535,7 @@ receiveRequest writeEnd = do
     setEnumerator req = {-# SCC "receiveRequest/setEnumerator" #-} do
         if isChunked
           then do
-              liftIO $ debug $ "receiveRequest/setEnumerator: " ++
+              debug $ "receiveRequest/setEnumerator: " ++
                                "input in chunked encoding"
               let e = joinI . readChunkedTransferEncoding
               liftIO $ writeIORef (rqBody req)
@@ -499,10 +549,10 @@ receiveRequest writeEnd = do
 
         hasContentLength :: Int64 -> ServerMonad ()
         hasContentLength len = do
-            liftIO $ debug $ "receiveRequest/setEnumerator: " ++
+            debug $ "receiveRequest/setEnumerator: " ++
                              "request had content-length " ++ show len
             liftIO $ writeIORef (rqBody req) (SomeEnumerator e)
-            liftIO $ debug "receiveRequest/setEnumerator: body enumerator set"
+            debug "receiveRequest/setEnumerator: body enumerator set"
           where
             e :: Enumerator ByteString IO a
             e st = do
@@ -548,8 +598,8 @@ receiveRequest writeEnd = do
 
         getIt :: ServerMonad Request
         getIt = {-# SCC "receiveRequest/parseForm/getIt" #-} do
-            liftIO $ debug "parseForm: got application/x-www-form-urlencoded"
-            liftIO $ debug "parseForm: reading POST body"
+            debug "parseForm: got application/x-www-form-urlencoded"
+            debug "parseForm: reading POST body"
             senum <- liftIO $ readIORef $ rqBody req
             let (SomeEnumerator enum) = senum
             consumeStep <- liftIO $ runIteratee consume
@@ -559,7 +609,7 @@ receiveRequest writeEnd = do
             body <- liftM S.concat $ lift $ enum step
             let newParams = parseUrlEncoded body
 
-            liftIO $ debug "parseForm: stuffing 'enumBS body' into request"
+            debug "parseForm: stuffing 'enumBS body' into request"
 
             let e = enumBS body >==> I.joinI . I.take 0
 
