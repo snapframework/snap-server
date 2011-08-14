@@ -23,6 +23,7 @@ import           Data.ByteString.Internal (c2w)
 import           Data.Int
 import           Data.IORef
 import           Data.Monoid
+import           Prelude hiding (catch)
 import           System.IO
 
 import           Snap.Internal.Http.Server.Date
@@ -136,13 +137,19 @@ loggingThread (Logger queue notifier filePath _) = do
     initialize >>= go
 
   where
-    openIt = if filePath == "-"
-               then return stdout
-               else if filePath == "stderr"
-                      then return stderr
-                      else openFile filePath AppendMode
+    openIt =
+        if filePath == "-"
+          then return stdout
+          else if filePath == "stderr"
+                 then return stderr
+                 else openFile filePath AppendMode `catch`
+                      \(e::SomeException) -> do
+                          hPutStrLn stderr $ "can't open log file " ++ filePath
+                          hPutStrLn stderr $ "exception: " ++ show e
+                          hPutStrLn stderr $ "logging to stderr instead."
+                          return stderr
 
-    closeIt h = if filePath == "-" || filePath == "stderr"
+    closeIt h = if h == stdout || h == stderr
                   then return ()
                   else hClose h
 
@@ -175,11 +182,16 @@ loggingThread (Logger queue notifier filePath _) = do
 
         let !msgs = toLazyByteString dl
         h <- readIORef href
-        L.hPut h msgs
-        hFlush h
+        (do L.hPut h msgs
+            hFlush h) `catch` \(e::SomeException) -> do
+                hPutStrLn stderr $ "got exception writing to log " ++
+                                   filePath ++ ": " ++ show e
+                hPutStrLn stderr $ "writing log entries to stderr."
+                L.hPut stderr msgs
+                hFlush stderr
 
         -- close the file every 15 minutes (for log rotation)
-        t <- getCurrentDateTime
+        t   <- getCurrentDateTime
         old <- readIORef lastOpened
 
         if t-old > 900
