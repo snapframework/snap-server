@@ -22,7 +22,6 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import           Data.ByteString.Internal (c2w)
 import           Data.Maybe
-import           Data.Typeable
 import           Foreign hiding (new)
 import           Foreign.C
 import           GHC.Conc (labelThread, forkOnIO)
@@ -34,6 +33,7 @@ import           Snap.Internal.Http.Server.Date
 import qualified Snap.Internal.Http.Server.TimeoutManager as TM
 import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
 import           Snap.Internal.Http.Server.Backend
+import           Snap.Internal.Http.Server.Address
 import qualified Snap.Internal.Http.Server.ListenHelpers as Listen
 import           Snap.Iteratee hiding (map)
 
@@ -126,16 +126,6 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
 
 
 ------------------------------------------------------------------------------
-data AddressNotSupportedException = AddressNotSupportedException String
-   deriving (Typeable)
-
-instance Show AddressNotSupportedException where
-    show (AddressNotSupportedException x) = "Address not supported: " ++ x
-
-instance Exception AddressNotSupportedException
-
-
-------------------------------------------------------------------------------
 runSession :: Int
            -> SessionHandler
            -> TimeoutManager
@@ -149,21 +139,8 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
     debug $ "Backend.withConnection: running session: " ++ show addr
     labelThread curId $ "connHndl " ++ show fd
 
-    (rport,rhost) <-
-        case addr of
-          SockAddrInet p h -> do
-             h' <- inet_ntoa h
-             return (fromIntegral p, S.pack $ map c2w h')
-          x -> throwIO $ AddressNotSupportedException $ show x
-
-    laddr <- getSocketName sock
-
-    (lport,lhost) <-
-        case laddr of
-          SockAddrInet p h -> do
-             h' <- inet_ntoa h
-             return (fromIntegral p, S.pack $ map c2w h')
-          x -> throwIO $ AddressNotSupportedException $ show x
+    (rport,rhost) <- getAddress addr
+    (lport,lhost) <- getSocketName sock >>= getAddress
 
     let sinfo = SessionInfo lhost lport rhost rport $ Listen.isSecure lsock
 

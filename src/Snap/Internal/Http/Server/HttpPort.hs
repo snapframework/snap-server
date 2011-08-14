@@ -29,30 +29,19 @@ import qualified Data.ByteString.Unsafe as BI
 
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Backend
+import           Snap.Internal.Http.Server.Address
 
 ------------------------------------------------------------------------------
 bindHttp :: ByteString -> Int -> IO ListenSocket
 bindHttp bindAddr bindPort = do
-    sock <- socket AF_INET Stream 0
-    addr <- getHostAddr bindPort bindAddr
+    (family, addr) <- getSockAddr bindPort bindAddr
+    sock <- socket family Stream 0
     debug $ "bindHttp: binding port " ++ show addr
     setSocketOption sock ReuseAddr 1
     bindSocket sock addr
     listen sock 150
     debug $ "bindHttp: bound socket " ++ show sock
     return $ ListenHttp sock
-
-
-------------------------------------------------------------------------------
-getHostAddr :: Int
-            -> ByteString
-            -> IO SockAddr
-getHostAddr p s = do
-    h <- if s == "*"
-          then return iNADDR_ANY
-          else inet_addr (map w2c . B.unpack $ s)
-
-    return $ SockAddrInet (fromIntegral p) h
 
 
 ------------------------------------------------------------------------------
