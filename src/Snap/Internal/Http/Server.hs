@@ -13,8 +13,13 @@ import           Blaze.ByteString.Builder.Char8
 import           Blaze.ByteString.Builder.Enumerator
 import           Blaze.ByteString.Builder.HTTP
 import           Control.Arrow (first, second)
+import           Control.Monad.CatchIO hiding ( bracket
+                                              , catches
+                                              , finally
+                                              , Handler
+                                              )
 import           Control.Monad.State.Strict
-import           Control.Exception
+import           Control.Exception hiding (catch, throw)
 import           Data.Char
 import           Data.CaseInsensitive   (CI)
 import qualified Data.CaseInsensitive as CI
@@ -35,6 +40,7 @@ import           Data.Time
 import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
+import           Prelude hiding (catch)
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
 import           System.Locale
@@ -103,6 +109,12 @@ data EventLoopType = EventLoopSimple
 data TerminatedBeforeHandlerException = TerminatedBeforeHandlerException
   deriving (Show, Typeable)
 instance Exception TerminatedBeforeHandlerException
+
+
+-- We throw this if we get an exception that escaped from the user handler.
+data ExceptionAlreadyCaught = ExceptionAlreadyCaught
+  deriving (Show, Typeable)
+instance Exception ExceptionAlreadyCaught
 
 
 ------------------------------------------------------------------------------
@@ -270,15 +282,22 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         tickle =
     go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
                        return ()
+                 , Handler $ \(_ :: ExceptionAlreadyCaught) -> do
+                       return ()
                  , Handler $ \(_ :: HttpParseException) -> do
                        return ()
                  , Handler $ \(e :: AsyncException) -> do
                        throwIO e
                  , Handler $ \(e :: SomeException) ->
-                       logE elog $ S.concat [ logPrefix , bshow e ] ]
+                       logE elog $ toByteString $ lmsg e
+                 ]
 
   where
-    logPrefix = S.concat [ "[", remoteAddress sinfo, "]: error: " ]
+    lmsg e = mconcat [ fromByteString "["
+                     , fromShow $ remoteAddress sinfo
+                     , fromByteString "]: "
+                     , fromByteString "an exception escaped to toplevel:\n"
+                     , fromShow e ]
 
     go = do
         buf <- allocBuffer 16384
@@ -294,6 +313,24 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         debug "runHTTP/go: running..."
         run_ $ readEnd step
         debug "runHTTP/go: finished"
+
+
+------------------------------------------------------------------------------
+requestErrorMessage :: Request -> SomeException -> Builder
+requestErrorMessage req e =
+    mconcat [ fromByteString "During processing of request from "
+            , fromByteString $ rqRemoteAddr req
+            , fromByteString ":"
+            , fromShow $ rqRemotePort req
+            , fromByteString "\nrequest:\n"
+            , fromShow $ show req
+            , fromByteString "\n"
+            , msgB ]
+  where
+    msgB = mconcat [
+             fromByteString "A web handler threw an exception. Details:\n"
+           , fromShow e
+           ]
 
 
 ------------------------------------------------------------------------------
@@ -349,7 +386,8 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
 
           logerr <- gets _logError
 
-          (req',rspOrig) <- lift $ handler logerr tickle req
+          (req',rspOrig) <- (lift $ handler logerr tickle req) `catch`
+                            errCatch req
 
           liftIO $ debug $ "Server.httpSession: finished running user handler"
 
@@ -402,6 +440,13 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
           liftIO $ debug $ "Server.httpSession: parser did not produce a " ++
                            "request, ending session"
           return ()
+
+  where
+    errCatch req e = do
+        logError $ toByteString $
+          mconcat [ fromByteString "An exception leaked from user handler:\n"
+                  , requestErrorMessage req e ]
+        throw ExceptionAlreadyCaught
 
 
 ------------------------------------------------------------------------------

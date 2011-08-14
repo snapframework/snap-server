@@ -54,6 +54,7 @@ module Snap.Http.Server.Config
 
 
 import           Blaze.ByteString.Builder
+import           Blaze.ByteString.Builder.Char8
 import           Control.Exception (SomeException)
 import           Control.Monad
 import qualified Data.ByteString.Char8 as B
@@ -76,6 +77,9 @@ import           System.Posix.Env
 #endif
 import           System.Exit
 import           System.IO
+
+------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server (requestErrorMessage)
 
 
 ------------------------------------------------------------------------------
@@ -356,8 +360,13 @@ completeConfig config = do
 
 
 ------------------------------------------------------------------------------
-fromString :: String -> ByteString
-fromString = T.encodeUtf8 . T.pack
+bsFromString :: String -> ByteString
+bsFromString = T.encodeUtf8 . T.pack
+
+
+------------------------------------------------------------------------------
+toString :: ByteString -> String
+toString = T.unpack . T.decodeUtf8
 
 
 ------------------------------------------------------------------------------
@@ -366,17 +375,17 @@ options :: MonadSnap m =>
         -> [OptDescr (Maybe (Config m a))]
 options defaults =
     [ Option [] ["hostname"]
-             (ReqArg (Just . setConfig setHostname . fromString) "NAME")
+             (ReqArg (Just . setConfig setHostname . bsFromString) "NAME")
              $ "local hostname" ++ defaultC getHostname
     , Option ['b'] ["address"]
-             (ReqArg (\s -> Just $ mempty { bind = Just $ fromString s })
+             (ReqArg (\s -> Just $ mempty { bind = Just $ bsFromString s })
                      "ADDRESS")
              $ "address to bind to" ++ defaultO bind
     , Option ['p'] ["port"]
              (ReqArg (\s -> Just $ mempty { port = Just $ read s}) "PORT")
              $ "port to listen on" ++ defaultO port
     , Option [] ["ssl-address"]
-             (ReqArg (\s -> Just $ mempty { sslbind = Just $ fromString s })
+             (ReqArg (\s -> Just $ mempty { sslbind = Just $ bsFromString s })
                      "ADDRESS")
              $ "ssl address to bind to" ++ defaultO sslbind
     , Option [] ["ssl-port"]
@@ -428,14 +437,15 @@ options defaults =
     defaultO f    = maybe ", default off" ((", default " ++) . show) $ f conf
 
 
-
-
 ------------------------------------------------------------------------------
 defaultErrorHandler :: MonadSnap m => SomeException -> m ()
 defaultErrorHandler e = do
-    debug "Snap.Http.Server.Config errorHandler: got exception:"
-    debug $ show e
-    logError msg
+    debug "Snap.Http.Server.Config errorHandler:"
+    req <- getRequest
+    let sm = smsg req
+    debug $ toString sm
+    logError sm
+    
     finishWith $ setContentType "text/plain; charset=utf-8"
                . setContentLength (fromIntegral $ B.length msg)
                . setResponseStatus 500 "Internal Server Error"
@@ -443,8 +453,13 @@ defaultErrorHandler e = do
                      (>==> enumBuilder (fromByteString msg))
                $ emptyResponse
   where
-    err = fromString $ show e
-    msg = mappend "A web handler threw an exception. Details:\n" err
+    smsg req = toByteString $ requestErrorMessage req e
+
+    msg  = toByteString msgB
+    msgB = mconcat [
+             fromByteString "A web handler threw an exception. Details:\n"
+           , fromShow e
+           ]
 
 
 
