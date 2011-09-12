@@ -37,9 +37,9 @@ Executable testsuite
     directory-tree,
     enumerator >= 0.4.13.1 && <0.5,
     filepath,
-    http-enumerator >= 0.6.5.4 && <0.7,
+    http-enumerator >= 0.7 && <0.8,
     HUnit >= 1.2 && < 2,
-    monads-fd >= 0.1.0.4 && <0.2,
+    mtl >= 2 && <3,
     murmur-hash >= 0.1 && < 0.2,
     network == 2.3.*,
     old-locale,
@@ -47,15 +47,15 @@ Executable testsuite
     process,
     snap-core >= 0.5.4 && <0.6,
     template-haskell,
-    test-framework >= 0.3.1 && <0.4,
+    test-framework >= 0.3.1 && <0.5,
     test-framework-hunit >= 0.2.5 && < 0.3,
     test-framework-quickcheck2 >= 0.2.6 && < 0.3,
     text >= 0.11 && <0.12,
     time,
     tls >= 0.7.1 && <0.8,
     transformers,
-    vector >= 0.7 && <0.8,
-    vector-algorithms >= 0.4 && <0.5,
+    vector >= 0.7 && <0.10,
+    vector-algorithms >= 0.4 && <0.6,
     PSQueue >= 1.1 && <1.2
 
   if !os(windows)
@@ -99,7 +99,7 @@ Executable pongserver
     enumerator >= 0.4.7 && <0.5,
     filepath,
     HUnit >= 1.2 && < 2,
-    monads-fd >= 0.1.0.4 && <0.2,
+    mtl >= 2 && <3,
     murmur-hash >= 0.1 && < 0.2,
     old-locale,
     parallel > 2,
@@ -109,10 +109,10 @@ Executable pongserver
     template-haskell,
     time,
     transformers,
-    unix-compat == 0.2.*,
+    unix-compat >= 0.2 && <0.4,
     utf8-string >= 0.3.6 && <0.4,
-    vector >= 0.7 && <0.8,
-    vector-algorithms >= 0.4 && <0.5,
+    vector >= 0.7 && <0.10,
+    vector-algorithms >= 0.4 && <0.6,
     PSQueue >= 1.1 && <1.2
 
   if flag(portable) || os(windows)
@@ -176,21 +176,20 @@ Executable testserver
     filepath,
     HUnit >= 1.2 && < 2,
     MonadCatchIO-transformers >= 0.2.1 && < 0.3,
-    monads-fd >= 0.1.0.4 && <0.2,
+    mtl >= 2 && <3,
     murmur-hash >= 0.1 && < 0.2,
     network == 2.3.*,
     old-locale,
     parallel > 2,
     snap-core >= 0.5.4 && <0.6,
     template-haskell,
-    test-framework >= 0.3.1 && <0.4,
+    test-framework >= 0.3.1 && <0.5,
     test-framework-hunit >= 0.2.5 && < 0.3,
     test-framework-quickcheck2 >= 0.2.6 && < 0.3,
     text >= 0.11 && <0.12,
     time,
-    transformers,
-    vector >= 0.7 && <0.8,
-    vector-algorithms >= 0.4 && <0.5,
+    vector >= 0.7 && <0.10,
+    vector-algorithms >= 0.4 && <0.6,
     PSQueue >= 1.1 && <1.2
 
   if !os(windows)
@@ -226,6 +225,6 @@ Executable benchmark
   build-depends:
     base >= 4.3 && < 5,
     network == 2.3.*,
-    http-enumerator >= 0.6.5.4 && <0.7,
+    http-enumerator >= 0.7 && <0.8,
     tls >= 0.7.1 && <0.8,
     criterion >= 0.5 && <0.6

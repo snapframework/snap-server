@@ -374,7 +374,8 @@ seconds = (10::Int) ^ (6::Int)
 parseURL :: String -> IO (HTTP.Request IO)
 parseURL url = do
     req <- HTTP.parseUrl url
-    return $ req { HTTP.checkCerts = const $ return CertificateUsageAccept }
+    return $ req { HTTP.checkCerts = const $ const $
+                                     return CertificateUsageAccept }
 
 
 ------------------------------------------------------------------------------
