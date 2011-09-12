@@ -25,7 +25,6 @@ import           Data.Dynamic
 import           Foreign.C
 
 import           Snap.Internal.Debug
-import           Snap.Internal.Http.Server.Address
 import           Snap.Internal.Http.Server.Backend
 
 #ifdef OPENSSL
@@ -43,6 +42,8 @@ import           OpenSSL
 import           OpenSSL.Session
 import qualified OpenSSL.Session as SSL
 import           Unsafe.Coerce
+
+import           Snap.Internal.Http.Server.Address
 #endif
 
 
