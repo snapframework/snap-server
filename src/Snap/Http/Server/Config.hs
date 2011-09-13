@@ -445,7 +445,7 @@ defaultErrorHandler e = do
     let sm = smsg req
     debug $ toString sm
     logError sm
-    
+
     finishWith $ setContentType "text/plain; charset=utf-8"
                . setContentLength (fromIntegral $ B.length msg)
                . setResponseStatus 500 "Internal Server Error"
