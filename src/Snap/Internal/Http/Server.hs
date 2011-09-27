@@ -45,6 +45,7 @@ import           System.Posix.Types (FileOffset)
 import           System.Locale
 ------------------------------------------------------------------------------
 import           System.FastLogger
+import           Snap.Core (EscapeHttpException (..))
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Parser
@@ -389,6 +390,7 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
           logerr <- gets _logError
 
           (req',rspOrig) <- (lift $ handler logerr tickle req) `catch`
+                            escapeHttpCatch `catch`
                             errCatch "user hander" req
 
           debug $ "Server.httpSession: finished running user handler"
@@ -447,6 +449,11 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
           return ()
 
   where
+    escapeHttpCatch :: EscapeHttpException -> ServerMonad a
+    escapeHttpCatch (EscapeHttpException escapeIter) = do
+        lift $ escapeIter writeEnd'
+        throw ExceptionAlreadyCaught
+
     errCatch phase req e = do
         logError $ toByteString $
           mconcat [ fromByteString "httpSession caught an exception during "
