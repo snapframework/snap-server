@@ -451,7 +451,7 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
   where
     escapeHttpCatch :: EscapeHttpException -> ServerMonad a
     escapeHttpCatch (EscapeHttpException escapeIter) = do
-        lift $ escapeIter writeEnd'
+        lift $ escapeIter tickle writeEnd'
         throw ExceptionAlreadyCaught
 
     errCatch phase req e = do
