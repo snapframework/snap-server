@@ -456,13 +456,12 @@ runSession defaultTimeout backend handler lsock fd = do
     -----------------
     tmr         <- mkEvTimer
     now         <- getCurrentDateTime
-    timeoutTime <- newIORef $ now + 20
+    timeoutTime <- newIORef $ now + (fromIntegral defaultTimeout)
     tcb         <- mkTimerCallback $ timerCallback lp
                                                   tmr
                                                   timeoutTime
                                                   tid
-    -- 20 second timeout
-    evTimerInit tmr tcb 0 20.0
+    evTimerInit tmr tcb 0 (fromIntegral defaultTimeout)
 
 
     readActive  <- newIORef True
