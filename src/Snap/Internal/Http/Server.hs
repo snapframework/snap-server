@@ -18,6 +18,7 @@ import           Control.Monad.CatchIO hiding ( bracket
                                               , finally
                                               , Handler
                                               )
+import qualified Control.Monad.CatchIO as CatchIO
 import           Control.Monad.State.Strict
 import           Control.Exception hiding (catch, throw)
 import           Data.Char
@@ -45,6 +46,7 @@ import           System.Posix.Types (FileOffset)
 import           System.Locale
 ------------------------------------------------------------------------------
 import           System.FastLogger
+import           Snap.Core (EscapeHttpException (..))
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Parser
@@ -388,8 +390,11 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
 
           logerr <- gets _logError
 
-          (req',rspOrig) <- (lift $ handler logerr tickle req) `catch`
-                            errCatch "user hander" req
+          (req',rspOrig) <- (lift $ handler logerr tickle req)
+              `CatchIO.catches`
+                  [ CatchIO.Handler $ escapeHttpCatch
+                  , CatchIO.Handler $ errCatch "user handler" req
+                  ]
 
           debug $ "Server.httpSession: finished running user handler"
 
@@ -447,6 +452,12 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
           return ()
 
   where
+    escapeHttpCatch :: EscapeHttpException -> ServerMonad a
+    escapeHttpCatch (EscapeHttpException escapeIter) = do
+        lift $ escapeIter tickle writeEnd'
+        throw ExceptionAlreadyCaught
+
+    errCatch :: ByteString -> Request -> SomeException -> ServerMonad a
     errCatch phase req e = do
         logError $ toByteString $
           mconcat [ fromByteString "httpSession caught an exception during "
