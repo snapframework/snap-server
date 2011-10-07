@@ -9,9 +9,11 @@ module Test.Blackbox
   , startTestServer ) where
 
 --------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder
 import           Control.Concurrent
 import           Control.Exception (SomeException, catch, throwIO)
 import           Control.Monad
+import           Control.Monad.Trans
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as S
 import           Data.ByteString.Char8 (ByteString)
@@ -36,6 +38,8 @@ import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Monadic hiding (run, assert)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
+import           Snap.Iteratee hiding (map, head)
+import qualified Snap.Iteratee as I
 import           Snap.Http.Server
 import           Snap.Test.Common
 import           Test.Common.Rot13
@@ -53,6 +57,7 @@ testFunctions = [ testPong
                 , testBigResponse
                 , testPartial
                 , testFileUpload
+                , testTimeoutTickle
                 ]
 
 
@@ -412,3 +417,16 @@ post url body hdrs = do
                    , HTTP.requestHeaders = hdrs }
 
 
+------------------------------------------------------------------------------
+-- This test checks two things:
+--
+-- 1. that the timeout tickling logic works
+-- 2. that "flush" is passed along through a gzip operation.
+testTimeoutTickle :: Bool -> Int -> String -> Test
+testTimeoutTickle ssl port name =
+    testCase (name ++ "/blackbox/timeout/tickle") $ do
+        let uri = (if ssl then "https" else "http")
+                  ++ "://127.0.0.1:" ++ show port ++ "/timeout/tickle"
+        doc <- liftM (S.concat . L.toChunks) $ fetch uri
+        let expected = S.concat $ replicate 6 ".\n"
+        assertEqual "response equal" expected doc
