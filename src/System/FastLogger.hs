@@ -7,6 +7,7 @@ module System.FastLogger
 , timestampedLogEntry
 , combinedLogEntry
 , newLogger
+, newLoggerWithCustomErrorFunction
 , logMsg
 , stopLogger
 ) where
@@ -18,11 +19,14 @@ import           Blaze.ByteString.Builder.Char.Utf8
 import           Control.Concurrent
 import           Control.Exception
 import           Data.ByteString.Char8 (ByteString)
+import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.ByteString.Internal (c2w)
 import           Data.Int
 import           Data.IORef
 import           Data.Monoid
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import           Prelude hiding (catch)
 import           System.IO
 
@@ -35,7 +39,9 @@ data Logger = Logger
     { _queuedMessages :: !(IORef Builder)
     , _dataWaiting    :: !(MVar ())
     , _loggerPath     :: !(FilePath)
-    , _loggingThread  :: !(MVar ThreadId) }
+    , _loggingThread  :: !(MVar ThreadId)
+    , _errAction      :: ByteString -> IO ()
+    }
 
 
 ------------------------------------------------------------------------------
@@ -43,13 +49,27 @@ data Logger = Logger
 -- \"-\", then log to stdout; if it's \"stderr\" then we log to stderr,
 -- otherwise we log to a regular file in append mode. The file is closed and
 -- re-opened every 15 minutes to facilitate external log rotation.
-newLogger :: FilePath -> IO Logger
-newLogger fp = do
+newLogger :: FilePath                      -- ^ log file to use
+          -> IO Logger
+newLogger = newLoggerWithCustomErrorFunction
+              (\s -> S.hPutStr stderr s >> hFlush stderr)
+
+
+------------------------------------------------------------------------------
+-- | Like 'newLogger', but uses a custom error action if the logger needs to
+-- print an error message of its own (for instance, if it can't open the output
+-- file.)
+newLoggerWithCustomErrorFunction :: (ByteString -> IO ())
+                                     -- ^ logger uses this action to log any
+                                     -- error messages of its own
+                                 -> FilePath   -- ^ log file to use
+                                 -> IO Logger
+newLoggerWithCustomErrorFunction errAction fp = do
     q  <- newIORef mempty
     dw <- newEmptyMVar
     th <- newEmptyMVar
 
-    let lg = Logger q dw fp th
+    let lg = Logger q dw fp th errAction
 
     tid <- forkIO $ loggingThread lg
     putMVar th tid
@@ -133,32 +153,39 @@ logMsg !lg !s = do
 
 ------------------------------------------------------------------------------
 loggingThread :: Logger -> IO ()
-loggingThread (Logger queue notifier filePath _) = do
+loggingThread (Logger queue notifier filePath _ errAct) = do
     initialize >>= go
 
   where
     openIt =
         if filePath == "-"
           then return stdout
-          else if filePath == "stderr"
-                 then return stderr
-                 else openFile filePath AppendMode `catch`
-                      \(e::SomeException) -> do
-                          hPutStrLn stderr $ "can't open log file " ++ filePath
-                          hPutStrLn stderr $ "exception: " ++ show e
-                          hPutStrLn stderr $ "logging to stderr instead."
-                          return stderr
+          else
+            if filePath == "stderr"
+              then return stderr
+              else openFile filePath AppendMode `catch`
+                     \(e::SomeException) -> do
+                       logInternalError $ "Can't open log file \"" ++
+                                          filePath ++ "\".\n"
+                       logInternalError $ "Exception: " ++ show e ++ "\n"
+                       logInternalError $ "Logging to stderr instead. " ++
+                                          "**THIS IS BAD, YOU OUGHT TO " ++
+                                          "FIX THIS**\n\n"
+                       return stderr
 
     closeIt h = if h == stdout || h == stderr
                   then return ()
                   else hClose h
+
+    logInternalError = errAct . T.encodeUtf8 . T.pack
 
     go (href, lastOpened) =
         (loop (href, lastOpened))
           `catches`
           [ Handler $ \(_::AsyncException) -> killit (href, lastOpened)
           , Handler $ \(e::SomeException)  -> do
-                hPutStrLn stderr $ "logger got exception: " ++ Prelude.show e
+                logInternalError $ "logger got exception: "
+                                   ++ Prelude.show e ++ "\n"
                 threadDelay 20000000
                 go (href, lastOpened) ]
 
@@ -184,11 +211,10 @@ loggingThread (Logger queue notifier filePath _) = do
         h <- readIORef href
         (do L.hPut h msgs
             hFlush h) `catch` \(e::SomeException) -> do
-                hPutStrLn stderr $ "got exception writing to log " ++
-                                   filePath ++ ": " ++ show e
-                hPutStrLn stderr $ "writing log entries to stderr."
-                L.hPut stderr msgs
-                hFlush stderr
+                logInternalError $ "got exception writing to log " ++
+                                   filePath ++ ": " ++ show e ++ "\n"
+                logInternalError $ "writing log entries to stderr.\n"
+                mapM_ errAct $ L.toChunks msgs
 
         -- close the file every 15 minutes (for log rotation)
         t   <- getCurrentDateTime
