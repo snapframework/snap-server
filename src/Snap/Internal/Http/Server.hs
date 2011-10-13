@@ -40,6 +40,7 @@ import           Data.Time
 import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
+import           Network.Socket (withSocketsDo)
 import           Prelude hiding (catch)
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
@@ -164,8 +165,7 @@ httpServe :: Int                 -- ^ default timeout
           -> IO ()
 httpServe defaultTimeout ports mevType localHostname alogPath elogPath
           handler =
-    withLoggers alogPath elogPath
-                (\(alog, elog) -> spawnAll alog elog)
+    withSocketsDo $ withLoggers alogPath elogPath $ uncurry spawnAll
 
   where
     --------------------------------------------------------------------------
