@@ -47,7 +47,7 @@ import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
 import           System.Locale
 ------------------------------------------------------------------------------
-import           System.FastLogger
+import           System.FastLogger (timestampedLogEntry, combinedLogEntry)
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Parser
@@ -163,14 +163,12 @@ httpServe :: Int                 -- ^ default timeout
           -> Maybe EventLoopType -- ^ Specify a given event loop,
                                  --   otherwise a default is picked
           -> ByteString          -- ^ local hostname (server name)
-          -> Maybe FilePath      -- ^ path to the access log
-          -> Maybe FilePath      -- ^ path to the error log
+          -> Maybe (ByteString -> IO ()) -- ^ access log action
+          -> Maybe (ByteString -> IO ()) -- ^ error log action
           -> ServerHandler       -- ^ handler procedure
           -> IO ()
-httpServe defaultTimeout ports mevType localHostname alogPath elogPath
-          handler =
-    withSocketsDo $ withLoggers alogPath elogPath $ uncurry spawnAll
-
+httpServe defaultTimeout ports mevType localHostname alog' elog'
+          handler = withSocketsDo $ spawnAll alog' elog'
   where
     --------------------------------------------------------------------------
     spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
@@ -211,38 +209,19 @@ httpServe defaultTimeout ports mevType localHostname alogPath elogPath
     runEventLoop EventLoopLibEv        = libEvEventLoop
 
 
-    --------------------------------------------------------------------------
-    maybeSpawnLogger f =
-        maybe (return Nothing)
-              ((liftM Just) . newLoggerWithCustomErrorFunction f)
-
-
-    --------------------------------------------------------------------------
-    withLoggers afp efp =
-        bracket (do mvar <- newMVar ()
-                    let f s = withMVar mvar
-                                (const $ S.hPutStr stderr s >> hFlush stderr)
-                    alog <- maybeSpawnLogger f afp
-                    elog <- maybeSpawnLogger f efp
-                    return (alog, elog))
-                (\(alog, elog) -> do
-                    maybe (return ()) stopLogger alog
-                    maybe (return ()) stopLogger elog)
-
-
 ------------------------------------------------------------------------------
 debugE :: (MonadIO m) => ByteString -> m ()
 debugE s = debug $ "Server: " ++ (map w2c $ S.unpack s)
 
 
 ------------------------------------------------------------------------------
-logE :: Maybe Logger -> ByteString -> IO ()
+logE :: Maybe (ByteString -> IO ()) -> ByteString -> IO ()
 logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
 
 
 ------------------------------------------------------------------------------
-logE' :: Logger -> ByteString -> IO ()
-logE' logger s = (timestampedLogEntry s) >>= logMsg logger
+logE' :: (ByteString -> IO ()) -> ByteString -> IO ()
+logE' logger s = (timestampedLogEntry s) >>= logger
 
 
 ------------------------------------------------------------------------------
@@ -251,12 +230,12 @@ bshow = toBS . show
 
 
 ------------------------------------------------------------------------------
-logA ::Maybe Logger -> Request -> Response -> IO ()
+logA :: Maybe (ByteString -> IO ()) -> Request -> Response -> IO ()
 logA alog = maybe (\_ _ -> return ()) logA' alog
 
 
 ------------------------------------------------------------------------------
-logA' :: Logger -> Request -> Response -> IO ()
+logA' :: (ByteString -> IO ()) -> Request -> Response -> IO ()
 logA' logger req rsp = do
     let hdrs      = rqHeaders req
     let host      = rqRemoteAddr req
@@ -271,13 +250,13 @@ logA' logger req rsp = do
     let userAgent = maybe "-" head $ H.lookup "user-agent" hdrs
 
     msg <- combinedLogEntry host user reql status cl referer userAgent
-    logMsg logger msg
+    logger msg
 
 
 ------------------------------------------------------------------------------
 runHTTP :: Int                           -- ^ default timeout
-        -> Maybe Logger                  -- ^ access logger
-        -> Maybe Logger                  -- ^ error logger
+        -> Maybe (ByteString -> IO ())   -- ^ access logger
+        -> Maybe (ByteString -> IO ())   -- ^ error logger
         -> ServerHandler                 -- ^ handler procedure
         -> ByteString                    -- ^ local host name
         -> SessionInfo                   -- ^ session port information

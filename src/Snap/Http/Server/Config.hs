@@ -12,6 +12,7 @@ Snap HTTP server.
 module Snap.Http.Server.Config
   ( Config
   , ConfigBackend(..)
+  , ConfigLog(..)
 
   , emptyConfig
   , defaultConfig
@@ -96,6 +97,17 @@ data ConfigBackend = ConfigSimpleBackend
   deriving (Show, Eq)
 
 ------------------------------------------------------------------------------
+-- | Data type representing the configuration of a logging target
+data ConfigLog = ConfigNoLog                        -- ^ no logging
+               | ConfigFileLog FilePath             -- ^ log to text file
+               | ConfigIoLog (ByteString -> IO ())  -- ^ log custom IO handler
+
+instance Show ConfigLog where
+    show ConfigNoLog       = "ConfigNoLog"
+    show (ConfigFileLog f) = "ConfigFileLog " ++ show f
+    show (ConfigIoLog _)   = "ConfigIoLog"
+
+------------------------------------------------------------------------------
 -- | A record type which represents partial configurations (for 'httpServe')
 -- by wrapping all of its fields in a 'Maybe'. Values of this type are usually
 -- constructed via its 'Monoid' instance by doing something like:
@@ -106,8 +118,8 @@ data ConfigBackend = ConfigSimpleBackend
 -- this is the norm) are filled in with default values from 'defaultConfig'.
 data Config m a = Config
     { hostname       :: Maybe ByteString
-    , accessLog      :: Maybe (Maybe FilePath)
-    , errorLog       :: Maybe (Maybe FilePath)
+    , accessLog      :: Maybe ConfigLog
+    , errorLog       :: Maybe ConfigLog
     , locale         :: Maybe String
     , port           :: Maybe Int
     , bind           :: Maybe ByteString
@@ -224,8 +236,8 @@ instance (Typeable1 m) => Typeable1 (Config m) where
 defaultConfig :: MonadSnap m => Config m a
 defaultConfig = mempty
     { hostname       = Just "localhost"
-    , accessLog      = Just $ Just "log/access.log"
-    , errorLog       = Just $ Just "log/error.log"
+    , accessLog      = Just $ ConfigFileLog "log/access.log"
+    , errorLog       = Just $ ConfigFileLog "log/error.log"
     , locale         = Just "en_US"
     , compression    = Just True
     , verbose        = Just True
@@ -244,11 +256,11 @@ getHostname       :: Config m a -> Maybe ByteString
 getHostname = hostname
 
 -- | Path to the access log
-getAccessLog      :: Config m a -> Maybe (Maybe FilePath)
+getAccessLog      :: Config m a -> Maybe ConfigLog
 getAccessLog = accessLog
 
 -- | Path to the error log
-getErrorLog       :: Config m a -> Maybe (Maybe FilePath)
+getErrorLog       :: Config m a -> Maybe ConfigLog
 getErrorLog = errorLog
 
 -- | The locale to use
@@ -305,10 +317,10 @@ getBackend = backend
 setHostname       :: ByteString              -> Config m a -> Config m a
 setHostname x c = c { hostname = Just x }
 
-setAccessLog      :: (Maybe FilePath)        -> Config m a -> Config m a
+setAccessLog      :: ConfigLog               -> Config m a -> Config m a
 setAccessLog x c = c { accessLog = Just x }
 
-setErrorLog       :: (Maybe FilePath)        -> Config m a -> Config m a
+setErrorLog       :: ConfigLog               -> Config m a -> Config m a
 setErrorLog x c = c { errorLog = Just x }
 
 setLocale         :: String                  -> Config m a -> Config m a
@@ -411,16 +423,16 @@ options defaults =
              (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey
     , Option [] ["access-log"]
-             (ReqArg (Just . setConfig setAccessLog . Just) "PATH")
-             $ "access log" ++ (defaultC $ join . getAccessLog)
+             (ReqArg (Just . setConfig setAccessLog . ConfigFileLog) "PATH")
+             $ "access log" ++ (defaultC $ getAccessLog)
     , Option [] ["error-log"]
-             (ReqArg (Just . setConfig setErrorLog . Just) "PATH")
-             $ "error log" ++ (defaultC $ join . getErrorLog)
+             (ReqArg (Just . setConfig setErrorLog . ConfigFileLog) "PATH")
+             $ "error log" ++ (defaultC $ getErrorLog)
     , Option [] ["no-access-log"]
-             (NoArg $ Just $ setConfig setAccessLog Nothing)
+             (NoArg $ Just $ setConfig setAccessLog ConfigNoLog)
              $ "don't have an access log"
     , Option [] ["no-error-log"]
-             (NoArg $ Just $ setConfig setErrorLog Nothing)
+             (NoArg $ Just $ setConfig setErrorLog ConfigNoLog)
              $ "don't have an error log"
     , Option ['c'] ["compression"]
              (NoArg $ Just $ setConfig setCompression True)
