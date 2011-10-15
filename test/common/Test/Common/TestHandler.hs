@@ -15,7 +15,7 @@ import           Data.Maybe
 import           Data.Monoid
 import           Snap.Iteratee hiding (Enumerator)
 import qualified Snap.Iteratee as I
-import           Snap.Types
+import           Snap.Core
 import           Snap.Util.FileServe
 import           Snap.Util.FileUploads
 import           Snap.Util.GZip
@@ -172,14 +172,14 @@ uploadHandler = do
 
 testHandler :: Snap ()
 testHandler = withCompression $
-    route [ ("pong"           , pongHandler                  )
-          , ("echo"           , echoHandler                  )
-          , ("rot13"          , rot13Handler                 )
-          , ("echoUri"        , echoUriHandler               )
-          , ("fileserve"      , fileServe "testserver/static")
-          , ("bigresponse"    , bigResponseHandler           )
-          , ("respcode/:code" , responseHandler              )
-          , ("upload/form"    , uploadForm                   )
-          , ("upload/handle"  , uploadHandler                )
-          , ("timeout/tickle" , timeoutTickleHandler         )
+    route [ ("pong"           , pongHandler                       )
+          , ("echo"           , echoHandler                       )
+          , ("rot13"          , rot13Handler                      )
+          , ("echoUri"        , echoUriHandler                    )
+          , ("fileserve"      , serveDirectory "testserver/static")
+          , ("bigresponse"    , bigResponseHandler                )
+          , ("respcode/:code" , responseHandler                   )
+          , ("upload/form"    , uploadForm                        )
+          , ("upload/handle"  , uploadHandler                     )
+          , ("timeout/tickle" , timeoutTickleHandler              )
           ]

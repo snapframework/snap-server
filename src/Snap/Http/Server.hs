@@ -28,7 +28,7 @@ import           Data.Maybe
 import           Prelude hiding (catch)
 import           Snap.Http.Server.Config
 import qualified Snap.Internal.Http.Server as Int
-import           Snap.Types
+import           Snap.Core
 import           Snap.Util.GZip
 #ifndef PORTABLE
 import           System.Posix.Env
@@ -49,7 +49,7 @@ snapServerVersion = Int.snapServerVersion
 -- This function is like 'httpServe' except it doesn't setup compression or the
 -- error handler; this allows it to be used from 'MonadSnap'.
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
-simpleHttpServe config handler = do 
+simpleHttpServe config handler = do
     conf <- completeConfig config
     let output   = when (fromJust $ getVerbose conf) . hPutStrLn stderr
     mapM_ (output . ("Listening on "++) . show) $ listeners conf

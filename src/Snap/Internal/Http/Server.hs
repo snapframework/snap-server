@@ -18,7 +18,6 @@ import           Control.Exception.Control
 import           Control.Monad.State.Strict
 import           Control.Exception.Control hiding (catch, throw)
 import           Data.Char
-import           Data.CaseInsensitive   (CI)
 import qualified Data.CaseInsensitive as CI
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
@@ -59,6 +58,9 @@ import           Snap.Internal.Http.Server.LibevBackend
 import           Snap.Internal.Iteratee.Debug
 import           Snap.Iteratee hiding (head, take, map)
 import qualified Snap.Iteratee as I
+
+import           Snap.Types.Headers (Headers)
+import qualified Snap.Types.Headers as H
 
 import qualified Paths_snap_server as V
 
@@ -261,8 +263,8 @@ logA' logger req rsp = do
     let reql      = S.intercalate " " [ method, rqURI req, ver ]
     let status    = rspStatus rsp
     let cl        = rspContentLength rsp
-    let referer   = maybe Nothing (Just . head) $ Map.lookup "referer" hdrs
-    let userAgent = maybe "-" head $ Map.lookup "user-agent" hdrs
+    let referer   = maybe Nothing (Just . head) $ H.lookup "referer" hdrs
+    let userAgent = maybe "-" head $ H.lookup "user-agent" hdrs
 
     msg <- combinedLogEntry host user reql status cl referer userAgent
     logMsg logger msg
@@ -337,8 +339,8 @@ requestErrorMessage req e =
 
 
 ------------------------------------------------------------------------------
-sERVER_HEADER :: [ByteString]
-sERVER_HEADER = [S.concat ["Snap/", snapServerVersion]]
+sERVER_HEADER :: ByteString
+sERVER_HEADER = S.concat ["Snap/", snapServerVersion]
 
 
 ------------------------------------------------------------------------------
@@ -422,8 +424,8 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
                            "sending response"
 
           date <- liftIO getDateString
-          let ins = Map.insert "Date" [date] .
-                    Map.insert "Server" sERVER_HEADER
+          let ins = H.set "Date" date .
+                    H.set "Server" sERVER_HEADER
           let rsp' = updateHeaders ins rsp
           (bytesSent,_) <- sendResponse req rsp' buffer writeEnd onSendFile
                            `catch` errCatch "sending response" req
@@ -546,7 +548,7 @@ receiveRequest writeEnd = do
       where
         isChunked = maybe False
                           ((== ["chunked"]) . map CI.mk)
-                          (Map.lookup "transfer-encoding" hdrs)
+                          (H.lookup "transfer-encoding" hdrs)
 
         hasContentLength :: Int64 -> ServerMonad ()
         hasContentLength len = do
@@ -580,7 +582,7 @@ receiveRequest writeEnd = do
 
 
         hdrs = rqHeaders req
-        mbCL = Map.lookup "content-length" hdrs >>= return . Cvt.int . head
+        mbCL = H.lookup "content-length" hdrs >>= return . Cvt.int . head
 
 
     --------------------------------------------------------------------------
@@ -588,7 +590,7 @@ receiveRequest writeEnd = do
     parseForm req = {-# SCC "receiveRequest/parseForm" #-}
         if doIt then getIt else return req
       where
-        mbCT   = liftM head $ Map.lookup "content-type" (rqHeaders req)
+        mbCT   = liftM head $ H.lookup "content-type" (rqHeaders req)
         trimIt = fst . SC.spanEnd isSpace . SC.takeWhile (/= ';')
                      . SC.dropWhile isSpace
         mbCT'  = liftM trimIt mbCT
@@ -620,7 +622,8 @@ receiveRequest writeEnd = do
                 e st'
 
             liftIO $ writeIORef (rqBody req) $ SomeEnumerator e'
-            return $ req { rqParams = rqParams req `mappend` newParams }
+            return $ req { rqParams = Map.unionWith (++) (rqParams req)
+                                        newParams }
 
 
     --------------------------------------------------------------------------
@@ -636,7 +639,7 @@ receiveRequest writeEnd = do
             let (serverName, serverPort) = fromMaybe
                                              (localHostname, lport)
                                              (liftM (parseHost . head)
-                                                    (Map.lookup "host" hdrs))
+                                                    (H.lookup "host" hdrs))
 
             -- will override in "setEnumerator"
             enum <- liftIO $ newIORef $ SomeEnumerator (enumBS "")
@@ -673,12 +676,12 @@ receiveRequest writeEnd = do
         hdrs            = toHeaders kvps
 
         mbContentLength = liftM (Cvt.int . head) $
-                          Map.lookup "content-length" hdrs
+                          H.lookup "content-length" hdrs
 
         cookies         = concat $
                           maybe []
                                 (catMaybes . map parseCookie)
-                                (Map.lookup "cookie" hdrs)
+                                (H.lookup "cookie" hdrs)
 
         contextPath     = "/"
 
@@ -781,13 +784,12 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
 
     --------------------------------------------------------------------------
-    buildHdrs :: Map (CI ByteString) [ByteString]
-              -> (Builder,Int)
+    buildHdrs :: Headers -> (Builder,Int)
     buildHdrs hdrs =
         {-# SCC "buildHdrs" #-}
-        Map.foldlWithKey f (mempty,0) hdrs
+        H.fold f (mempty,0) hdrs
       where
-        f (b,len) k ys =
+        f (!b,!len) !k !ys =
             let (!b',len') = h k ys
             in (b `mappend` b', len+len')
 
@@ -871,7 +873,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
     --------------------------------------------------------------------------
     handle304 :: Response -> Response
     handle304 r = setResponseBody (enumBuilder mempty) $
-                  updateHeaders (Map.delete "Transfer-Encoding") $
+                  updateHeaders (H.delete "Transfer-Encoding") $
                   setContentLength 0 r
 
 
@@ -881,7 +883,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
       where
         f h = if null cookies
                 then h
-                else Map.insertWith (flip (++)) "Set-Cookie" cookies h
+                else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
         cookies = fmap cookieToBS . Map.elems $ rspCookies r
 
 
@@ -955,28 +957,29 @@ checkConnectionClose ver hdrs =
        then modify $ \s -> s { _forceConnectionClose = True }
        else return ()
   where
-    l  = liftM (map tl) $ Map.lookup "Connection" hdrs
+    l  = liftM (map tl) $ H.lookup "Connection" hdrs
     tl = S.map (c2w . toLower . w2c)
 
 
 ------------------------------------------------------------------------------
 -- FIXME: whitespace-trim the values here.
 toHeaders :: [(ByteString,ByteString)] -> Headers
-toHeaders kvps = foldl' f Map.empty kvps'
+toHeaders kvps = H.fromList kvps'
   where
-    kvps'     = map (first CI.mk . second (:[])) kvps
-    f m (k,v) = Map.insertWith' (flip (++)) k v m
+    kvps'      = map (first CI.mk) kvps
 
 
 ------------------------------------------------------------------------------
 -- | Convert 'Cookie' into 'ByteString' for output.
 cookieToBS :: Cookie -> ByteString
-cookieToBS (Cookie k v mbExpTime mbDomain mbPath) = cookie
+cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
   where
-    cookie  = S.concat [k, "=", v, path, exptime, domain]
+    cookie  = S.concat [k, "=", v, path, exptime, domain, secure, hOnly]
     path    = maybe "" (S.append "; path=") mbPath
     domain  = maybe "" (S.append "; domain=") mbDomain
     exptime = maybe "" (S.append "; expires=" . fmt) mbExpTime
+    secure  = if isSec then "; Secure" else ""
+    hOnly   = if isHOnly then "; HttpOnly" else ""
     fmt     = fromStr . formatTime defaultTimeLocale
                                    "%a, %d-%b-%Y %H:%M:%S GMT"
 

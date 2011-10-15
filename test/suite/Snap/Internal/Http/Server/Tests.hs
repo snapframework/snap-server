@@ -44,6 +44,7 @@ import           Test.HUnit hiding (Test, path)
 
 import qualified Snap.Http.Server as Svr
 
+import           Snap.Core
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Http.Server
@@ -51,7 +52,7 @@ import qualified Snap.Iteratee as I
 import           Snap.Iteratee hiding (map)
 import           Snap.Internal.Http.Server.Backend
 import           Snap.Test.Common
-import           Snap.Types
+import qualified Snap.Types.Headers as H
 
 data TestException = TestException
   deriving (Show, Typeable)
@@ -190,11 +191,12 @@ testHttpRequest1 =
 
         assertEqual "parse body" "0123456789" body
 
-        assertEqual "cookie" [Cookie "foo" "bar\"" Nothing Nothing Nothing] $
-                    rqCookies req
+        assertEqual "cookie" 
+                    [Cookie "foo" "bar\"" Nothing Nothing Nothing False False] 
+                    (rqCookies req)
 
         assertEqual "continued headers" (Just ["foo bar"]) $
-                    Map.lookup "x-random-other-header" $ rqHeaders req
+                    H.lookup "x-random-other-header" $ rqHeaders req
 
         assertEqual "parse URI"
                     "/foo/bar.html?param1=abc&param2=def%20+&param1=abc"
@@ -307,7 +309,7 @@ testHttpRequest3 =
         assertEqual "no cookies" [] $ rqCookies req
 
         assertEqual "multiheader" (Just ["1","2"]) $
-                    Map.lookup "Multiheader" (rqHeaders req)
+                    H.lookup "Multiheader" (rqHeaders req)
 
         assertEqual "host" ("localhost", 80) $
                     (rqServerName req, rqServerPort req)
@@ -396,7 +398,7 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
                     ]) b
 
   where
-    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+    rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
@@ -426,7 +428,7 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
                     , "0123456789"
                     ]) b2
   where
-    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+    rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
@@ -457,7 +459,7 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
 
 
   where
-    rsp1 = updateHeaders (Map.insert "Foo" ["Bar"]) $
+    rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
@@ -492,37 +494,30 @@ testHttpResponseCookies :: Test
 testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
     buf <- allocBuffer 16384
     req <- mkRequest sampleRequest
+
     b <- run_ $ rsm $
-         sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
-                      return . snd
-    b2 <- run_ $ rsm $
-          sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
+          sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
-    assertEqual "http response cookie" (L.concat [
+    -- Having some weird issues here with lazy ByteString comparison; run thru
+    -- strict ByteString to get around it. Slow/lame, but whatever.
+    assertEqual "http response multi-cookies" (L.fromChunks . return . S.concat $ [
                       "HTTP/1.0 304 Test\r\n"
                     , "Content-Length: 0\r\n"
-                    , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n\r\n"
-                    ]) b
-
-
-    assertEqual "http response multi-cookies" (L.concat [
-                      "HTTP/1.0 304 Test\r\n"
-                    , "Content-Length: 0\r\n"
-                    , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n"
-                    , "Set-Cookie: zoo=baz; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r\n\r\n"
-                    ]) b2
+                    , "Set-Cookie: ck1=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; Secure\r\n"
+                    , "Set-Cookie: ck2=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; HttpOnly\r\n"
+                    , "Set-Cookie: ck3=bar\r\n\r\n"
+                    ]) (L.fromChunks . return . S.concat . L.toChunks $ b)
 
   where
-    rsp1 = setResponseStatus 304 "Test" $
-           emptyResponse { rspHttpVersion = (1,0) }
-    rsp2 = addResponseCookie cook rsp1
-    rsp3 = addResponseCookie cook2 rsp2
+    rsp1 = setResponseStatus 304 "Test" $ emptyResponse { rspHttpVersion = (1,0) }
+    rsp2 = addResponseCookie cook3 . addResponseCookie cook2 
+         . addResponseCookie cook $ rsp1
 
     utc   = UTCTime (ModifiedJulianDay 55226) 0
-    cook  = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
-    cook2 = Cookie "zoo" "baz" (Just utc) (Just ".foo.com") (Just "/")
-    cook3 = Cookie "boo" "baz" Nothing Nothing Nothing
+    cook  = Cookie "ck1" "bar" (Just utc) (Just ".foo.com") (Just "/") True False
+    cook2 = Cookie "ck2" "bar" (Just utc) (Just ".foo.com") (Just "/") False True
+    cook3 = Cookie "ck3" "bar" Nothing Nothing Nothing False False
 
 
 
@@ -549,7 +544,7 @@ echoServer2 _ _ req = do
     (rq,rsp) <- echoServer (const $ return ()) (const $ return ()) req
     return (rq, addResponseCookie cook rsp)
   where
-    cook = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/")
+    cook = Cookie "foo" "bar" (Just utc) (Just ".foo.com") (Just "/") False False
     utc = UTCTime (ModifiedJulianDay 55226) 0
 
 

@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-|
 
@@ -66,8 +67,9 @@ import           Data.Maybe
 import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import           Data.Typeable
 import           Prelude hiding (catch)
-import           Snap.Types
+import           Snap.Core
 import           Snap.Iteratee ((>==>), enumBuilder)
 import           Snap.Internal.Debug (debug)
 import           System.Console.GetOpt
@@ -204,6 +206,17 @@ instance Monoid (Config m a) where
         }
       where
         ov f x y = getLast $! (mappend `on` (Last . f)) x y
+
+
+------------------------------------------------------------------------------
+-- | The 'Typeable1' instance is here so 'Config' values can be
+-- dynamically loaded with Hint.
+configTyCon :: TyCon
+configTyCon = mkTyCon "Snap.Http.Server.Config.Config"
+{-# NOINLINE configTyCon #-}
+
+instance (Typeable1 m) => Typeable1 (Config m) where
+    typeOf1 _ = mkTyConApp configTyCon [typeOf1 (undefined :: m ())]
 
 
 ------------------------------------------------------------------------------
@@ -445,7 +458,7 @@ defaultErrorHandler e = do
     let sm = smsg req
     debug $ toString sm
     logError sm
-    
+
     finishWith $ setContentType "text/plain; charset=utf-8"
                . setContentLength (fromIntegral $ B.length msg)
                . setResponseStatus 500 "Internal Server Error"
