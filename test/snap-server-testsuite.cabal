@@ -52,7 +52,7 @@ Executable testsuite
     test-framework-quickcheck2 >= 0.2.6 && < 0.3,
     text >= 0.11 && <0.12,
     time,
-    tls >= 0.7.1 && <0.8,
+    tls >= 0.7.1 && <0.9,
     transformers,
     vector >= 0.7 && <0.10,
     vector-algorithms >= 0.4 && <0.6,
@@ -190,7 +190,8 @@ Executable testserver
     time,
     vector >= 0.7 && <0.10,
     vector-algorithms >= 0.4 && <0.6,
-    PSQueue >= 1.1 && <1.2
+    PSQueue >= 1.1 && <1.2,
+    monad-control >= 0.2
 
   if !os(windows)
     build-depends: unix
@@ -226,5 +227,5 @@ Executable benchmark
     base >= 4 && < 5,
     network == 2.3.*,
     http-enumerator >= 0.7 && <0.8,
-    tls >= 0.7.1 && <0.8,
+    tls >= 0.7.1 && <0.9,
     criterion >= 0.5 && <0.6

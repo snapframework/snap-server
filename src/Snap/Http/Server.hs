@@ -20,7 +20,7 @@ module Snap.Http.Server
   ) where
 
 import           Control.Monad
-import           Control.Monad.CatchIO
+import           Control.Exception.Control
 import           Data.ByteString (ByteString)
 import           Data.Char
 import           Data.List

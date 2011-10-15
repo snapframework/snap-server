@@ -14,13 +14,9 @@ import           Blaze.ByteString.Builder.Enumerator
 import           Blaze.ByteString.Builder.HTTP
 import           Control.Arrow (first, second)
 import           Control.Concurrent (newMVar)
-import           Control.Monad.CatchIO hiding ( bracket
-                                              , catches
-                                              , finally
-                                              , Handler
-                                              )
+import           Control.Exception.Control
 import           Control.Monad.State.Strict
-import           Control.Exception hiding (catch, throw)
+import           Control.Exception.Control hiding (catch, throw)
 import           Data.Char
 import           Data.CaseInsensitive   (CI)
 import qualified Data.CaseInsensitive as CI
