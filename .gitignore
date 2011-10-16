@@ -1,5 +1,7 @@
 *~
 dist/
+cabal-dev
+**/cabal-dev
 *.tix
 .hpc
 .hpc-blackbox

@@ -7,6 +7,7 @@ module Snap.Internal.Http.Server.TimeoutManager
   , stop
   , register
   , tickle
+  , set
   , cancel
   ) where
 
@@ -20,6 +21,13 @@ import           Foreign.C.Types
 ------------------------------------------------------------------------------
 data State = Deadline !CTime
            | Canceled
+  deriving (Eq)
+
+instance Ord State where
+    compare Canceled Canceled         = EQ
+    compare Canceled _                = LT
+    compare _        Canceled         = GT
+    compare (Deadline a) (Deadline b) = compare a b
 
 
 ------------------------------------------------------------------------------
@@ -96,9 +104,28 @@ register killAction tm = do
 
 
 ------------------------------------------------------------------------------
--- | Tickle the timeout on a connection to be N seconds into the future.
+-- | Tickle the timeout on a connection to be at least N seconds into the
+-- future. If the existing timeout is set for M seconds from now, where M > N,
+-- then the timeout is unaffected.
 tickle :: TimeoutHandle -> Int -> IO ()
 tickle th n = do
+    now <- getTime
+
+    -- don't need atomicity here -- kill the space leak.
+    orig <- readIORef stateRef
+    let state = Deadline $ now + toEnum n
+    let !newState = max orig state
+    writeIORef stateRef newState
+
+  where
+    getTime  = _hGetTime th
+    stateRef = _state th
+
+
+------------------------------------------------------------------------------
+-- | Set the timeout on a connection to be N seconds into the future.
+set :: TimeoutHandle -> Int -> IO ()
+set th n = do
     now <- getTime
 
     let state = Deadline $ now + toEnum n

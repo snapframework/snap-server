@@ -456,13 +456,12 @@ runSession defaultTimeout backend handler lsock fd = do
     -----------------
     tmr         <- mkEvTimer
     now         <- getCurrentDateTime
-    timeoutTime <- newIORef $ now + 20
+    timeoutTime <- newIORef $ now + (fromIntegral defaultTimeout)
     tcb         <- mkTimerCallback $ timerCallback lp
                                                   tmr
                                                   timeoutTime
                                                   tid
-    -- 20 second timeout
-    evTimerInit tmr tcb 0 20.0
+    evTimerInit tmr tcb 0 (fromIntegral defaultTimeout)
 
 
     readActive  <- newIORef True
@@ -525,7 +524,7 @@ runSession defaultTimeout backend handler lsock fd = do
                                       (enumerate conn session)
                                       (writeOut defaultTimeout conn session)
                                       (sendFile defaultTimeout conn session)
-                                      (tickleTimeout conn)
+                                      (setTimeout conn)
                 )
 
 
@@ -572,6 +571,19 @@ instance Exception TimeoutException
 ------------------------------------------------------------------------------
 tickleTimeout :: Connection -> Int -> IO ()
 tickleTimeout conn tm = do
+    debug "Libev.tickleTimeout"
+    now  <- getCurrentDateTime
+    prev <- readIORef ref
+    let !n = max (now + toEnum tm) prev
+    writeIORef ref n
+
+  where
+    ref = _timerTimeoutTime conn
+
+
+------------------------------------------------------------------------------
+setTimeout :: Connection -> Int -> IO ()
+setTimeout conn tm = do
     debug "Libev.tickleTimeout"
     now       <- getCurrentDateTime
     writeIORef (_timerTimeoutTime conn) (now + toEnum tm)

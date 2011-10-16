@@ -13,6 +13,7 @@ import           Blaze.ByteString.Builder.Char8
 import           Blaze.ByteString.Builder.Enumerator
 import           Blaze.ByteString.Builder.HTTP
 import           Control.Arrow (first, second)
+import           Control.Concurrent (newMVar)
 import           Control.Monad.CatchIO hiding ( bracket
                                               , catches
                                               , finally
@@ -40,7 +41,9 @@ import           Data.Time
 import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
+import           Network.Socket (withSocketsDo)
 import           Prelude hiding (catch)
+import           System.IO
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
 import           System.Locale
@@ -168,8 +171,7 @@ httpServe :: Int                 -- ^ default timeout
           -> IO ()
 httpServe defaultTimeout ports mevType localHostname alogPath elogPath
           handler =
-    withLoggers alogPath elogPath
-                (\(alog, elog) -> spawnAll alog elog)
+    withSocketsDo $ withLoggers alogPath elogPath $ uncurry spawnAll
 
   where
     --------------------------------------------------------------------------
@@ -212,13 +214,18 @@ httpServe defaultTimeout ports mevType localHostname alogPath elogPath
 
 
     --------------------------------------------------------------------------
-    maybeSpawnLogger = maybe (return Nothing) $ (liftM Just) . newLogger
+    maybeSpawnLogger f =
+        maybe (return Nothing)
+              ((liftM Just) . newLoggerWithCustomErrorFunction f)
 
 
     --------------------------------------------------------------------------
     withLoggers afp efp =
-        bracket (do alog <- maybeSpawnLogger afp
-                    elog <- maybeSpawnLogger efp
+        bracket (do mvar <- newMVar ()
+                    let f s = withMVar mvar
+                                (const $ S.hPutStr stderr s >> hFlush stderr)
+                    alog <- maybeSpawnLogger f afp
+                    elog <- maybeSpawnLogger f efp
                     return (alog, elog))
                 (\(alog, elog) -> do
                     maybe (return ()) stopLogger alog

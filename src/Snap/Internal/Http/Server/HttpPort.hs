@@ -99,7 +99,7 @@ send tickleTimeout onBlock (NetworkSession s _ _) bs =
           let sent' = fromIntegral sent
           if sent' < len
              then tickleTimeout >> loop (plusPtr ptr sent') (len - sent')
-             else return ()
+             else tickleTimeout
 
 
 ------------------------------------------------------------------------------

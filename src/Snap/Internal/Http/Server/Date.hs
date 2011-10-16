@@ -62,7 +62,7 @@ updateState (DateState dateString logString time) = do
 
 ------------------------------------------------------------------------------
 ensureFreshDate :: IO ()
-ensureFreshDate = mask_ $ do
+ensureFreshDate = block $ do
     now <- epochTime
     old <- readIORef $ _lastFetchTime dateState
     when (now > old) $ updateState dateState
@@ -70,14 +70,14 @@ ensureFreshDate = mask_ $ do
 
 ------------------------------------------------------------------------------
 getDateString :: IO ByteString
-getDateString = mask_ $ do
+getDateString = block $ do
     ensureFreshDate
     readIORef $ _cachedDateString dateState
 
 
 ------------------------------------------------------------------------------
 getLogDateString :: IO ByteString
-getLogDateString = mask_ $ do
+getLogDateString = block $ do
     ensureFreshDate
     readIORef $ _cachedLogString dateState
 

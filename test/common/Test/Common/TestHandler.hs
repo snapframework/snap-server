@@ -4,6 +4,7 @@
 module Test.Common.TestHandler (testHandler) where
 
 import           Blaze.ByteString.Builder
+import           Control.Concurrent (threadDelay)
 import           Control.Monad
 import           Control.Monad.Trans
 import qualified Data.ByteString.Char8 as S
@@ -22,6 +23,38 @@ import           System.Directory
 import           Test.Common.Rot13 (rot13)
 
 
+
+------------------------------------------------------------------------------
+-- timeout handling
+------------------------------------------------------------------------------
+timeoutTickleHandler :: Snap ()
+timeoutTickleHandler = do
+    noCompression   -- FIXME: remove this when zlib-bindings and
+                    -- zlib-enumerator support gzip stream flushing
+    modifyResponse $ setResponseBody (trickleOutput 6)
+                   . setContentType "text/plain"
+    setTimeout 2
+
+  where
+    trickleOutput :: Int -> Enumerator Builder IO a
+    trickleOutput n = concatEnums $ dots `interleave` delays
+      where
+        enumOne = enumList 1 [fromByteString ".\n", flush]
+        delay st = do
+            liftIO $ threadDelay 1000000
+            returnI st
+
+        interleave x0 y0 = (go id x0 y0) []
+          where
+            go !dl [] ys = dl . (++ys)
+            go !dl xs [] = dl . (++xs)
+            go !dl (x:xs) (y:ys) = go (dl . (x:) . (y:)) xs ys
+
+        dots   = replicate n enumOne
+        delays = replicate n delay
+
+
+------------------------------------------------------------------------------
 pongHandler :: Snap ()
 pongHandler = modifyResponse $
               setResponseBody (enumBuilder $ fromByteString "PONG") .
@@ -148,4 +181,5 @@ testHandler = withCompression $
           , ("respcode/:code" , responseHandler                   )
           , ("upload/form"    , uploadForm                        )
           , ("upload/handle"  , uploadHandler                     )
+          , ("timeout/tickle" , timeoutTickleHandler              )
           ]
