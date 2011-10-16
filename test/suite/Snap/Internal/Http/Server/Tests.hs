@@ -860,8 +860,8 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
                        [HttpPort "*" port]
                        Nothing
                        "localhost"
-                       (Just "test-access.log")
-                       (Just "test-error.log")
+                       (Just $ const (return ())) -- dummy logging
+                       (Just $ const (return ())) -- dummy logging
                        (runSnap pongServer))
             (killThread)
             (\tid -> do

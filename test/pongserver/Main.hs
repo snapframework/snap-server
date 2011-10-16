@@ -29,6 +29,6 @@ main = do
   where
     go m   = httpServe config pongServer `finally` putMVar m ()
     config = setPort 8000 $
-             setErrorLog Nothing $
-             setAccessLog Nothing $
+             setErrorLog ConfigNoLog $
+             setAccessLog ConfigNoLog $
              setCompression False $ emptyConfig
