@@ -13,8 +13,6 @@ module Snap.Internal.Http.Server.HttpPort
 
 ------------------------------------------------------------------------------
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as B
-import           Data.ByteString.Internal (w2c)
 import           Foreign
 import           Foreign.C
 import           Network.Socket hiding (recv, send)

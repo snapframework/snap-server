@@ -25,7 +25,6 @@ import           Control.Monad
 import           Control.Monad.CatchIO
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import           Data.Char
 import           Data.List
 import           Data.Maybe
 import           Prelude hiding (catch)
