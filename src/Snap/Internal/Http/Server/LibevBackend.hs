@@ -238,6 +238,7 @@ acceptCallback defaultTimeout back handler
   where
     go = runSession defaultTimeout back handler sock
     cleanup = [ Handler $ \(_ :: TimeoutException) -> return ()
+              , Handler $ \(e :: AsyncException)   -> return ()
               , Handler $ \(e :: SomeException) ->
                   elog $ S.concat [ "libev.acceptCallback: "
                                   , S.pack . map c2w $ show e ]
