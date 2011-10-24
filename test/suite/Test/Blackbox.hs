@@ -86,8 +86,10 @@ startTestServer :: Int
                 -> ConfigBackend
                 -> IO (ThreadId, MVar ())
 startTestServer port sslport backend = do
-    let cfg = setAccessLog (Just $ "ts-access." ++ show backend ++ ".log") .
-              setErrorLog  (Just $ "ts-error." ++ show backend ++ ".log")  .
+    let cfg = setAccessLog
+                  (ConfigFileLog $ "ts-access." ++ show backend ++ ".log") .
+              setErrorLog
+                  (ConfigFileLog $ "ts-error." ++ show backend ++ ".log")  .
               setBind      "*"                                             .
               setPort      port                                            .
               setBackend   backend                                         .

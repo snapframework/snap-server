@@ -25,11 +25,12 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as LC
 import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w)
+import qualified Data.CaseInsensitive as CI
 import           Data.Char
 import           Data.Int
 import           Data.IORef
-import qualified Data.Map as Map
-import           Data.Maybe (fromJust)
+import           Data.List (foldl', sort)
+import           Data.Maybe (fromJust, isJust)
 import           Data.Time.Calendar
 import           Data.Time.Clock
 import           Data.Typeable
@@ -407,26 +408,45 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
            emptyResponse { rspHttpVersion = (1,0) }
 
 
+strToHeaders :: L.ByteString -> H.Headers
+strToHeaders s = foldl' mkHeader H.empty lns
+  where
+    lns = LC.lines s
+
+    mkHeader hdrs x = hdrs'
+      where
+        (a0,b0) = LC.break (== ':') x
+        a       = CI.mk $ S.concat $ LC.toChunks a0
+        b       = S.concat $ LC.toChunks $ LC.drop 2 b0
+        hdrs'   = H.insert a b hdrs
+
 
 testOnSendFile :: FilePath -> Int64 -> Int64 -> IO L.ByteString
 testOnSendFile f st sz = do
     sstep <- runIteratee copyingStream2Stream
     run_ $ enumFilePartial f (st,st+sz) sstep
 
+
 testHttpResponse2 :: Test
 testHttpResponse2 = testCase "server/HttpResponse2" $ do
     req   <- mkRequest sampleRequest
     buf   <- allocBuffer 16384
-    b2    <- run_ $ rsm $
+    b2    <- liftM (S.concat . L.toChunks) $ run_ $ rsm $
              sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
-    assertEqual "http response" (L.concat [
-                      "HTTP/1.0 600 Test\r\n"
-                    , "Connection: close\r\n"
-                    , "Foo: Bar\r\n\r\n"
-                    , "0123456789"
-                    ]) b2
+    assertBool "http prefix"
+               ("HTTP/1.0 600 Test\r\n" `S.isPrefixOf` b2)
+
+    assertBool "connection close"
+               ("Connection: close\r\n" `S.isInfixOf` b2)
+
+    assertBool "foo: bar"
+               ("Foo: Bar\r\n" `S.isInfixOf` b2)
+
+    assertBool "body"
+               ("\r\n\r\n0123456789" `S.isSuffixOf` b2)
+
   where
     rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
@@ -447,18 +467,30 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
           sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
                        return . snd
 
-    assertEqual "http response" (L.concat [
-                                       "HTTP/1.1 600 Test\r\n"
-                                      , "Content-Type: text/plain\r\n"
-                                      , "Foo: Bar\r\n"
-                                      , "Transfer-Encoding: chunked\r\n\r\n"
-                                      , "000A\r\n"
-                                      , "0123456789\r\n"
-                                      , "0\r\n\r\n"
-                                      ]) b3
+    let lns = LC.lines b3
 
+    let ok = case lns of
+               ([ "HTTP/1.1 600 Test\r"
+                , h1, h2, h3
+                , "\r"
+                , "000A\r"
+                , "0123456789\r"
+                , "0\r"
+                , "\r"]) -> check $ LC.unlines [h1,h2,h3]
+               _ -> False
+
+    when (not ok) $ LC.putStrLn $
+                    LC.concat ["***testHttpResponse3: b3 was:\n", b3]
+
+    assertBool "http response" ok
 
   where
+    check s = (H.lookup "Content-Type" hdrs == Just ["text/plain\r"]) &&
+              (H.lookup "Foo" hdrs == Just ["Bar\r"]) &&
+              (H.lookup "Transfer-Encoding" hdrs == Just ["chunked\r"])
+      where
+        hdrs = strToHeaders s
+
     rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
@@ -499,17 +531,34 @@ testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
           sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
-    -- Having some weird issues here with lazy ByteString comparison; run thru
-    -- strict ByteString to get around it. Slow/lame, but whatever.
-    assertEqual "http response multi-cookies" (L.fromChunks . return . S.concat $ [
-                      "HTTP/1.0 304 Test\r\n"
-                    , "Content-Length: 0\r\n"
-                    , "Set-Cookie: ck1=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; Secure\r\n"
-                    , "Set-Cookie: ck2=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; HttpOnly\r\n"
-                    , "Set-Cookie: ck3=bar\r\n\r\n"
-                    ]) (L.fromChunks . return . S.concat . L.toChunks $ b)
+    let lns = LC.lines b
+
+    let ok = case lns of
+               ([ "HTTP/1.0 304 Test\r"
+                , h1, h2, h3, h4
+                , "\r"]) -> check $ LC.unlines [h1,h2,h3,h4]
+               _ -> False
+
+    when (not ok) $ LC.putStrLn $
+                    LC.concat ["*** testHttpResponseCookies: b was:\n", b]
+    assertBool "http response" ok
 
   where
+    check s = (H.lookup "Content-Length" hdrs == Just ["0\r"]) &&
+              (ch $ H.lookup "Set-Cookie" hdrs)
+      where
+        hdrs = strToHeaders s
+
+        ch Nothing  = False
+        ch (Just l) =
+            sort l == [ 
+                "ck1=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; Secure\r"
+              , "ck2=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; HttpOnly\r"
+              , "ck3=bar\r"
+              ]
+
+        
+
     rsp1 = setResponseStatus 304 "Test" $ emptyResponse { rspHttpVersion = (1,0) }
     rsp2 = addResponseCookie cook3 . addResponseCookie cook2 
          . addResponseCookie cook $ rsp1
@@ -566,27 +615,38 @@ testHttp1 = testCase "server/httpSession" $ do
 
     let ok = case lns of
                ([ "HTTP/1.1 200 OK\r"
-                , "Content-Length: 10\r"
-                , d1
-                , s1
+                , h1
+                , h2
+                , h3
                 , "\r"
                 , "0123456789HTTP/1.1 200 OK\r"
-                , "Content-Length: 14\r"
-                , d2
-                , s2
+                , g1
+                , g2
+                , g3
                 , "\r"
-                , "01234567890123" ]) -> (("Date" `L.isPrefixOf` d1) &&
-                                          ("Date" `L.isPrefixOf` d2) &&
-                                          ("Server" `L.isPrefixOf` s1) &&
-                                          ("Server" `L.isPrefixOf` s2))
-
+                , "01234567890123" ]) -> (check1 $ LC.unlines [h1,h2,h3]) &&
+                                         (check2 $ LC.unlines [g1,g2,g3])
                _ -> False
+
 
     when (not ok) $ do
         putStrLn "server/httpSession fail!!!! got:"
         LC.putStrLn s
 
     assertBool "pipelined responses" ok
+
+  where
+    check1 s = (H.lookup "Content-Length" hdrs == Just ["10\r"]) &&
+               (isJust $ H.lookup "Server" hdrs) &&
+               (isJust $ H.lookup "Date" hdrs)
+      where
+        hdrs = strToHeaders s
+
+    check2 s = (H.lookup "Content-Length" hdrs == Just ["14\r"]) &&
+               (isJust $ H.lookup "Server" hdrs) &&
+               (isJust $ H.lookup "Date" hdrs)
+      where
+        hdrs = strToHeaders s
 
 
 mkIter :: IORef L.ByteString
@@ -648,7 +708,7 @@ sampleRequest4 =
 
 
 testHttp2 :: Test
-testHttp2 = testCase "server/connection: close" $ do
+testHttp2 = testCase "server/connectionClose" $ do
     let enumBody = enumBS sampleRequest4 >==> enumBS sampleRequest2
 
     ref <- newIORef ""
@@ -676,18 +736,28 @@ testHttp2 = testCase "server/connection: close" $ do
 
     let ok = case lns of
                ([ "HTTP/1.1 200 OK\r"
-                , "Connection: close\r"
-                , "Content-Length: 10\r"
-                , d1
-                , s1
-                , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                , h1
+                , h2
+                , h3
+                , h4
+                , h5
                 , "\r"
-                , "0123456789" ]) -> (("Date" `L.isPrefixOf` d1) &&
-                                      ("Server" `L.isPrefixOf` s1))
+                , "0123456789" ]) -> (check $ LC.unlines [h1,h2,h3,h4,h5])
 
                _ -> False
 
     assertBool "connection: close" ok
+
+  where
+    check s = (H.lookup "Content-Length" hdrs == Just ["10\r"]) &&
+              (H.lookup "Connection" hdrs == Just ["close\r"]) &&
+              (H.lookup "Set-Cookie" hdrs == Just [
+                    "foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                    ]) &&
+              (isJust $ H.lookup "Server" hdrs) &&
+              (isJust $ H.lookup "Date" hdrs)
+      where
+        hdrs = strToHeaders s
 
 
 
@@ -718,14 +788,12 @@ testHttp100 = testCase "server/expect100" $ do
                ([ "HTTP/1.1 100 Continue\r"
                 , "\r"
                 , "HTTP/1.1 200 OK\r"
-                , "Content-Length: 10\r"
-                , d1
-                , s1
-                , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                , h1
+                , h2
+                , h3
+                , h4
                 , "\r"
-                , "0123456789" ]) -> (("Date" `L.isPrefixOf` d1) &&
-                                      ("Server" `L.isPrefixOf` s1))
-
+                , "0123456789" ]) -> (check $ LC.unlines [h1,h2,h3,h4])
                _ -> False
 
     when (not ok) $ do
@@ -733,6 +801,16 @@ testHttp100 = testCase "server/expect100" $ do
         LC.putStrLn s
 
     assertBool "100 Continue" ok
+
+  where
+    check s = (H.lookup "Content-Length" hdrs == Just ["10\r"]) &&
+              (H.lookup "Set-Cookie" hdrs == Just [
+                    "foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                    ]) &&
+              (isJust $ H.lookup "Server" hdrs) &&
+              (isJust $ H.lookup "Date" hdrs)
+      where
+        hdrs = strToHeaders s
 
 
 test411 :: Test
@@ -771,7 +849,7 @@ test411 = testCase "server/expect411" $ do
 
 
 testExpectGarbage :: Test
-testExpectGarbage = testCase "server/Expect: garbage" $ do
+testExpectGarbage = testCase "server/expectGarbage" $ do
     let enumBody = enumBS sampleRequestExpectGarbage
 
     ref <- newIORef ""
@@ -795,19 +873,25 @@ testExpectGarbage = testCase "server/Expect: garbage" $ do
 
     let ok = case lns of
                ([ "HTTP/1.1 200 OK\r"
-                , "Content-Length: 10\r"
-                , d1
-                , s1
-                , "Set-Cookie: foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                , h1
+                , h2
+                , h3
+                , h4
                 , "\r"
-                , "0123456789" ]) -> (("Date" `L.isPrefixOf` d1) &&
-                                      ("Server" `L.isPrefixOf` s1))
-
+                , "0123456789" ]) -> (check $ LC.unlines [h1,h2,h3,h4])
                _ -> False
 
     assertBool "random expect: header" ok
 
-
+  where
+    check s = (H.lookup "Content-Length" hdrs == Just ["10\r"]) &&
+              (H.lookup "Set-Cookie" hdrs == Just [
+                    "foo=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com\r"
+                    ]) &&
+              (isJust $ H.lookup "Server" hdrs) &&
+              (isJust $ H.lookup "Date" hdrs)
+      where
+        hdrs = strToHeaders s
 
 
 pongServer :: Snap ()
@@ -860,8 +944,8 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
                        [HttpPort "*" port]
                        Nothing
                        "localhost"
-                       (Just "test-access.log")
-                       (Just "test-error.log")
+                       (Just $ const (return ())) -- dummy logging
+                       (Just $ const (return ())) -- dummy logging
                        (runSnap pongServer))
             (killThread)
             (\tid -> do
