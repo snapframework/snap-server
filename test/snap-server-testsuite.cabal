@@ -58,6 +58,20 @@ Executable testsuite
     vector-algorithms >= 0.4 && <0.6,
     PSQueue >= 1.1 && <1.2
 
+  extensions:
+    BangPatterns,
+    CPP,
+    MagicHash,
+    Rank2Types,
+    OverloadedStrings,
+    ScopedTypeVariables,
+    DeriveDataTypeable,
+    PackageImports,
+    ViewPatterns,
+    ForeignFunctionInterface,
+    EmptyDataDecls,
+    GeneralizedNewtypeDeriving
+
   if !os(windows)
     build-depends: unix
 

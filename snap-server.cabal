@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.6.0
+version:        0.6.0.1
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -127,6 +127,20 @@ Library
     vector                    >= 0.7      && < 0.10,
     vector-algorithms         >= 0.4      && < 0.6,
     PSQueue                   >= 1.1      && < 1.2
+
+  extensions:
+    BangPatterns,
+    CPP,
+    MagicHash,
+    Rank2Types,
+    OverloadedStrings,
+    ScopedTypeVariables,
+    DeriveDataTypeable,
+    PackageImports,
+    ViewPatterns,
+    ForeignFunctionInterface,
+    EmptyDataDecls,
+    GeneralizedNewtypeDeriving
 
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
