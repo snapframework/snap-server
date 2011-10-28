@@ -57,8 +57,8 @@ newLogger = newLoggerWithCustomErrorFunction
 
 ------------------------------------------------------------------------------
 -- | Like 'newLogger', but uses a custom error action if the logger needs to
--- print an error message of its own (for instance, if it can't open the output
--- file.)
+-- print an error message of its own (for instance, if it can't open the
+-- output file.)
 newLoggerWithCustomErrorFunction :: (ByteString -> IO ())
                                      -- ^ logger uses this action to log any
                                      -- error messages of its own

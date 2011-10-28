@@ -49,8 +49,8 @@ snapServerVersion = Int.snapServerVersion
 -- | Starts serving HTTP requests using the given handler. This function never
 -- returns; to shut down the HTTP server, kill the controlling thread.
 --
--- This function is like 'httpServe' except it doesn't setup compression or the
--- error handler; this allows it to be used from 'MonadSnap'.
+-- This function is like 'httpServe' except it doesn't setup compression or
+-- the error handler; this allows it to be used from 'MonadSnap'.
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
     conf <- completeConfig config
@@ -62,7 +62,8 @@ simpleHttpServe config handler = do
     go conf = do
         let tout = fromMaybe 60 $ getDefaultTimeout conf
         setUnicodeLocale $ fromJust $ getLocale conf
-        withLoggers (fromJust $ getAccessLog conf) (fromJust $ getErrorLog conf) $
+        withLoggers (fromJust $ getAccessLog conf)
+                    (fromJust $ getErrorLog conf) $
             \(alog, elog) -> Int.httpServe tout
                              (listeners conf)
                              (fmap backendToInternal $ getBackend conf)
@@ -71,8 +72,8 @@ simpleHttpServe config handler = do
                              elog
                              (runSnap handler)
 
-    maybeSpawnLogger f (ConfigFileLog fp) = liftM Just $
-                                            newLoggerWithCustomErrorFunction f fp
+    maybeSpawnLogger f (ConfigFileLog fp) =
+        liftM Just $ newLoggerWithCustomErrorFunction f fp
     maybeSpawnLogger _ _                  = return Nothing
 
     maybeIoLog (ConfigIoLog a) = Just a
