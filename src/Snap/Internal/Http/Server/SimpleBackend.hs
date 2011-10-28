@@ -4,7 +4,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE PackageImports           #-}
-{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE Rank2Types               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 
 module Snap.Internal.Http.Server.SimpleBackend

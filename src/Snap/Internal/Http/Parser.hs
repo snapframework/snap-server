@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE PackageImports     #-}
-{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE Rank2Types         #-}
 {-# LANGUAGE ViewPatterns       #-}
 
 module Snap.Internal.Http.Parser
