@@ -13,7 +13,6 @@ import           Blaze.ByteString.Builder.Char8
 import           Blaze.ByteString.Builder.Enumerator
 import           Blaze.ByteString.Builder.HTTP
 import           Control.Arrow (first, second)
-import           Control.Concurrent (newMVar)
 import           Control.Monad.CatchIO hiding ( bracket
                                               , catches
                                               , finally
@@ -32,7 +31,6 @@ import qualified Data.ByteString.Nums.Careless.Int as Cvt
 import           Data.Int
 import           Data.IORef
 import           Data.List (foldl')
-import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, fromJust, fromMaybe)
 import           Data.Monoid
@@ -42,7 +40,6 @@ import           Data.Version
 import           GHC.Conc
 import           Network.Socket (withSocketsDo)
 import           Prelude hiding (catch)
-import           System.IO
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
 import           System.Locale
