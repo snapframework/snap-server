@@ -75,9 +75,9 @@ stop tm = readMVar (_managerThread tm) >>= killThread
 
 ------------------------------------------------------------------------------
 -- | Register a new connection with the TimeoutManager.
-register :: IO ()               -- ^ action to run when the timeout deadline is
-                                -- exceeded.
-         -> TimeoutManager      -- ^ manager to register with.
+register :: IO ()
+         -- ^ action to run when the timeout deadline is exceeded.
+         -> TimeoutManager   -- ^ manager to register with.
          -> IO TimeoutHandle
 register killAction tm = do
     now <- getTime

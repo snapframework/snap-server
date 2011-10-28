@@ -366,7 +366,8 @@ setBackend x c = c { backend = Just x }
 ------------------------------------------------------------------------------
 completeConfig :: (MonadSnap m) => Config m a -> IO (Config m a)
 completeConfig config = do
-    when noPort $ hPutStrLn stderr "no port specified, defaulting to port 8000"
+    when noPort $ hPutStrLn stderr
+        "no port specified, defaulting to port 8000"
 
     return $ cfg `mappend` cfg'
 
@@ -493,12 +494,12 @@ defaultErrorHandler e = do
 -- command-line.
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
-commandLineConfig :: MonadSnap m =>
-                     Config m a   -- ^ default configuration. This is combined
-                                  -- with 'defaultConfig' to obtain default
-                                  -- values to use if the given parameter is not
-                                  -- specified on the command line. Usually it is
-                                  -- fine to use 'emptyConfig' here.
+commandLineConfig :: MonadSnap m
+                  => Config m a
+                  -- ^ default configuration. This is combined with
+                  -- 'defaultConfig' to obtain default values to use if the
+                  -- given parameter is specified on the command line. Usually
+                  -- it is fine to use 'emptyConfig' here.
                   -> IO (Config m a)
 commandLineConfig defaults = do
     args <- getArgs

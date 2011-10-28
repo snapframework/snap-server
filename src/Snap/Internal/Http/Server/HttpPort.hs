@@ -13,6 +13,9 @@ module Snap.Internal.Http.Server.HttpPort
 
 ------------------------------------------------------------------------------
 import           Data.ByteString (ByteString)
+#ifdef PORTABLE
+import qualified Data.ByteString as B
+#endif
 import           Foreign
 import           Foreign.C
 import           Network.Socket hiding (recv, send)

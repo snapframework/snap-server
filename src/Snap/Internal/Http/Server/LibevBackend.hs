@@ -509,7 +509,7 @@ runSession defaultTimeout backend handler lsock fd = do
     go sinfo conn `finally` (block $ do
         debug "runSession: thread finished, freeing connection"
         ignoreException $ freeConnection conn)
-        
+
   where
     go sinfo conn =
         bracket (Listen.createSession lsock bLOCKSIZE fd $
