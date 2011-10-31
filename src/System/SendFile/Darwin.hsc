@@ -1,14 +1,22 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CPP, ForeignFunctionInterface #-}
 -- | Darwin system-dependent code for 'sendfile'.
 module System.SendFile.Darwin (sendFile) where
 
 import Data.Int
 import Foreign.C.Error (eAGAIN, eINTR, getErrno, throwErrno)
+#if __GLASGOW_HASKELL__ >= 703
+import Foreign.C.Types (CInt(CInt))
+#else
 import Foreign.C.Types (CInt)
+#endif
 import Foreign.Marshal (alloca)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek, poke)
+#if __GLASGOW_HASKELL__ >= 703
+import System.Posix.Types (Fd(Fd), COff(COff))
+#else
 import System.Posix.Types (Fd, COff)
+#endif
 
 sendFile :: IO () -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
 sendFile onBlock out_fd in_fd off count
