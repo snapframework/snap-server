@@ -27,6 +27,8 @@ import           Data.ByteString (ByteString)
 import           Data.ByteString.Internal (c2w)
 import qualified Data.CaseInsensitive as CI
 import           Data.Char
+import qualified Data.Enumerator as E
+import qualified Data.Enumerator.List as EL
 import           Data.Int
 import           Data.IORef
 import           Data.List (foldl', sort)
@@ -75,6 +77,7 @@ tests = [ testHttpRequest1
         , testHttp2
         , testHttp100
         , test411
+        , testEscapeHttp
         , testExpectGarbage
         , testPartialParse
         , testMethodParsing
@@ -846,6 +849,31 @@ test411 = testCase "server/expect411" $ do
 
     assertBool "411 Length Required" ok
 
+
+testEscapeHttp :: Test
+testEscapeHttp = testCase "server/escapeHttp" $ do
+    ref <- newIORef ""
+    let (iter,onSendFile) = mkIter ref
+
+    runHTTP 60
+            Nothing
+            Nothing
+            escapeServer
+            "localhost"
+            (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58384 False)
+            (enumBS sampleRequest)
+            iter
+            onSendFile
+            (const $ return ())
+
+    s <- readIORef ref
+
+    assertEqual "escapeHttp" "0123456789" s
+  where
+    -- Escape HTTP traffic. Read one ByteString and send it back.
+    escapeServer = runSnap $ escapeHttp $ \_ sendIter -> do
+        Just bs <- EL.head
+        liftIO $ E.run_ $ E.enumList 1 [bs] $$ sendIter
 
 
 testExpectGarbage :: Test
