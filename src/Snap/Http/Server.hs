@@ -19,10 +19,12 @@ module Snap.Http.Server
   , module Snap.Http.Server.Config
   ) where
 
+import           Control.Applicative
+import           Control.Concurrent (newMVar, withMVar)
 import           Control.Monad
 import           Control.Monad.CatchIO
 import           Data.ByteString (ByteString)
-import           Data.Char
+import qualified Data.ByteString as BS
 import           Data.List
 import           Data.Maybe
 import           Prelude hiding (catch)
@@ -34,7 +36,7 @@ import           Snap.Util.GZip
 import           System.Posix.Env
 #endif
 import           System.IO
-
+import           System.FastLogger
 
 ------------------------------------------------------------------------------
 -- | A short string describing the Snap server version
@@ -46,8 +48,8 @@ snapServerVersion = Int.snapServerVersion
 -- | Starts serving HTTP requests using the given handler. This function never
 -- returns; to shut down the HTTP server, kill the controlling thread.
 --
--- This function is like 'httpServe' except it doesn't setup compression or the
--- error handler; this allows it to be used from 'MonadSnap'.
+-- This function is like 'httpServe' except it doesn't setup compression or
+-- the error handler; this allows it to be used from 'MonadSnap'.
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
     conf <- completeConfig config
@@ -59,13 +61,35 @@ simpleHttpServe config handler = do
     go conf = do
         let tout = fromMaybe 60 $ getDefaultTimeout conf
         setUnicodeLocale $ fromJust $ getLocale conf
-        Int.httpServe tout
-                      (listeners conf)
-                      (fmap backendToInternal $ getBackend conf)
-                      (fromJust $ getHostname  conf)
-                      (fromJust $ getAccessLog conf)
-                      (fromJust $ getErrorLog  conf)
-                      (runSnap handler)
+        withLoggers (fromJust $ getAccessLog conf)
+                    (fromJust $ getErrorLog conf) $
+            \(alog, elog) -> Int.httpServe tout
+                             (listeners conf)
+                             (fmap backendToInternal $ getBackend conf)
+                             (fromJust $ getHostname  conf)
+                             alog
+                             elog
+                             (runSnap handler)
+
+    maybeSpawnLogger f (ConfigFileLog fp) =
+        liftM Just $ newLoggerWithCustomErrorFunction f fp
+    maybeSpawnLogger _ _                  = return Nothing
+
+    maybeIoLog (ConfigIoLog a) = Just a
+    maybeIoLog _               = Nothing
+
+    withLoggers afp efp act =
+        bracket (do mvar <- newMVar ()
+                    let f s = withMVar mvar
+                                (const $ BS.hPutStr stderr s >> hFlush stderr)
+                    alog <- maybeSpawnLogger f afp
+                    elog <- maybeSpawnLogger f efp
+                    return (alog, elog))
+                (\(alog, elog) -> do
+                    maybe (return ()) stopLogger alog
+                    maybe (return ()) stopLogger elog)
+                (\(alog, elog) -> act ( liftM logMsg alog <|> maybeIoLog afp
+                                      , liftM logMsg elog <|> maybeIoLog efp))
 {-# INLINE simpleHttpServe #-}
 
 

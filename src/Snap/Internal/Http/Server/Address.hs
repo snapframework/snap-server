@@ -7,7 +7,7 @@ module Snap.Internal.Http.Server.Address
   , getAddress
   ) where
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 import           Network.Socket
 import           Data.Maybe
 import           Control.Monad
@@ -18,7 +18,7 @@ import qualified Data.ByteString as S
 import           Data.ByteString.Char8 ()
 import           Data.ByteString.Internal (c2w, w2c)
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 data AddressNotSupportedException = AddressNotSupportedException String
    deriving (Typeable)
 
@@ -27,12 +27,12 @@ instance Show AddressNotSupportedException where
 
 instance Exception AddressNotSupportedException
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 getHostAddr :: SockAddr -> IO String
 getHostAddr addr =
     (fromMaybe "" . fst) `liftM` getNameInfo [NI_NUMERICHOST] True False addr
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 getAddress :: SockAddr -> IO (Int, ByteString)
 getAddress addr = do
     port <- case addr of
@@ -42,7 +42,7 @@ getAddress addr = do
     host <- getHostAddr addr
     return (fromIntegral port, S.pack $ map c2w host)
 
--------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 getSockAddr :: Int
             -> ByteString
             -> IO (Family, SockAddr)

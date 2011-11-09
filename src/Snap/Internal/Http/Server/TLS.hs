@@ -24,7 +24,6 @@ import           Data.ByteString.Char8 (ByteString)
 import           Data.Dynamic
 import           Foreign.C
 
-import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Backend
 
 #ifdef OPENSSL

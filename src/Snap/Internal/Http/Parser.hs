@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE PackageImports     #-}
-{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE Rank2Types         #-}
 {-# LANGUAGE ViewPatterns       #-}
 
 module Snap.Internal.Http.Parser
@@ -18,7 +18,6 @@ module Snap.Internal.Http.Parser
 
 
 ------------------------------------------------------------------------------
-import           Control.Arrow (second)
 import           Control.Exception
 import           Control.Monad (liftM)
 import           Control.Monad.Trans
@@ -31,16 +30,11 @@ import           Data.ByteString.Internal (w2c)
 import qualified Data.ByteString.Lazy.Char8 as L
 import qualified Data.ByteString.Nums.Careless.Hex as Cvt
 import           Data.Char
-import           Data.List (foldl')
 import           Data.Int
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe (catMaybes)
 import           Data.Typeable
 import           Prelude hiding (head, take, takeWhile)
 ----------------------------------------------------------------------------
 import           Snap.Internal.Http.Types
-import           Snap.Internal.Debug
 import           Snap.Internal.Iteratee.Debug
 import           Snap.Internal.Parsing hiding (pHeaders)
 import           Snap.Iteratee hiding (map, take)
@@ -177,7 +171,7 @@ methodFromString "DELETE"  = return DELETE
 methodFromString "TRACE"   = return TRACE
 methodFromString "OPTIONS" = return OPTIONS
 methodFromString "CONNECT" = return CONNECT
-methodFromString s         = 
+methodFromString s         =
     throwError $ HttpParseException $ "Bad method '" ++ S.unpack s ++ "'"
 
 

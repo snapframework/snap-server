@@ -3,7 +3,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PackageImports #-}
 
@@ -238,6 +238,7 @@ acceptCallback defaultTimeout back handler
   where
     go = runSession defaultTimeout back handler sock
     cleanup = [ Handler $ \(_ :: TimeoutException) -> return ()
+              , Handler $ \(e :: AsyncException)   -> return ()
               , Handler $ \(e :: SomeException) ->
                   elog $ S.concat [ "libev.acceptCallback: "
                                   , S.pack . map c2w $ show e ]
@@ -508,7 +509,7 @@ runSession defaultTimeout backend handler lsock fd = do
     go sinfo conn `finally` (block $ do
         debug "runSession: thread finished, freeing connection"
         ignoreException $ freeConnection conn)
-        
+
   where
     go sinfo conn =
         bracket (Listen.createSession lsock bLOCKSIZE fd $

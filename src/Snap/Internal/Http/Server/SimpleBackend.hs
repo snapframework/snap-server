@@ -4,7 +4,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE PackageImports           #-}
-{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE Rank2Types               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 
 module Snap.Internal.Http.Server.SimpleBackend
@@ -165,8 +165,8 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
                    in handler sinfo
                               (enumerate lsock s sock)
                               writeEnd
-                              (sendFile lsock (tickleTimeout defaultTimeout) fd
-                                        writeEnd)
+                              (sendFile lsock (tickleTimeout defaultTimeout)
+                                        fd writeEnd)
                               setTimeout
             )
 
