@@ -118,7 +118,7 @@ Library
     murmur-hash               >= 0.1      && < 0.2,
     network                   >= 2.3      && < 2.4,
     old-locale,
-    snap-core                 >= 0.6      && < 0.7,
+    snap-core                 >= 0.6.0.2  && < 0.7,
     template-haskell          >= 2.2      && < 2.7,
     text                      >= 0.11     && < 0.12,
     time                      >= 1.0      && < 1.5,
