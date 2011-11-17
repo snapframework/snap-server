@@ -107,14 +107,29 @@ acceptThread :: Int
 acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
     loop `finally` (tryPutMVar exitMVar () >> return ())
   where
-    loop = do
+    acceptAndFork = do
         debug $ "acceptThread: calling accept() on socket " ++ show sock
         (s,addr) <- accept $ Listen.listenSocket sock
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
         _ <- forkOnIO cpu (go s addr `catches` cleanup)
+        return ()
+
+    loop = do
+        acceptAndFork `catches` acceptHandler
         loop
 
     go = runSession defaultTimeout handler tmgr sock
+
+    acceptHandler = 
+        [ Handler $ \(e :: AsyncException) -> throwIO e
+        , Handler $ \(e :: SomeException) -> do
+              elog $ S.concat [ "SimpleBackend.acceptThread: accept threw: "
+                              , S.pack . map c2w $ show e ]
+              -- we're out of file descriptors, and it isn't likely to get
+              -- better immediately; sleep for 10ms to avoid spamming the error
+              -- log.
+              threadDelay $ 10000
+        ]
 
     cleanup =
         [
