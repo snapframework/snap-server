@@ -23,8 +23,8 @@ Executable testsuite
   build-depends:
     QuickCheck >= 2,
     array >= 0.3 && <0.4,
-    attoparsec >= 0.8.1 && < 0.11,
-    attoparsec-enumerator >= 0.2.0.1 && < 0.4,
+    attoparsec >= 0.10 && < 0.11,
+    attoparsec-enumerator >= 0.3 && < 0.4,
     base >= 4 && < 5,
     base16-bytestring == 0.1.*,
     binary >= 0.5 && < 0.6,
@@ -99,8 +99,8 @@ Executable pongserver
   build-depends:
     QuickCheck >= 2,
     array >= 0.3 && <0.4,
-    attoparsec >= 0.8.1 && < 0.11,
-    attoparsec-enumerator >= 0.2.0.1 && < 0.4,
+    attoparsec >= 0.10 && < 0.11,
+    attoparsec-enumerator >= 0.3 && < 0.4,
     base >= 4 && < 5,
     base16-bytestring == 0.1.*,
     blaze-builder >= 0.2.1.4 && <0.4,
@@ -175,8 +175,8 @@ Executable testserver
   build-depends:
     QuickCheck >= 2,
     array >= 0.3 && <0.4,
-    attoparsec >= 0.8.1 && < 0.11,
-    attoparsec-enumerator >= 0.2.0.1 && < 0.4,
+    attoparsec >= 0.10 && < 0.11,
+    attoparsec-enumerator >= 0.3 && < 0.4,
     base >= 4 && < 5,
     binary >= 0.5 && < 0.6,
     blaze-builder >= 0.2.1.4 && <0.4,

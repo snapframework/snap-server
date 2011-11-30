@@ -21,7 +21,7 @@ module Snap.Internal.Http.Parser
 import           Control.Exception
 import           Control.Monad (liftM)
 import           Control.Monad.Trans
-import           Data.Attoparsec hiding (many, Result(..))
+import           Data.Attoparsec
 import           Data.Attoparsec.Enumerator
 import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as S
