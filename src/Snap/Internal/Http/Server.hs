@@ -46,9 +46,9 @@ import           System.Posix.Types (FileOffset)
 import           System.Locale
 ------------------------------------------------------------------------------
 import           System.FastLogger (timestampedLogEntry, combinedLogEntry)
-import           Snap.Core (EscapeHttpException (..))
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Debug
+import           Snap.Internal.Exceptions (EscapeHttpException (..))
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Server.Date
 
