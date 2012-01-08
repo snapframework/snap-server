@@ -29,6 +29,7 @@ import qualified Data.ByteString.Char8 as SC
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Nums.Careless.Int as Cvt
+import           Data.Enumerator.Internal
 import           Data.Int
 import           Data.IORef
 import           Data.List (foldl')
@@ -501,7 +502,8 @@ receiveRequest :: Iteratee ByteString IO () -> ServerMonad (Maybe Request)
 receiveRequest writeEnd = do
     debug "receiveRequest: entered"
     mreq <- {-# SCC "receiveRequest/parseRequest" #-} lift $
-            iterateeDebugWrapper "parseRequest" parseRequest
+            iterateeDebugWrapper "parseRequest" $
+            joinI' $ takeNoMoreThan maxHeadersSize $$ parseRequest
     debug "receiveRequest: parseRequest returned"
 
     case mreq of
@@ -514,8 +516,12 @@ receiveRequest writeEnd = do
 
       Nothing     -> return Nothing
 
-
   where
+    --------------------------------------------------------------------------
+    -- TODO(gdc): make this a policy decision (expose in
+    -- Snap.Http.Server.Config)
+    maxHeadersSize = 256 * 1024
+
     --------------------------------------------------------------------------
     -- check: did the client specify "transfer-encoding: chunked"? then we
     -- have to honor that.
