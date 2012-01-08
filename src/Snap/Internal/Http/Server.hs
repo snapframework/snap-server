@@ -501,7 +501,8 @@ receiveRequest :: Iteratee ByteString IO () -> ServerMonad (Maybe Request)
 receiveRequest writeEnd = do
     debug "receiveRequest: entered"
     mreq <- {-# SCC "receiveRequest/parseRequest" #-} lift $
-            iterateeDebugWrapper "parseRequest" parseRequest
+            iterateeDebugWrapper "parseRequest" $
+            joinI $ takeNoMoreThan maxHeadersSize $$ parseRequest
     debug "receiveRequest: parseRequest returned"
 
     case mreq of
@@ -514,8 +515,12 @@ receiveRequest writeEnd = do
 
       Nothing     -> return Nothing
 
-
   where
+    --------------------------------------------------------------------------
+    -- TODO(gdc): make this a policy decision (expose in
+    -- Snap.Http.Server.Config)
+    maxHeadersSize = 256 * 1024
+
     --------------------------------------------------------------------------
     -- check: did the client specify "transfer-encoding: chunked"? then we
     -- have to honor that.
