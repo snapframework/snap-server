@@ -29,6 +29,7 @@ import qualified Data.ByteString.Char8 as SC
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w, w2c)
 import qualified Data.ByteString.Nums.Careless.Int as Cvt
+import           Data.Enumerator.Internal
 import           Data.Int
 import           Data.IORef
 import           Data.List (foldl')
@@ -46,9 +47,9 @@ import           System.Posix.Types (FileOffset)
 import           System.Locale
 ------------------------------------------------------------------------------
 import           System.FastLogger (timestampedLogEntry, combinedLogEntry)
-import           Snap.Core (EscapeHttpException (..))
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Debug
+import           Snap.Internal.Exceptions (EscapeHttpException (..))
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Server.Date
 
@@ -501,7 +502,8 @@ receiveRequest :: Iteratee ByteString IO () -> ServerMonad (Maybe Request)
 receiveRequest writeEnd = do
     debug "receiveRequest: entered"
     mreq <- {-# SCC "receiveRequest/parseRequest" #-} lift $
-            iterateeDebugWrapper "parseRequest" parseRequest
+            iterateeDebugWrapper "parseRequest" $
+            joinI' $ takeNoMoreThan maxHeadersSize $$ parseRequest
     debug "receiveRequest: parseRequest returned"
 
     case mreq of
@@ -510,12 +512,16 @@ receiveRequest writeEnd = do
           setEnumerator req'
           req  <- parseForm req'
           checkConnectionClose (rqVersion req) (rqHeaders req)
-          return $ Just req
+          return $! Just req
 
       Nothing     -> return Nothing
 
-
   where
+    --------------------------------------------------------------------------
+    -- TODO(gdc): make this a policy decision (expose in
+    -- Snap.Http.Server.Config)
+    maxHeadersSize = 256 * 1024
+
     --------------------------------------------------------------------------
     -- check: did the client specify "transfer-encoding: chunked"? then we
     -- have to honor that.
@@ -613,8 +619,8 @@ receiveRequest writeEnd = do
                 e st'
 
             liftIO $ writeIORef (rqBody req) $ SomeEnumerator e'
-            return $ req { rqParams = Map.unionWith (++) (rqParams req)
-                                        newParams }
+            return $! req { rqParams = Map.unionWith (++) (rqParams req)
+                                         newParams }
 
 
     --------------------------------------------------------------------------
@@ -635,26 +641,26 @@ receiveRequest writeEnd = do
             -- will override in "setEnumerator"
             enum <- liftIO $ newIORef $ SomeEnumerator (enumBS "")
 
-            return $ Request serverName
-                             serverPort
-                             remoteAddr
-                             rport
-                             localAddr
-                             lport
-                             localHostname
-                             secure
-                             hdrs
-                             enum
-                             mbContentLength
-                             method
-                             version
-                             cookies
-                             snapletPath
-                             pathInfo
-                             contextPath
-                             uri
-                             queryString
-                             params
+            return $! Request serverName
+                              serverPort
+                              remoteAddr
+                              rport
+                              localAddr
+                              lport
+                              localHostname
+                              secure
+                              hdrs
+                              enum
+                              mbContentLength
+                              method
+                              version
+                              cookies
+                              snapletPath
+                              pathInfo
+                              contextPath
+                              uri
+                              queryString
+                              params
 
       where
         snapletPath = ""        -- TODO: snaplets in v0.2
@@ -858,7 +864,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
         {-# SCC "setFileSize" #-}
         do
             fs <- liftM fromIntegral $ liftIO $ getFileSize fp
-            return $ r { rspContentLength = Just fs }
+            return $! r { rspContentLength = Just fs }
 
 
     --------------------------------------------------------------------------
@@ -892,7 +898,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
             z <- case rspBody r'' of
                    (Enum _)                  -> return r''
                    (SendFile f Nothing)      -> setFileSize f r''
-                   (SendFile _ (Just (s,e))) -> return $
+                   (SendFile _ (Just (s,e))) -> return $!
                                                 setContentLength (e-s) r''
 
             case rspContentLength z of

@@ -369,7 +369,7 @@ completeConfig config = do
     when noPort $ hPutStrLn stderr
         "no port specified, defaulting to port 8000"
 
-    return $ cfg `mappend` cfg'
+    return $! cfg `mappend` cfg'
 
   where
     cfg = defaultConfig `mappend` config

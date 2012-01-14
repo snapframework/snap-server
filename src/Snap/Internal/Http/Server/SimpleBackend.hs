@@ -85,7 +85,7 @@ newLoop defaultTimeout sockets handler elog cpu = do
     accThreads <- forM sockets $ \p -> forkOnIO cpu $
                   acceptThread defaultTimeout handler tmgr elog cpu p exit
 
-    return $ EventLoopCpu cpu accThreads tmgr exit
+    return $! EventLoopCpu cpu accThreads tmgr exit
 
 
 ------------------------------------------------------------------------------
