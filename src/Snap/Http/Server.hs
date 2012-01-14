@@ -101,12 +101,12 @@ listeners conf = catMaybes [ httpListener, httpsListener ]
         p    <- getSSLPort conf
         cert <- getSSLCert conf
         key  <- getSSLKey conf
-        return $ Int.HttpsPort b p cert key
+        return $! Int.HttpsPort b p cert key
 
     httpListener = do
         p <- getPort conf
         b <- getBind conf
-        return $ Int.HttpPort b p
+        return $! Int.HttpPort b p
 
 
 ------------------------------------------------------------------------------

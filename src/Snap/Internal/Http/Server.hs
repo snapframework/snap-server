@@ -512,7 +512,7 @@ receiveRequest writeEnd = do
           setEnumerator req'
           req  <- parseForm req'
           checkConnectionClose (rqVersion req) (rqHeaders req)
-          return $ Just req
+          return $! Just req
 
       Nothing     -> return Nothing
 
@@ -619,8 +619,8 @@ receiveRequest writeEnd = do
                 e st'
 
             liftIO $ writeIORef (rqBody req) $ SomeEnumerator e'
-            return $ req { rqParams = Map.unionWith (++) (rqParams req)
-                                        newParams }
+            return $! req { rqParams = Map.unionWith (++) (rqParams req)
+                                         newParams }
 
 
     --------------------------------------------------------------------------
@@ -641,26 +641,26 @@ receiveRequest writeEnd = do
             -- will override in "setEnumerator"
             enum <- liftIO $ newIORef $ SomeEnumerator (enumBS "")
 
-            return $ Request serverName
-                             serverPort
-                             remoteAddr
-                             rport
-                             localAddr
-                             lport
-                             localHostname
-                             secure
-                             hdrs
-                             enum
-                             mbContentLength
-                             method
-                             version
-                             cookies
-                             snapletPath
-                             pathInfo
-                             contextPath
-                             uri
-                             queryString
-                             params
+            return $! Request serverName
+                              serverPort
+                              remoteAddr
+                              rport
+                              localAddr
+                              lport
+                              localHostname
+                              secure
+                              hdrs
+                              enum
+                              mbContentLength
+                              method
+                              version
+                              cookies
+                              snapletPath
+                              pathInfo
+                              contextPath
+                              uri
+                              queryString
+                              params
 
       where
         snapletPath = ""        -- TODO: snaplets in v0.2
@@ -864,7 +864,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
         {-# SCC "setFileSize" #-}
         do
             fs <- liftM fromIntegral $ liftIO $ getFileSize fp
-            return $ r { rspContentLength = Just fs }
+            return $! r { rspContentLength = Just fs }
 
 
     --------------------------------------------------------------------------
@@ -898,7 +898,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
             z <- case rspBody r'' of
                    (Enum _)                  -> return r''
                    (SendFile f Nothing)      -> setFileSize f r''
-                   (SendFile _ (Just (s,e))) -> return $
+                   (SendFile _ (Just (s,e))) -> return $!
                                                 setContentLength (e-s) r''
 
             case rspContentLength z of

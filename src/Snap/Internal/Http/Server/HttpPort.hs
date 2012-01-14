@@ -1,6 +1,6 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE OverloadedStrings        #-}
 
 module Snap.Internal.Http.Server.HttpPort
   ( bindHttp
@@ -10,68 +10,66 @@ module Snap.Internal.Http.Server.HttpPort
   , send
   ) where
 
-
 ------------------------------------------------------------------------------
 import           Data.ByteString (ByteString)
-#ifdef PORTABLE
-import qualified Data.ByteString as B
-#endif
 import           Foreign
 import           Foreign.C
 import           Network.Socket hiding (recv, send)
 import           Unsafe.Coerce
-
+------------------------------------------------------------------------------
 #ifdef PORTABLE
+import qualified Data.ByteString as B
 import qualified Network.Socket.ByteString as SB
 #else
 import qualified Data.ByteString.Internal as BI
 import qualified Data.ByteString.Unsafe as BI
 #endif
-
+------------------------------------------------------------------------------
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Server.Address
+
 
 ------------------------------------------------------------------------------
 bindHttp :: ByteString -> Int -> IO ListenSocket
 bindHttp bindAddr bindPort = do
     (family, addr) <- getSockAddr bindPort bindAddr
-    sock <- socket family Stream 0
+    sock           <- socket family Stream 0
+
     debug $ "bindHttp: binding port " ++ show addr
     setSocketOption sock ReuseAddr 1
     bindSocket sock addr
     listen sock 150
+
     debug $ "bindHttp: bound socket " ++ show sock
-    return $ ListenHttp sock
+    return $! ListenHttp sock
 
 
 ------------------------------------------------------------------------------
 createSession :: Int -> CInt -> IO () -> IO NetworkSession
 createSession buffSize s _ =
-    return $ NetworkSession s (unsafeCoerce ()) $ fromIntegral buffSize
+    return $! NetworkSession s (unsafeCoerce ()) $ fromIntegral buffSize
 
 
 ------------------------------------------------------------------------------
 endSession :: NetworkSession -> IO ()
 endSession _ = return ()
 
-#ifdef PORTABLE
 
+#ifdef PORTABLE
 ------------------------------------------------------------------------------
 recv :: Socket -> IO () -> NetworkSession -> IO (Maybe ByteString)
 recv sock _ (NetworkSession { _recvLen = s }) = do
     bs <- SB.recv sock (fromIntegral s)
-    if B.null bs
-        then return Nothing
-        else return $ Just bs
+    return $! if B.null bs then Nothing else Just bs
 
 
 ------------------------------------------------------------------------------
 send :: Socket -> IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send sock tickle _ _ bs = SB.sendAll sock bs >> tickle
 
-#else
 
+#else
 ------------------------------------------------------------------------------
 recv :: IO () -> NetworkSession -> IO (Maybe ByteString)
 recv onBlock (NetworkSession s _ buffSize) = do
@@ -84,23 +82,25 @@ recv onBlock (NetworkSession s _ buffSize) = do
 
     if sz == 0
       then return Nothing
-      else return $ Just $ BI.fromForeignPtr fp 0 $ fromEnum sz
+      else return $! Just $! BI.fromForeignPtr fp 0 $! fromEnum sz
 
 
 ------------------------------------------------------------------------------
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send tickleTimeout onBlock (NetworkSession s _ _) bs =
     BI.unsafeUseAsCStringLen bs $ uncurry loop
-  where loop ptr len = do
-          sent <- throwErrnoIfMinus1RetryMayBlock
-                    "send"
-                    (c_write s ptr $ toEnum len)
-                    onBlock
 
-          let sent' = fromIntegral sent
-          if sent' < len
-             then tickleTimeout >> loop (plusPtr ptr sent') (len - sent')
-             else tickleTimeout
+  where
+    loop ptr len = do
+        sent <- throwErrnoIfMinus1RetryMayBlock
+                  "send"
+                  (c_write s ptr $ toEnum len)
+                  onBlock
+
+        let sent' = fromIntegral sent
+        if sent' < len
+           then tickleTimeout >> loop (plusPtr ptr sent') (len - sent')
+           else tickleTimeout
 
 
 ------------------------------------------------------------------------------

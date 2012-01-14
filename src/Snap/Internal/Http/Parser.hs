@@ -85,7 +85,7 @@ parseRequest = do
             let ver@(!_,!_) = pVer vStr
 
             hdrs    <- pHeaders
-            return $ Just $ IRequest method uri ver hdrs
+            return $! Just $! IRequest method uri ver hdrs
 
   where
     pVer s = if S.isPrefixOf "HTTP/" s
@@ -215,7 +215,7 @@ pGetTransferChunk = do
       else do
           x <- take hex
           crlf
-          return $ Just x
+          return $! Just x
   where
     fromHex :: ByteString -> Int
     fromHex s = Cvt.hex (L.fromChunks [s])

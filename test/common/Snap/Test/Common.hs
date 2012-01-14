@@ -31,7 +31,7 @@ instance Arbitrary L.ByteString where
     arbitrary = do
         n      <- choose(0,5)
         chunks <- replicateM n arbitrary
-        return $ L.fromChunks chunks
+        return $! L.fromChunks chunks
 
 
 
@@ -71,7 +71,7 @@ withSock port go = do
 recvAll :: Socket -> IO ByteString
 recvAll sock = do
     b <- f mempty sock
-    return $ toByteString b
+    return $! toByteString b
 
   where
     f b sk = do
