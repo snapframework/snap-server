@@ -58,6 +58,7 @@ testFunctions = [ testPong
                 , testPartial
                 , testFileUpload
                 , testTimeoutTickle
+                , testTimeoutBadTickle
                 ]
 
 
@@ -432,3 +433,12 @@ testTimeoutTickle ssl port name =
         doc <- liftM (S.concat . L.toChunks) $ fetch uri
         let expected = S.concat $ replicate 6 ".\n"
         assertEqual "response equal" expected doc
+
+
+------------------------------------------------------------------------------
+testTimeoutBadTickle :: Bool -> Int -> String -> Test
+testTimeoutBadTickle ssl port name =
+    testCase (name ++ "/blackbox/timeout/badtickle") $ do
+        let uri = (if ssl then "https" else "http")
+                  ++ "://127.0.0.1:" ++ show port ++ "/timeout/badtickle"
+        expectException $ fetch uri
