@@ -1,7 +1,8 @@
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE DeriveDataTypeable         #-}
-{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 ------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.TLS
@@ -36,6 +37,7 @@ import           Network.Socket hiding ( accept
 import           OpenSSL
 import           OpenSSL.Session
 import qualified OpenSSL.Session as SSL
+import           Prelude hiding (catch)
 import           Unsafe.Coerce
 import           Snap.Internal.Http.Server.Address
 #endif
@@ -139,9 +141,10 @@ freePort _ = return ()
 createSession :: ListenSocket -> Int -> CInt -> IO () -> IO NetworkSession
 createSession (ListenHttps _ ctx) recvSize socket _ = do
     csock <- mkSocket socket AF_INET Stream defaultProtocol Connected
-    ssl   <- connection ctx csock
-    accept ssl
-    return $! NetworkSession socket (unsafeCoerce ssl) recvSize
+    handle (\(e::SomeException) -> Socket.sClose csock >> throwIO e) $ do
+        ssl <- connection ctx csock
+        accept ssl
+        return $! NetworkSession socket (unsafeCoerce ssl) recvSize
 createSession _ _ _ _ = error "can't call createSession on a ListenHttp"
 
 
