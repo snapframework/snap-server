@@ -18,6 +18,7 @@ import           Data.Monoid
 import           Network.Socket
 import qualified Network.Socket.ByteString as N
 import           Prelude hiding (catch)
+import           Test.HUnit (assertFailure)
 import           Test.QuickCheck
 import           System.Timeout
 
@@ -33,6 +34,14 @@ instance Arbitrary L.ByteString where
         chunks <- replicateM n arbitrary
         return $! L.fromChunks chunks
 
+
+
+expectException :: IO a -> IO ()
+expectException m = do
+    e <- try m
+    case e of
+      Left (_::SomeException)  -> return ()
+      Right _ -> assertFailure "expected exception, didn't get it"
 
 
 expectExceptionBeforeTimeout :: IO a    -- ^ action to run
