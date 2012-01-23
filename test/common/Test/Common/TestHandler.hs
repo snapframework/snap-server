@@ -13,6 +13,7 @@ import           Data.List
 import qualified Data.Map as Map
 import           Data.Maybe
 import           Data.Monoid
+import           Snap.Internal.Debug
 import           Snap.Iteratee hiding (Enumerator)
 import qualified Snap.Iteratee as I
 import           Snap.Core
@@ -31,7 +32,7 @@ timeoutTickleHandler :: Snap ()
 timeoutTickleHandler = do
     noCompression   -- FIXME: remove this when zlib-bindings and
                     -- zlib-enumerator support gzip stream flushing
-    modifyResponse $ setResponseBody (trickleOutput 6)
+    modifyResponse $ setResponseBody (trickleOutput 10)
                    . setContentType "text/plain"
                    . setBufferingMode False
     setTimeout 2
@@ -41,7 +42,7 @@ badTimeoutTickleHandler :: Snap ()
 badTimeoutTickleHandler = do
     noCompression   -- FIXME: remove this when zlib-bindings and
                     -- zlib-enumerator support gzip stream flushing
-    modifyResponse $ setResponseBody (trickleOutput 6)
+    modifyResponse $ setResponseBody (trickleOutput 10)
                    . setContentType "text/plain"
     setTimeout 2
 
@@ -49,8 +50,12 @@ badTimeoutTickleHandler = do
 trickleOutput :: Int -> Enumerator Builder IO a
 trickleOutput n = concatEnums $ dots `interleave` delays
   where
-    enumOne = enumList 1 [fromByteString ".\n"]
+    enumOne i = do
+        debug "enumOne: .\\n"
+        enumList 1 [fromByteString ".\n"] i
+
     delay st = do
+        debug "delay 1s"
         liftIO $ threadDelay 1000000
         returnI st
 

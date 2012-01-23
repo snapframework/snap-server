@@ -415,8 +415,8 @@ post url body hdrs = do
     req <- parseURL url `catch` (\(e::SomeException) -> do
                  debug $ "parseURL threw exception: " ++ show e
                  throwIO e)
-    fetchReq $ req { HTTP.requestBody = HTTP.RequestBodyLBS body
-                   , HTTP.method = "POST"
+    fetchReq $ req { HTTP.requestBody    = HTTP.RequestBodyLBS body
+                   , HTTP.method         = "POST"
                    , HTTP.requestHeaders = hdrs }
 
 
@@ -431,7 +431,7 @@ testTimeoutTickle ssl port name =
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/timeout/tickle"
         doc <- liftM (S.concat . L.toChunks) $ fetch uri
-        let expected = S.concat $ replicate 6 ".\n"
+        let expected = S.concat $ replicate 10 ".\n"
         assertEqual "response equal" expected doc
 
 

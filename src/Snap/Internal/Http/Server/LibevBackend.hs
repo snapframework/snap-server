@@ -238,7 +238,7 @@ acceptCallback defaultTimeout back handler
   where
     go = runSession defaultTimeout back handler sock
     cleanup = [ Handler $ \(_ :: TimeoutException) -> return ()
-              , Handler $ \(e :: AsyncException)   -> return ()
+              , Handler $ \(_ :: AsyncException)   -> return ()
               , Handler $ \(e :: SomeException) ->
                   elog $ S.concat [ "libev.acceptCallback: "
                                   , S.pack . map c2w $ show e ]
@@ -572,7 +572,7 @@ instance Exception TimeoutException
 ------------------------------------------------------------------------------
 tickleTimeout :: Connection -> Int -> IO ()
 tickleTimeout conn tm = do
-    debug "Libev.tickleTimeout"
+    debug $ "Libev.tickleTimeout: " ++ show tm
     now  <- getCurrentDateTime
     prev <- readIORef ref
     let !n = max (now + toEnum tm) prev
@@ -585,10 +585,30 @@ tickleTimeout conn tm = do
 ------------------------------------------------------------------------------
 setTimeout :: Connection -> Int -> IO ()
 setTimeout conn tm = do
-    debug "Libev.tickleTimeout"
-    now       <- getCurrentDateTime
-    writeIORef (_timerTimeoutTime conn) (now + toEnum tm)
+    debug $ "Libev.setTimeout: " ++ show tm
+    old  <- readIORef tt
+    now  <- getCurrentDateTime
 
+    let newTimeout = now + toEnum tm
+    writeIORef tt newTimeout
+
+    -- Here the question is: do we reset the ev timer? If we're extending the
+    -- timeout, the ev manual suggests it's more efficient to let the timer
+    -- lapse and re-arm. If we're shortening the timeout, we need to update the
+    -- timer so it fires when it's supposed to.
+    when (newTimeout < old) $ withMVar loopLock $ \_ -> do
+        evTimerSetRepeat tmr $ fromRational $ toRational $ tm
+        evTimerAgain loop tmr
+        -- wake up the event loop so it can be apprised of the changes
+        evAsyncSend loop asyncObj
+
+  where
+    backend  = _backend conn
+    asyncObj = _asyncObj backend
+    loopLock = _loopLock backend
+    tt       = _timerTimeoutTime conn
+    loop     = _evLoop backend
+    tmr      = _timerObj conn
 
 ------------------------------------------------------------------------------
 waitForLock :: Bool        -- ^ True = wait for read, False = wait for write
