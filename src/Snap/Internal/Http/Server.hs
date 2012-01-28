@@ -620,7 +620,9 @@ receiveRequest writeEnd = do
 
             liftIO $ writeIORef (rqBody req) $ SomeEnumerator e'
             return $! req { rqParams = Map.unionWith (++) (rqParams req)
-                                         newParams }
+                                         newParams
+                          , rqPostParams = newParams
+                          }
 
 
     --------------------------------------------------------------------------
@@ -661,6 +663,8 @@ receiveRequest writeEnd = do
                               uri
                               queryString
                               params
+                              params
+                              Map.empty
 
       where
         snapletPath = ""        -- TODO: snaplets in v0.2
