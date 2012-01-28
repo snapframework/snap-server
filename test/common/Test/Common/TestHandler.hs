@@ -13,6 +13,7 @@ import           Data.List
 import qualified Data.Map as Map
 import           Data.Maybe
 import           Data.Monoid
+import           Snap.Internal.Debug
 import           Snap.Iteratee hiding (Enumerator)
 import qualified Snap.Iteratee as I
 import           Snap.Core
@@ -31,27 +32,41 @@ timeoutTickleHandler :: Snap ()
 timeoutTickleHandler = do
     noCompression   -- FIXME: remove this when zlib-bindings and
                     -- zlib-enumerator support gzip stream flushing
-    modifyResponse $ setResponseBody (trickleOutput 6)
+    modifyResponse $ setResponseBody (trickleOutput 10)
+                   . setContentType "text/plain"
+                   . setBufferingMode False
+    setTimeout 2
+
+
+badTimeoutTickleHandler :: Snap ()
+badTimeoutTickleHandler = do
+    noCompression   -- FIXME: remove this when zlib-bindings and
+                    -- zlib-enumerator support gzip stream flushing
+    modifyResponse $ setResponseBody (trickleOutput 10)
                    . setContentType "text/plain"
     setTimeout 2
 
+
+trickleOutput :: Int -> Enumerator Builder IO a
+trickleOutput n = concatEnums $ dots `interleave` delays
   where
-    trickleOutput :: Int -> Enumerator Builder IO a
-    trickleOutput n = concatEnums $ dots `interleave` delays
+    enumOne i = do
+        debug "enumOne: .\\n"
+        enumList 1 [fromByteString ".\n"] i
+
+    delay st = do
+        debug "delay 1s"
+        liftIO $ threadDelay 1000000
+        returnI st
+
+    interleave x0 y0 = (go id x0 y0) []
       where
-        enumOne = enumList 1 [fromByteString ".\n", flush]
-        delay st = do
-            liftIO $ threadDelay 1000000
-            returnI st
+        go !dl [] ys = dl . (++ys)
+        go !dl xs [] = dl . (++xs)
+        go !dl (x:xs) (y:ys) = go (dl . (x:) . (y:)) xs ys
 
-        interleave x0 y0 = (go id x0 y0) []
-          where
-            go !dl [] ys = dl . (++ys)
-            go !dl xs [] = dl . (++xs)
-            go !dl (x:xs) (y:ys) = go (dl . (x:) . (y:)) xs ys
-
-        dots   = replicate n enumOne
-        delays = replicate n delay
+    dots   = replicate n enumOne
+    delays = replicate n delay
 
 
 ------------------------------------------------------------------------------
@@ -148,7 +163,7 @@ uploadHandler = do
 
         modifyResponse $ setContentType "text/plain"
         writeBuilder $ buildRqParams params `mappend` buildFiles m
-        
+
 
     builder _ [] = mempty
     builder ty ((k,v):xs) =
@@ -172,14 +187,15 @@ uploadHandler = do
 
 testHandler :: Snap ()
 testHandler = withCompression $
-    route [ ("pong"           , pongHandler                       )
-          , ("echo"           , echoHandler                       )
-          , ("rot13"          , rot13Handler                      )
-          , ("echoUri"        , echoUriHandler                    )
-          , ("fileserve"      , serveDirectory "testserver/static")
-          , ("bigresponse"    , bigResponseHandler                )
-          , ("respcode/:code" , responseHandler                   )
-          , ("upload/form"    , uploadForm                        )
-          , ("upload/handle"  , uploadHandler                     )
-          , ("timeout/tickle" , timeoutTickleHandler              )
+    route [ ("pong"              , pongHandler                       )
+          , ("echo"              , echoHandler                       )
+          , ("rot13"             , rot13Handler                      )
+          , ("echoUri"           , echoUriHandler                    )
+          , ("fileserve"         , serveDirectory "testserver/static")
+          , ("bigresponse"       , bigResponseHandler                )
+          , ("respcode/:code"    , responseHandler                   )
+          , ("upload/form"       , uploadForm                        )
+          , ("upload/handle"     , uploadHandler                     )
+          , ("timeout/tickle"    , timeoutTickleHandler              )
+          , ("timeout/badtickle" , badTimeoutTickleHandler           )
           ]
