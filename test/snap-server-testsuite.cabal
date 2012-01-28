@@ -241,4 +241,4 @@ Executable benchmark
     network == 2.3.*,
     http-enumerator >= 0.7.1.6 && <0.8,
     tls >= 0.8.2 && <0.9,
-    criterion >= 0.5 && <0.6
+    criterion >= 0.6 && <0.7
