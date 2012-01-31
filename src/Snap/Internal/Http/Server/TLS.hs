@@ -175,10 +175,13 @@ send tickleTimeout _ (NetworkSession _ aSSL sz) bs = go bs
 
 ------------------------------------------------------------------------------
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
-recv _ (NetworkSession _ aSSL recvLen) = do
+recv _ (NetworkSession _ aSSL recvLen) = handle termination $ do
     b <- SSL.read ssl recvLen
     return $! if S.null b then Nothing else Just b
   where
     ssl = unsafeCoerce aSSL
+
+    termination :: ConnectionAbruptlyTerminated -> IO (Maybe ByteString)
+    termination = const $ return Nothing
 
 #endif
