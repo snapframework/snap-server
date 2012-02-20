@@ -1,4 +1,4 @@
-ame:           snap-server-testsuite
+name:           snap-server-testsuite
 version:        0.1.1
 build-type:     Simple
 cabal-version:  >= 1.6
