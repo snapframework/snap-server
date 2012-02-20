@@ -1,4 +1,4 @@
-name:           snap-server-testsuite
+ame:           snap-server-testsuite
 version:        0.1.1
 build-type:     Simple
 cabal-version:  >= 1.6
@@ -52,7 +52,7 @@ Executable testsuite
     test-framework-quickcheck2 >= 0.2.6 && < 0.3,
     text >= 0.11 && <0.12,
     time,
-    tls >= 0.8.2 && <0.9,
+    tls >= 0.8.2 && <0.10,
     transformers,
     vector >= 0.7 && <0.10,
     vector-algorithms >= 0.4 && <0.6,
@@ -240,5 +240,5 @@ Executable benchmark
     base >= 4 && < 5,
     network == 2.3.*,
     http-enumerator >= 0.7.1.6 && <0.8,
-    tls >= 0.8.2 && <0.9,
+    tls >= 0.8.2 && <0.10,
     criterion >= 0.6 && <0.7
