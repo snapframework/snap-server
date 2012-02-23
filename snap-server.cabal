@@ -10,15 +10,6 @@ description:
   server library written in Haskell. Together with the @snap-core@ library upon
   which it depends, it provides a clean and efficient Haskell programming
   interface to the HTTP protocol.
-  .
-  Higher-level facilities for building web applications (like user/session
-  management, component interfaces, data modeling, etc.) are planned but not
-  yet implemented, so this release will mostly be of interest for those who:
-  .
-  * need a fast and minimal HTTP API at roughly the same level of abstraction
-    as Java servlets, or
-  .
-  * are interested in contributing to the Snap Framework project.
 
 license:        BSD3
 license-file:   LICENSE
