@@ -161,7 +161,8 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
     let sinfo = SessionInfo lhost lport rhost rport $ Listen.isSecure lsock
 
     timeoutHandle <- TM.register (killThread curId) tmgr
-    let tickleTimeout = TM.tickle timeoutHandle
+    let modifyTimeout = TM.modify timeoutHandle
+    let tickleTimeout = modifyTimeout . max
 
     bracket (Listen.createSession lsock 8192 fd
               (threadWaitRead $ fromIntegral fd))
@@ -182,7 +183,7 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
                               writeEnd
                               (sendFile lsock (tickleTimeout defaultTimeout)
                                         fd writeEnd)
-                              tickleTimeout
+                              modifyTimeout
             )
 
 

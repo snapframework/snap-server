@@ -8,6 +8,7 @@ module Snap.Internal.Http.Server.TimeoutManager
   , register
   , tickle
   , set
+  , modify
   , cancel
   ) where
 
@@ -23,6 +24,8 @@ data State = Deadline !CTime
            | Canceled
   deriving (Eq)
 
+
+------------------------------------------------------------------------------
 instance Ord State where
     compare Canceled Canceled         = EQ
     compare Canceled _                = LT
@@ -31,11 +34,62 @@ instance Ord State where
 
 
 ------------------------------------------------------------------------------
+-- Probably breaks Num laws, but I can live with it
+--
+instance Num State where
+    --------------------------------------------------------------------------
+    Canceled     + Canceled     = Canceled
+    Canceled     + x            = x
+    x            + Canceled     = x
+    (Deadline a) + (Deadline b) = Deadline $! a + b
+
+    --------------------------------------------------------------------------
+    Canceled     - Canceled     = Canceled
+    Canceled     - x            = negate x
+    x            - Canceled     = x
+    (Deadline a) - (Deadline b) = Deadline $! a - b
+
+    --------------------------------------------------------------------------
+    Canceled     * _            = Canceled
+    _            * Canceled     = Canceled
+    (Deadline a) * (Deadline b) = Deadline $! a * b
+
+    --------------------------------------------------------------------------
+    negate Canceled     = Canceled
+    negate (Deadline d) = Deadline (negate d)
+
+    --------------------------------------------------------------------------
+    abs Canceled     = Canceled
+    abs (Deadline d) = Deadline (abs d)
+
+    --------------------------------------------------------------------------
+    signum Canceled     = Canceled
+    signum (Deadline d) = Deadline (signum d)
+
+    --------------------------------------------------------------------------
+    fromInteger = Deadline . fromInteger
+
+
+------------------------------------------------------------------------------
 data TimeoutHandle = TimeoutHandle {
       _killAction :: !(IO ())
     , _state      :: !(IORef State)
     , _hGetTime   :: !(IO CTime)
     }
+
+
+------------------------------------------------------------------------------
+-- | Given a 'State' value and the current time, apply the given modification
+-- function to the amount of time remaining.
+--
+smap :: CTime -> (Int -> Int) -> State -> State
+smap _ _ Canceled       = Canceled
+
+smap now f (Deadline t) = Deadline t'
+  where
+    !remaining    = fromEnum $ max 0 (t - now)
+    !newremaining = f remaining
+    !t'           = now + toEnum newremaining
 
 
 ------------------------------------------------------------------------------
@@ -108,38 +162,37 @@ register killAction tm = do
 -- future. If the existing timeout is set for M seconds from now, where M > N,
 -- then the timeout is unaffected.
 tickle :: TimeoutHandle -> Int -> IO ()
-tickle th n = do
-    now <- getTime
-
-    -- don't need atomicity here -- kill the space leak.
-    orig <- readIORef stateRef
-    let state = Deadline $ now + toEnum n
-    let !newState = max orig state
-    writeIORef stateRef newState
-
-  where
-    getTime  = _hGetTime th
-    stateRef = _state th
+tickle th = modify th . max
+{-# INLINE tickle #-}
 
 
 ------------------------------------------------------------------------------
 -- | Set the timeout on a connection to be N seconds into the future.
 set :: TimeoutHandle -> Int -> IO ()
-set th n = do
-    now <- getTime
+set th = modify th . const
+{-# INLINE set #-}
 
-    let state = Deadline $ now + toEnum n
-    writeIORef stateRef state
+
+------------------------------------------------------------------------------
+-- | Modify the timeout with the given function.
+modify :: TimeoutHandle -> (Int -> Int) -> IO ()
+modify th f = do
+    now   <- getTime
+    state <- readIORef stateRef
+    let !state' = smap now f state
+    writeIORef stateRef state'
 
   where
     getTime  = _hGetTime th
     stateRef = _state th
+{-# INLINE modify #-}
 
 
 ------------------------------------------------------------------------------
 -- | Cancel a timeout.
 cancel :: TimeoutHandle -> IO ()
 cancel h = writeIORef (_state h) Canceled
+{-# INLINE cancel #-}
 
 
 ------------------------------------------------------------------------------

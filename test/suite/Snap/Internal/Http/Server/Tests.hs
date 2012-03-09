@@ -195,8 +195,8 @@ testHttpRequest1 =
 
         assertEqual "parse body" "0123456789" body
 
-        assertEqual "cookie" 
-                    [Cookie "foo" "bar\"" Nothing Nothing Nothing False False] 
+        assertEqual "cookie"
+                    [Cookie "foo" "bar\"" Nothing Nothing Nothing False False]
                     (rqCookies req)
 
         assertEqual "continued headers" (Just ["foo bar"]) $
@@ -387,14 +387,21 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
              sendResponse req rsp1 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
-    assertEqual "http response" (L.concat [
-                      "HTTP/1.0 600 Test\r\n"
-                    , "Content-Length: 10\r\n"
-                    , "Foo: Bar\r\n\r\n"
-                    , "0123456789"
-                    ]) b
+    assertBool "http response" (b == text1 || b == text2)
 
   where
+    text1 = L.concat [ "HTTP/1.0 600 Test\r\n"
+                     , "Content-Length: 10\r\n"
+                     , "Foo: Bar\r\n\r\n"
+                     , "0123456789"
+                     ]
+
+    text2 = L.concat [ "HTTP/1.0 600 Test\r\n"
+                     , "Foo: Bar\r\n"
+                     , "Content-Length: 10\r\n\r\n"
+                     , "0123456789"
+                     ]
+
     rsp1 = updateHeaders (H.insert "Foo" "Bar") $
            setContentLength 10 $
            setResponseStatus 600 "Test" $
@@ -547,16 +554,16 @@ testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
 
         ch Nothing  = False
         ch (Just l) =
-            sort l == [ 
+            sort l == [
                 "ck1=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; Secure\r"
               , "ck2=bar; path=/; expires=Sat, 30-Jan-2010 00:00:00 GMT; domain=.foo.com; HttpOnly\r"
               , "ck3=bar\r"
               ]
 
-        
+
 
     rsp1 = setResponseStatus 304 "Test" $ emptyResponse { rspHttpVersion = (1,0) }
-    rsp2 = addResponseCookie cook3 . addResponseCookie cook2 
+    rsp2 = addResponseCookie cook3 . addResponseCookie cook2
          . addResponseCookie cook $ rsp1
 
     utc   = UTCTime (ModifiedJulianDay 55226) 0
@@ -567,7 +574,7 @@ testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
 
 
 echoServer :: (ByteString -> IO ())
-           -> (Int -> IO ())
+           -> ((Int -> Int) -> IO ())
            -> Request
            -> Iteratee ByteString IO (Request,Response)
 echoServer _ _ req = do

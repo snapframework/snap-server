@@ -570,45 +570,46 @@ instance Exception TimeoutException
 
 
 ------------------------------------------------------------------------------
-tickleTimeout :: Connection -> Int -> IO ()
-tickleTimeout conn tm = do
-    debug $ "Libev.tickleTimeout: " ++ show tm
-    now  <- getCurrentDateTime
-    prev <- readIORef ref
-    let !n = max (now + toEnum tm) prev
-    writeIORef ref n
+modifyTimeout :: Connection -> (Int -> Int) -> IO ()
+modifyTimeout conn f = do
+    debug "Libev.modifyTimeout"
+    !prev <- readIORef tt
+    !now  <- getCurrentDateTime
 
-  where
-    ref = _timerTimeoutTime conn
+    let !remaining    = fromEnum $ max 0 (prev - now)
+    let !newRemaining = f remaining
+    let !newTimeout   = now + toEnum newRemaining
 
-
-------------------------------------------------------------------------------
-setTimeout :: Connection -> Int -> IO ()
-setTimeout conn tm = do
-    debug $ "Libev.setTimeout: " ++ show tm
-    old  <- readIORef tt
-    now  <- getCurrentDateTime
-
-    let newTimeout = now + toEnum tm
-    writeIORef tt newTimeout
+    writeIORef tt $! now + toEnum newRemaining
 
     -- Here the question is: do we reset the ev timer? If we're extending the
     -- timeout, the ev manual suggests it's more efficient to let the timer
     -- lapse and re-arm. If we're shortening the timeout, we need to update the
     -- timer so it fires when it's supposed to.
-    when (newTimeout < old) $ withMVar loopLock $ \_ -> do
-        evTimerSetRepeat tmr $ fromRational $ toRational $ tm
+    when (newTimeout < prev) $ withMVar loopLock $ \_ -> do
+        evTimerSetRepeat tmr $! toEnum newRemaining
         evTimerAgain loop tmr
         -- wake up the event loop so it can be apprised of the changes
         evAsyncSend loop asyncObj
 
   where
+    tt       = _timerTimeoutTime conn
     backend  = _backend conn
     asyncObj = _asyncObj backend
     loopLock = _loopLock backend
-    tt       = _timerTimeoutTime conn
     loop     = _evLoop backend
     tmr      = _timerObj conn
+
+
+------------------------------------------------------------------------------
+tickleTimeout :: Connection -> Int -> IO ()
+tickleTimeout conn = modifyTimeout conn . max
+
+
+------------------------------------------------------------------------------
+setTimeout :: Connection -> Int -> IO ()
+setTimeout conn = modifyTimeout conn . const
+
 
 ------------------------------------------------------------------------------
 waitForLock :: Bool        -- ^ True = wait for read, False = wait for write
