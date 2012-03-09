@@ -239,7 +239,7 @@ logA' :: (ByteString -> IO ()) -> Request -> Response -> IO ()
 logA' logger req rsp = do
     let hdrs      = rqHeaders req
     let host      = rqRemoteAddr req
-    let user      = Nothing -- TODO we don't do authentication yet
+    let user      = fst `fmap` rqBasicAuthentication req
     let (v, v')   = rqVersion req
     let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
     let method    = toBS $ show (rqMethod req)
