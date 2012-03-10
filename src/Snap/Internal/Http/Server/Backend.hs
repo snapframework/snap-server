@@ -42,7 +42,7 @@ type SessionHandler =
     -> Enumerator ByteString IO ()           -- ^ read end of socket
     -> Iteratee ByteString IO ()             -- ^ write end of socket
     -> (FilePath -> Int64 -> Int64 -> IO ()) -- ^ sendfile end
-    -> (Int -> IO ())                        -- ^ timeout tickler
+    -> ((Int -> Int) -> IO ())               -- ^ timeout tickler
     -> IO ()
 
 

@@ -78,7 +78,7 @@ import qualified Paths_snap_server as V
 -- Note that we won't be bothering end users with this -- the details will be
 -- hidden inside the Snap monad
 type ServerHandler = (ByteString -> IO ())
-                  -> (Int -> IO ())
+                  -> ((Int -> Int) -> IO ())
                   -> Request
                   -> Iteratee ByteString IO (Request,Response)
 
@@ -264,7 +264,7 @@ runHTTP :: Int                           -- ^ default timeout
         -> Iteratee ByteString IO ()     -- ^ write end of socket
         -> (FilePath -> Int64 -> Int64 -> IO ())
                                          -- ^ sendfile end
-        -> (Int -> IO ())                -- ^ timeout tickler
+        -> ((Int -> Int) -> IO ())       -- ^ timeout tickler
         -> IO ()
 runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         tickle =
@@ -348,7 +348,7 @@ httpSession :: Int
             -> Buffer                        -- ^ builder buffer
             -> (FilePath -> Int64 -> Int64 -> IO ())
                                              -- ^ sendfile continuation
-            -> (Int -> IO ())                -- ^ timeout tickler
+            -> ((Int -> Int) -> IO ())       -- ^ timeout modifier
             -> ServerHandler                 -- ^ handler procedure
             -> ServerMonad ()
 httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
@@ -360,7 +360,7 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
     debug "Server.httpSession: receiveRequest finished"
 
     -- successfully got a request, so restart timer
-    liftIO $ tickle defaultTimeout
+    liftIO $ tickle (max defaultTimeout)
 
     case mreq of
       (Just req) -> do
