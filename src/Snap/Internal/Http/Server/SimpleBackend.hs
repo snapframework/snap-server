@@ -120,7 +120,7 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
 
     go = runSession defaultTimeout handler tmgr sock
 
-    acceptHandler =
+    acceptHandler = 
         [ Handler $ \(e :: AsyncException) -> throwIO e
         , Handler $ \(e :: SomeException) -> do
               elog $ S.concat [ "SimpleBackend.acceptThread: accept threw: "
@@ -160,6 +160,7 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
     let sinfo = SessionInfo lhost lport rhost rport $ Listen.isSecure lsock
 
     timeoutHandle <- TM.register (killThread curId) tmgr
+    let setTimeout = TM.set timeoutHandle
     let tickleTimeout = TM.tickle timeoutHandle
 
     bracket (Listen.createSession lsock 8192 fd
@@ -181,7 +182,7 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
                               writeEnd
                               (sendFile lsock (tickleTimeout defaultTimeout)
                                         fd writeEnd)
-                              tickleTimeout
+                              setTimeout
             )
 
 
