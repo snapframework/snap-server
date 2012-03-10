@@ -251,7 +251,9 @@ defaultConfig = mempty
 
 
 ------------------------------------------------------------------------------
--- | The hostname of the HTTP server
+-- | The hostname of the HTTP server. This field has the same format as an HTTP
+-- @Host@ header; if a @Host@ header came in with the request, we use that,
+-- otherwise we default to this value specified in the configuration.
 getHostname       :: Config m a -> Maybe ByteString
 getHostname = hostname
 
@@ -263,7 +265,10 @@ getAccessLog = accessLog
 getErrorLog       :: Config m a -> Maybe ConfigLog
 getErrorLog = errorLog
 
--- | The locale to use
+-- | Gets the locale to use. Locales are used on Unix only, to set the
+-- @LANG@\/@LC_ALL@\/etc. environment variable. For instance if you set the
+-- locale to \"@en_US@\", we'll set the relevant environment variables to
+-- \"@en_US.UTF-8@\".
 getLocale         :: Config m a -> Maybe String
 getLocale = locale
 

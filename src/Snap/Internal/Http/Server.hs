@@ -747,9 +747,14 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
         outstep <- lift $ runIteratee $
                    iterateeDebugWrapper "countBytes writeEnd" $
                    countBytes writeEnd
+
+        let bufferFunc = if getBufferingMode rsp
+                           then unsafeBuilderToByteString (return buffer)
+                           else I.map (toByteString . (`mappend` flush))
+
         (x,bs) <- mapIter fromByteString toByteString
-                          (enum $$ joinI $ unsafeBuilderToByteString
-                              (return buffer) outstep)
+                          (enum $$ joinI $ bufferFunc outstep)
+
         debug $ "sendResponse: whenEnum: " ++ show bs ++
                 " bytes enumerated"
 

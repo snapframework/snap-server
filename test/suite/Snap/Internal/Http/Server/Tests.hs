@@ -262,13 +262,6 @@ testOneMethod m = do
 sampleShortRequest :: ByteString
 sampleShortRequest = "GET /fo"
 
-expectException :: IO a -> IO ()
-expectException m = do
-    e <- try m
-    case e of
-      Left (_::SomeException)  -> return ()
-      Right _ -> assertFailure "expected exception, didn't get it"
-
 
 testPartialParse :: Test
 testPartialParse = testCase "server/short" $ do
