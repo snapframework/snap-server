@@ -96,8 +96,9 @@ data ListenPort =
 
 ------------------------------------------------------------------------------
 instance Show ListenPort where
-    show (HttpPort b p) =
-        concat [ "http://", SC.unpack b, ":", show p, "/" ]
+    show (HttpPort  b p    ) =
+        concat [ "http://" , SC.unpack b, ":", show p, "/" ]
+
     show (HttpsPort b p _ _) =
         concat [ "https://", SC.unpack b, ":", show p, "/" ]
 
@@ -199,7 +200,7 @@ httpServe defaultTimeout ports mevType localHostname alog' elog'
             logE elog "Server.httpServe: BACKEND STOPPED"
 
     --------------------------------------------------------------------------
-    bindPort (HttpPort  baddr port)          = bindHttp  baddr port
+    bindPort (HttpPort  baddr port         ) = bindHttp  baddr port
     bindPort (HttpsPort baddr port cert key) =
         TLS.bindHttps baddr port cert key
 
@@ -285,7 +286,8 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
                      , fromShow $ remoteAddress sinfo
                      , fromByteString "]: "
                      , fromByteString "an exception escaped to toplevel:\n"
-                     , fromShow e ]
+                     , fromShow e
+                     ]
 
     go = do
         buf <- allocBuffer 16384
@@ -313,7 +315,8 @@ requestErrorMessage req e =
             , fromByteString "\nrequest:\n"
             , fromShow $ show req
             , fromByteString "\n"
-            , msgB ]
+            , msgB
+            ]
   where
     msgB = mconcat [
              fromByteString "A web handler threw an exception. Details:\n"
@@ -447,7 +450,8 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
           mconcat [ fromByteString "httpSession caught an exception during "
                   , fromByteString phase
                   , fromByteString " phase:\n"
-                  , requestErrorMessage req e ]
+                  , requestErrorMessage req e
+                  ]
         throw ExceptionAlreadyCaught
 
 
@@ -469,7 +473,8 @@ checkExpect100Continue req writeEnd = do
                          , fromShow major
                          , fromWord8 $ c2w '.'
                          , fromShow minor
-                         , fromByteString " 100 Continue\r\n\r\n" ]
+                         , fromByteString " 100 Continue\r\n\r\n"
+                         ]
         liftIO $ runIteratee
                    ((enumBS (toByteString hl) >==> enumEOF) $$ writeEnd)
         return ()
@@ -491,7 +496,8 @@ return411 req writeEnd = do
                          , fromWord8 $ c2w '.'
                          , fromShow minor
                          , fromByteString " 411 Length Required\r\n\r\n"
-                         , fromByteString "411 Length Required\r\n" ]
+                         , fromByteString "411 Length Required\r\n"
+                         ]
         liftIO $ runIteratee
                    ((enumBS (toByteString hl) >==> enumEOF) $$ writeEnd)
         return ()
