@@ -663,7 +663,6 @@ receiveRequest writeEnd = do
                               method
                               version
                               cookies
-                              snapletPath
                               pathInfo
                               contextPath
                               uri
@@ -673,8 +672,6 @@ receiveRequest writeEnd = do
                               Map.empty
 
       where
-        snapletPath = ""        -- TODO: snaplets in v0.2
-
         dropLeadingSlash s = maybe s f mbS
           where
             f (a,s') = if a == c2w '/' then s' else s
