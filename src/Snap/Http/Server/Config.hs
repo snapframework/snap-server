@@ -19,6 +19,8 @@ module Snap.Http.Server.Config
   , commandLineConfig
   , completeConfig
 
+  , optDescrs
+
   , getAccessLog
   , getBackend
   , getBind
@@ -30,6 +32,7 @@ module Snap.Http.Server.Config
   , getLocale
   , getOther
   , getPort
+  , getProxyType
   , getSSLBind
   , getSSLCert
   , getSSLKey
@@ -47,6 +50,7 @@ module Snap.Http.Server.Config
   , setLocale
   , setOther
   , setPort
+  , setProxyType
   , setSSLBind
   , setSSLCert
   , setSSLKey
@@ -54,7 +58,7 @@ module Snap.Http.Server.Config
   , setVerbose
   ) where
 
-
+------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder
 import           Blaze.ByteString.Builder.Char8
 import           Control.Exception (SomeException)
@@ -73,6 +77,7 @@ import           Prelude hiding (catch)
 import           Snap.Core
 import           Snap.Iteratee ((>==>), enumBuilder)
 import           Snap.Internal.Debug (debug)
+import           Snap.Util.Proxy
 import           System.Console.GetOpt
 import           System.Environment hiding (getEnv)
 #ifndef PORTABLE
@@ -80,7 +85,6 @@ import           System.Posix.Env
 #endif
 import           System.Exit
 import           System.IO
-
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server (requestErrorMessage)
 
@@ -133,6 +137,7 @@ data Config m a = Config
     , defaultTimeout :: Maybe Int
     , other          :: Maybe a
     , backend        :: Maybe ConfigBackend
+    , proxyType      :: Maybe ProxyType
     }
 
 instance Show (Config m a) where
@@ -151,6 +156,7 @@ instance Show (Config m a) where
                      , "verbose: "        ++ _verbose
                      , "defaultTimeout: " ++ _defaultTimeout
                      , "backend: "        ++ _backend
+                     , "proxyType: "      ++ _proxyType
                      ]
 
       where
@@ -168,6 +174,7 @@ instance Show (Config m a) where
         _verbose        = show $ verbose        c
         _defaultTimeout = show $ defaultTimeout c
         _backend        = show $ backend        c
+        _proxyType      = show $ proxyType      c
 
 
 ------------------------------------------------------------------------------
@@ -196,6 +203,7 @@ instance Monoid (Config m a) where
         , defaultTimeout = Nothing
         , other          = Nothing
         , backend        = Nothing
+        , proxyType      = Nothing
         }
 
     a `mappend` b = Config
@@ -215,6 +223,7 @@ instance Monoid (Config m a) where
         , defaultTimeout = ov defaultTimeout a b
         , other          = ov other          a b
         , backend        = ov backend        a b
+        , proxyType      = ov proxyType      a b
         }
       where
         ov f x y = getLast $! (mappend `on` (Last . f)) x y
@@ -317,6 +326,9 @@ getOther = other
 getBackend :: Config m a -> Maybe ConfigBackend
 getBackend = backend
 
+getProxyType :: Config m a -> Maybe ProxyType
+getProxyType = proxyType
+
 
 ------------------------------------------------------------------------------
 setHostname       :: ByteString              -> Config m a -> Config m a
@@ -367,6 +379,9 @@ setOther x c = c { other = Just x }
 setBackend        :: ConfigBackend           -> Config m a -> Config m a
 setBackend x c = c { backend = Just x }
 
+setProxyType      :: ProxyType               -> Config m a -> Config m a
+setProxyType x c = c { proxyType = Just x }
+
 
 ------------------------------------------------------------------------------
 completeConfig :: (MonadSnap m) => Config m a -> IO (Config m a)
@@ -401,10 +416,12 @@ toString = T.unpack . T.decodeUtf8
 
 
 ------------------------------------------------------------------------------
-options :: MonadSnap m =>
-           Config m a
-        -> [OptDescr (Maybe (Config m a))]
-options defaults =
+-- | Returns a description of the snap command line options suitable for use
+-- with "System.Console.GetOpt".
+optDescrs :: MonadSnap m =>
+             Config m a         -- ^ the configuration defaults.
+          -> [OptDescr (Maybe (Config m a))]
+optDescrs defaults =
     [ Option [] ["hostname"]
              (ReqArg (Just . setConfig setHostname . bsFromString) "NAME")
              $ "local hostname" ++ defaultC getHostname
@@ -457,10 +474,17 @@ options defaults =
     , Option ['q'] ["quiet"]
              (NoArg $ Just $ setConfig setVerbose False)
              $ "do not print anything to stderr"
+    , Option [] ["proxy"]
+             (ReqArg (\t -> Just $ setConfig setProxyType $ read t)
+                     "X_Forwarded_For")
+             $ concat [ "Set --proxy=X_Forwarded_For if your snap application "
+                      , "is behind an HTTP reverse proxy to ensure that "
+                      , "rqRemoteAddr is set properly."]
     , Option ['h'] ["help"]
              (NoArg Nothing)
              $ "display this help and exit"
     ]
+
   where
     setConfig f c = f c mempty
     conf          = defaultConfig `mappend` defaults
@@ -483,6 +507,7 @@ defaultErrorHandler e = do
                . modifyResponseBody
                      (>==> enumBuilder (fromByteString msg))
                $ emptyResponse
+
   where
     smsg req = toByteString $ requestErrorMessage req e
 
@@ -510,7 +535,7 @@ commandLineConfig defaults = do
     args <- getArgs
     prog <- getProgName
 
-    let opts = options defaults
+    let opts = optDescrs defaults
 
     result <- either (usage prog opts)
                      return

@@ -1,15 +1,13 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-{-|
-
-The Snap HTTP server is a high performance, epoll-enabled, iteratee-based web
-server library written in Haskell. Together with the @snap-core@ library upon
-which it depends, it provides a clean and efficient Haskell programming
-interface to the HTTP protocol.
-
--}
-
+------------------------------------------------------------------------------
+-- | The Snap HTTP server is a high performance, epoll-enabled, iteratee-based
+-- web server library written in Haskell. Together with the @snap-core@
+-- library upon which it depends, it provides a clean and efficient Haskell
+-- programming interface to the HTTP protocol.
+--
 module Snap.Http.Server
   ( simpleHttpServe
   , httpServe
@@ -19,6 +17,7 @@ module Snap.Http.Server
   , module Snap.Http.Server.Config
   ) where
 
+------------------------------------------------------------------------------
 import           Control.Applicative
 import           Control.Concurrent (newMVar, withMVar)
 import           Control.Monad
@@ -32,11 +31,13 @@ import           Snap.Http.Server.Config
 import qualified Snap.Internal.Http.Server as Int
 import           Snap.Core
 import           Snap.Util.GZip
+import           Snap.Util.Proxy
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
 import           System.IO
 import           System.FastLogger
+
 
 ------------------------------------------------------------------------------
 -- | A short string describing the Snap server version
@@ -48,7 +49,8 @@ snapServerVersion = Int.snapServerVersion
 -- | Starts serving HTTP requests using the given handler. This function never
 -- returns; to shut down the HTTP server, kill the controlling thread.
 --
--- This function is like 'httpServe' except it doesn't setup compression or
+-- This function is like 'httpServe' except it doesn't setup compression,
+-- reverse proxy address translation (via 'Snap.Util.Proxy.behindProxy'), or
 -- the error handler; this allows it to be used from 'MonadSnap'.
 simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
@@ -57,9 +59,11 @@ simpleHttpServe config handler = do
     mapM_ (output . ("Listening on "++) . show) $ listeners conf
 
     go conf `finally` output "\nShutting down..."
+
   where
     go conf = do
         let tout = fromMaybe 60 $ getDefaultTimeout conf
+
         setUnicodeLocale $ fromJust $ getLocale conf
         withLoggers (fromJust $ getAccessLog conf)
                     (fromJust $ getErrorLog conf) $
@@ -93,6 +97,7 @@ simpleHttpServe config handler = do
 {-# INLINE simpleHttpServe #-}
 
 
+------------------------------------------------------------------------------
 listeners :: Config m a -> [Int.ListenPort]
 listeners conf = catMaybes [ httpListener, httpsListener ]
   where
@@ -114,10 +119,16 @@ listeners conf = catMaybes [ httpListener, httpsListener ]
 -- the 'Config' passed in. This function never returns; to shut down the HTTP
 -- server, kill the controlling thread.
 httpServe :: Config Snap a -> Snap () -> IO ()
-httpServe config handler = do
+httpServe config handler0 = do
     conf <- completeConfig config
+    let !handler = chooseProxy conf
     let serve = compress conf . catch500 conf $ handler
     simpleHttpServe conf serve
+
+  where
+    chooseProxy conf = maybe handler0
+                             (\ptype -> behindProxy ptype handler0)
+                             (getProxyType conf)
 {-# INLINE httpServe #-}
 
 
@@ -131,6 +142,7 @@ catch500 conf = flip catch $ fromJust $ getErrorHandler conf
 compress :: MonadSnap m => Config m a -> m () -> m ()
 compress conf = if fromJust $ getCompression conf then withCompression else id
 {-# INLINE compress #-}
+
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP using the given handler. The configuration is read
