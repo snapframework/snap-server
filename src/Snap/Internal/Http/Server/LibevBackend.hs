@@ -525,7 +525,7 @@ runSession defaultTimeout backend handler lsock fd = do
                                       (enumerate conn session)
                                       (writeOut defaultTimeout conn session)
                                       (sendFile defaultTimeout conn session)
-                                      (setTimeout conn)
+                                      (modifyTimeout conn)
                 )
 
 
@@ -604,11 +604,6 @@ modifyTimeout conn f = do
 ------------------------------------------------------------------------------
 tickleTimeout :: Connection -> Int -> IO ()
 tickleTimeout conn = modifyTimeout conn . max
-
-
-------------------------------------------------------------------------------
-setTimeout :: Connection -> Int -> IO ()
-setTimeout conn = modifyTimeout conn . const
 
 
 ------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.8.0
+version:        0.8.0.1
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -139,7 +139,7 @@ Library
     build-depends: unix
 
   if flag(libev)
-    build-depends: hlibev >= 0.2.8 && < 0.3
+    build-depends: hlibev >= 0.2.8 && < 0.5
     cpp-options: -DLIBEV
 
   if flag(openssl)
