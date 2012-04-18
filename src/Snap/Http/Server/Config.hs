@@ -1,5 +1,6 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-|
@@ -107,9 +108,9 @@ data ConfigLog = ConfigNoLog                        -- ^ no logging
                | ConfigIoLog (ByteString -> IO ())  -- ^ log custom IO handler
 
 instance Show ConfigLog where
-    show ConfigNoLog       = "ConfigNoLog"
-    show (ConfigFileLog f) = "ConfigFileLog " ++ show f
-    show (ConfigIoLog _)   = "ConfigIoLog"
+    show ConfigNoLog       = "no log"
+    show (ConfigFileLog f) = "log to file " ++ show f
+    show (ConfigIoLog _)   = "custom logging handler"
 
 ------------------------------------------------------------------------------
 -- | A record type which represents partial configurations (for 'httpServe')
@@ -207,26 +208,26 @@ instance Monoid (Config m a) where
         }
 
     a `mappend` b = Config
-        { hostname       = ov hostname       a b
-        , accessLog      = ov accessLog      a b
-        , errorLog       = ov errorLog       a b
-        , locale         = ov locale         a b
-        , port           = ov port           a b
-        , bind           = ov bind           a b
-        , sslport        = ov sslport        a b
-        , sslbind        = ov sslbind        a b
-        , sslcert        = ov sslcert        a b
-        , sslkey         = ov sslkey         a b
-        , compression    = ov compression    a b
-        , verbose        = ov verbose        a b
-        , errorHandler   = ov errorHandler   a b
-        , defaultTimeout = ov defaultTimeout a b
-        , other          = ov other          a b
-        , backend        = ov backend        a b
-        , proxyType      = ov proxyType      a b
+        { hostname       = ov hostname
+        , accessLog      = ov accessLog
+        , errorLog       = ov errorLog
+        , locale         = ov locale
+        , port           = ov port
+        , bind           = ov bind
+        , sslport        = ov sslport
+        , sslbind        = ov sslbind
+        , sslcert        = ov sslcert
+        , sslkey         = ov sslkey
+        , compression    = ov compression
+        , verbose        = ov verbose
+        , errorHandler   = ov errorHandler
+        , defaultTimeout = ov defaultTimeout
+        , other          = ov other
+        , backend        = ov backend
+        , proxyType      = ov proxyType
         }
       where
-        ov f x y = getLast $! (mappend `on` (Last . f)) x y
+        ov f = getLast $! (mappend `on` (Last . f)) a b
 
 
 ------------------------------------------------------------------------------
@@ -459,37 +460,45 @@ optDescrs defaults =
              $ "don't have an error log"
     , Option ['c'] ["compression"]
              (NoArg $ Just $ setConfig setCompression True)
-             $ "use gzip compression on responses"
+             $ "use gzip compression on responses" ++
+               defaultB getCompression "compressed" "uncompressed"
     , Option ['t'] ["timeout"]
              (ReqArg (\t -> Just $ mempty {
                               defaultTimeout = Just $ read t
                             }) "SECS")
-             $ "set default timeout in seconds"
+             $ "set default timeout in seconds" ++ defaultC defaultTimeout
     , Option [] ["no-compression"]
              (NoArg $ Just $ setConfig setCompression False)
-             $ "serve responses uncompressed"
+             $ "serve responses uncompressed" ++
+               defaultB compression "compressed" "uncompressed"
     , Option ['v'] ["verbose"]
              (NoArg $ Just $ setConfig setVerbose True)
-             $ "print server status updates to stderr"
+             $ "print server status updates to stderr" ++
+               defaultC getVerbose
     , Option ['q'] ["quiet"]
              (NoArg $ Just $ setConfig setVerbose False)
-             $ "do not print anything to stderr"
+             $ "do not print anything to stderr" ++
+               defaultB getVerbose "verbose" "quiet"
     , Option [] ["proxy"]
              (ReqArg (\t -> Just $ setConfig setProxyType $ read t)
                      "X_Forwarded_For")
              $ concat [ "Set --proxy=X_Forwarded_For if your snap application "
                       , "is behind an HTTP reverse proxy to ensure that "
-                      , "rqRemoteAddr is set properly."]
+                      , "rqRemoteAddr is set properly."
+                      , defaultC getProxyType ]
     , Option ['h'] ["help"]
              (NoArg Nothing)
              $ "display this help and exit"
     ]
 
   where
-    setConfig f c = f c mempty
-    conf          = defaultConfig `mappend` defaults
-    defaultC f    = maybe "" ((", default " ++) . show) $ f conf
-    defaultO f    = maybe ", default off" ((", default " ++) . show) $ f conf
+    setConfig f c  = f c mempty
+    conf           = defaultConfig `mappend` defaults
+    defaultB f y n = maybe "" (\b -> ", default " ++ if b
+                                                       then y
+                                                       else n) $ f conf
+    defaultC f     = maybe "" ((", default " ++) . show) $ f conf
+    defaultO f     = maybe ", default off" ((", default " ++) . show) $ f conf
 
 
 ------------------------------------------------------------------------------
@@ -520,28 +529,58 @@ defaultErrorHandler e = do
 
 
 ------------------------------------------------------------------------------
--- | Returns a 'Config' obtained from parsing the options specified on the
--- command-line.
+-- | Returns a 'Config' obtained from parsing command-line options, using the
+-- default Snap 'OptDescr' set.
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
 commandLineConfig :: MonadSnap m
                   => Config m a
-                  -- ^ default configuration. This is combined with
-                  -- 'defaultConfig' to obtain default values to use if the
-                  -- given parameter is specified on the command line. Usually
-                  -- it is fine to use 'emptyConfig' here.
+                      -- ^ default configuration. This is combined with
+                      -- 'defaultConfig' to obtain default values to use if the
+                      -- given parameter is specified on the command line.
+                      -- Usually it is fine to use 'emptyConfig' here.
                   -> IO (Config m a)
-commandLineConfig defaults = do
+commandLineConfig defaults = extendedCommandLineConfig [] f defaults
+  where
+    -- Here getOpt can ever change the "other" field, because we only use the
+    -- Snap OptDescr list. The combining function will never be invoked.
+    f = undefined
+
+
+------------------------------------------------------------------------------
+-- | Returns a 'Config' obtained from parsing command-line options, using the
+-- default Snap 'OptDescr' set as well as a list of user OptDescrs. User
+-- OptDescrs use the \"other\" field (accessible using 'getOther' and
+-- 'setOther') to store additional command-line option state. These are
+-- combined using a user-defined combining function.
+--
+-- On Unix systems, the locale is read from the @LANG@ environment variable.
+
+extendedCommandLineConfig :: MonadSnap m
+                          => [OptDescr (Maybe (Config m a))]
+                             -- ^ User options.
+                          -> (a -> a -> a)
+                             -- ^ State for multiple invoked user command-line
+                             -- options will be combined using this function.
+                          -> Config m a
+                             -- ^ default configuration. This is combined with
+                             -- Snap's 'defaultConfig' to obtain default values
+                             -- to use if the given parameter is specified on
+                             -- the command line. Usually it is fine to use
+                             -- 'emptyConfig' here.
+                          -> IO (Config m a)
+extendedCommandLineConfig userOptArgs combiningFunction defaults = do
     args <- getArgs
     prog <- getProgName
 
-    let opts = optDescrs defaults
+    let opts = userOptArgs ++ optDescrs defaults
 
     result <- either (usage prog opts)
                      return
                      (case getOpt Permute opts args of
                         (f, _, []  ) -> maybe (Left []) Right $
-                                        fmap mconcat $ sequence f
+                                        fmap (foldl' combine mempty) $
+                                        sequence f
                         (_, _, errs) -> Left errs)
 
 #ifndef PORTABLE
@@ -562,3 +601,15 @@ commandLineConfig defaults = do
 #ifndef PORTABLE
     upToUtf8 = takeWhile $ \c -> isAlpha c || '_' == c
 #endif
+
+    combine !a !b = a `mappend` b `mappend` newOther
+      where
+        -- combined is only a Just if both a and b have other fields, and then
+        -- we use the combining function. Config's mappend picks the last
+        -- "Just" in the other list.
+        combined = do
+            x <- getOther a
+            y <- getOther b
+            return $! combiningFunction x y
+
+        newOther = mempty { other = combined }
