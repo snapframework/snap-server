@@ -150,7 +150,8 @@ compress conf = if fromJust $ getCompression conf then withCompression else id
 -- 'commandLineConfig'. This function never returns; to shut down the HTTP
 -- server, kill the controlling thread.
 quickHttpServe :: Snap () -> IO ()
-quickHttpServe m = commandLineConfig emptyConfig >>= \c -> httpServe c m
+quickHttpServe m = commandLineConfig (const []) emptyConfig >>=
+                   \c -> httpServe c m
 
 
 ------------------------------------------------------------------------------

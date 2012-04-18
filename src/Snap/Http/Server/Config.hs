@@ -419,9 +419,10 @@ toString = T.unpack . T.decodeUtf8
 -- | Returns a description of the snap command line options suitable for use
 -- with "System.Console.GetOpt".
 optDescrs :: MonadSnap m =>
-             Config m a         -- ^ the configuration defaults.
+             (a -> [OptDescr (Maybe a)])
+          -> Config m a         -- ^ the configuration defaults.
           -> [OptDescr (Maybe (Config m a))]
-optDescrs defaults =
+optDescrs otherOptFunc defaults =
     [ Option [] ["hostname"]
              (ReqArg (Just . setConfig setHostname . bsFromString) "NAME")
              $ "local hostname" ++ defaultC getHostname
@@ -480,7 +481,8 @@ optDescrs defaults =
              $ concat [ "Set --proxy=X_Forwarded_For if your snap application "
                       , "is behind an HTTP reverse proxy to ensure that "
                       , "rqRemoteAddr is set properly."]
-    , Option ['h'] ["help"]
+    ] ++ otherOpts ++
+    [ Option ['h'] ["help"]
              (NoArg Nothing)
              $ "display this help and exit"
     ]
@@ -490,7 +492,17 @@ optDescrs defaults =
     conf          = defaultConfig `mappend` defaults
     defaultC f    = maybe "" ((", default " ++) . show) $ f conf
     defaultO f    = maybe ", default off" ((", default " ++) . show) $ f conf
+    toConfig     :: OptDescr (Maybe a) -> OptDescr (Maybe (Config m a))
+    toConfig      = optMap (fmap (flip setOther mempty))
+    otherOpts     = maybe [] (map toConfig . otherOptFunc) (other conf)
 
+argMap :: (a -> b) -> ArgDescr a -> ArgDescr b
+argMap f (NoArg a) = NoArg (f a)
+argMap f (ReqArg g s) = ReqArg (f . g) s
+argMap f (OptArg g s) = OptArg (f . g) s
+
+optMap :: (a -> b) -> OptDescr a -> OptDescr b
+optMap f (Option s l d e) = Option s l (argMap f d) e
 
 ------------------------------------------------------------------------------
 defaultErrorHandler :: MonadSnap m => SomeException -> m ()
@@ -525,17 +537,18 @@ defaultErrorHandler e = do
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
 commandLineConfig :: MonadSnap m
-                  => Config m a
+                  => (a -> [OptDescr (Maybe a)])
+                  -> Config m a
                   -- ^ default configuration. This is combined with
                   -- 'defaultConfig' to obtain default values to use if the
                   -- given parameter is specified on the command line. Usually
                   -- it is fine to use 'emptyConfig' here.
                   -> IO (Config m a)
-commandLineConfig defaults = do
+commandLineConfig otherOpts defaults = do
     args <- getArgs
     prog <- getProgName
 
-    let opts = optDescrs defaults
+    let opts = optDescrs otherOpts defaults
 
     result <- either (usage prog opts)
                      return
