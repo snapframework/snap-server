@@ -537,14 +537,30 @@ defaultErrorHandler e = do
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
 commandLineConfig :: MonadSnap m
-                  => (a -> [OptDescr (Maybe a)])
-                  -> Config m a
+                  => Config m a
                   -- ^ default configuration. This is combined with
                   -- 'defaultConfig' to obtain default values to use if the
                   -- given parameter is specified on the command line. Usually
                   -- it is fine to use 'emptyConfig' here.
                   -> IO (Config m a)
-commandLineConfig otherOpts defaults = do
+commandLineConfig = commandLineConfig' (const [])
+
+
+------------------------------------------------------------------------------
+-- | Returns a 'Config' obtained from parsing the options specified on the
+-- command-line.  This variant allows you to specify your own options used to
+-- set the other field.
+--
+-- On Unix systems, the locale is read from the @LANG@ environment variable.
+commandLineConfig' :: MonadSnap m
+                   => (a -> [OptDescr (Maybe a)])
+                   -> Config m a
+                   -- ^ default configuration. This is combined with
+                   -- 'defaultConfig' to obtain default values to use if the
+                   -- given parameter is specified on the command line. Usually
+                   -- it is fine to use 'emptyConfig' here.
+                   -> IO (Config m a)
+commandLineConfig' otherOpts defaults = do
     args <- getArgs
     prog <- getProgName
 
