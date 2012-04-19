@@ -18,9 +18,11 @@ module Snap.Http.Server.Config
   , emptyConfig
   , defaultConfig
   , commandLineConfig
+  , extendedCommandLineConfig
   , completeConfig
 
   , optDescrs
+  , fmapOpt
 
   , getAccessLog
   , getBackend
@@ -540,7 +542,7 @@ commandLineConfig :: MonadSnap m
                       -- given parameter is specified on the command line.
                       -- Usually it is fine to use 'emptyConfig' here.
                   -> IO (Config m a)
-commandLineConfig defaults = extendedCommandLineConfig [] f defaults
+commandLineConfig defaults = extendedCommandLineConfig (optDescrs defaults) f defaults
   where
     -- Here getOpt can ever change the "other" field, because we only use the
     -- Snap OptDescr list. The combining function will never be invoked.
@@ -569,11 +571,9 @@ extendedCommandLineConfig :: MonadSnap m
                              -- the command line. Usually it is fine to use
                              -- 'emptyConfig' here.
                           -> IO (Config m a)
-extendedCommandLineConfig userOptArgs combiningFunction defaults = do
+extendedCommandLineConfig opts combiningFunction defaults = do
     args <- getArgs
     prog <- getProgName
-
-    let opts = userOptArgs ++ optDescrs defaults
 
     result <- either (usage prog opts)
                      return
@@ -613,3 +613,13 @@ extendedCommandLineConfig userOptArgs combiningFunction defaults = do
             return $! combiningFunction x y
 
         newOther = mempty { other = combined }
+
+fmapArg :: (a -> b) -> ArgDescr a -> ArgDescr b
+fmapArg f (NoArg a) = NoArg (f a)
+fmapArg f (ReqArg g s) = ReqArg (f . g) s
+fmapArg f (OptArg g s) = OptArg (f . g) s
+
+fmapOpt :: (a -> b) -> OptDescr a -> OptDescr b
+fmapOpt f (Option s l d e) = Option s l (fmapArg f d) e
+
+
