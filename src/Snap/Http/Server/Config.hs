@@ -575,7 +575,7 @@ extendedCommandLineConfig opts combiningFunction defaults = do
     args <- getArgs
     prog <- getProgName
 
-    result <- either (usage prog opts)
+    result <- either (usage prog)
                      return
                      (case getOpt Permute opts args of
                         (f, _, []  ) -> maybe (Left []) Right $
@@ -593,7 +593,7 @@ extendedCommandLineConfig opts combiningFunction defaults = do
 #endif
 
   where
-    usage prog opts errs = do
+    usage prog errs = do
         let hdr = "Usage:\n  " ++ prog ++ " [OPTION...]\n\nOptions:"
         let msg = concat errs ++ usageInfo hdr opts
         hPutStrLn stderr msg
