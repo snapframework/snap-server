@@ -19,16 +19,18 @@ pongServer = modifyResponse $ setResponseBody enum .
 
 main :: IO ()
 main = do
-    m <- newEmptyMVar
-
-    forkIO $ go m
+    m      <- newEmptyMVar
+    config <- commandLineConfig defaults
+    forkIO $ go m config
     takeMVar m
-
     return ()
 
   where
-    go m   = httpServe config pongServer `finally` putMVar m ()
-    config = setPort 8000 $
-             setErrorLog ConfigNoLog $
-             setAccessLog ConfigNoLog $
-             setCompression False $ emptyConfig
+    defaults    = setPort 8000 $
+                  setErrorLog ConfigNoLog $
+                  setAccessLog ConfigNoLog $
+                  setCompression False $
+                  setVerbose False $
+                  emptyConfig
+
+    go m config = httpServe config pongServer `finally` putMVar m ()
