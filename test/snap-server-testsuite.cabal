@@ -3,10 +3,6 @@ version:        0.1.1
 build-type:     Simple
 cabal-version:  >= 1.6
 
-Flag libev
-    Description: Use libev?
-    Default:     False
-
 Flag portable
   Description: Compile in cross-platform mode. No platform-specific code or
                optimizations such as C routines will be used.
@@ -76,10 +72,6 @@ Executable testsuite
   if !os(windows)
     build-depends: unix
 
-  if flag(libev)
-    build-depends: hlibev >= 0.2.5 && < 0.5
-    cpp-options: -DLIBEV
-
   if flag(openssl)
     cpp-options: -DOPENSSL
     build-depends: HsOpenSSL >= 0.10 && <0.11
@@ -134,10 +126,6 @@ Executable pongserver
     cpp-options: -DPORTABLE
   else
     build-depends: unix
-
-  if flag(libev)
-    build-depends: hlibev >= 0.2.5 && < 0.3
-    cpp-options: -DLIBEV
 
   if flag(openssl)
     cpp-options: -DOPENSSL
@@ -209,10 +197,6 @@ Executable testserver
 
   if !os(windows)
     build-depends: unix
-
-  if flag(libev)
-    build-depends: hlibev >= 0.2.5 && < 0.3
-    cpp-options: -DLIBEV
 
   if flag(openssl)
     cpp-options: -DOPENSSL

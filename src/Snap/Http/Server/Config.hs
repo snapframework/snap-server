@@ -12,7 +12,6 @@ Snap HTTP server.
 
 module Snap.Http.Server.Config
   ( Config
-  , ConfigBackend(..)
   , ConfigLog(..)
 
   , emptyConfig
@@ -25,7 +24,6 @@ module Snap.Http.Server.Config
   , fmapOpt
 
   , getAccessLog
-  , getBackend
   , getBind
   , getCompression
   , getDefaultTimeout
@@ -43,7 +41,6 @@ module Snap.Http.Server.Config
   , getVerbose
 
   , setAccessLog
-  , setBackend
   , setBind
   , setCompression
   , setDefaultTimeout
@@ -73,6 +70,7 @@ import           Data.Function
 import           Data.List
 import           Data.Maybe
 import           Data.Monoid
+import           Data.String
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Typeable
@@ -93,21 +91,13 @@ import           Snap.Internal.Http.Server (requestErrorMessage)
 
 
 ------------------------------------------------------------------------------
--- | This datatype allows you to override which backend (either simple or
--- libev) to use. Most users will not want to set this, preferring to rely on
--- the compile-type default.
---
--- Note that if you specify the libev backend and have not compiled in support
--- for it, your server will fail at runtime.
-data ConfigBackend = ConfigSimpleBackend
-                   | ConfigLibEvBackend
-  deriving (Show, Eq)
-
-------------------------------------------------------------------------------
 -- | Data type representing the configuration of a logging target
 data ConfigLog = ConfigNoLog                        -- ^ no logging
                | ConfigFileLog FilePath             -- ^ log to text file
                | ConfigIoLog (ByteString -> IO ())  -- ^ log custom IO handler
+
+instance IsString ConfigLog where
+    fromString = ConfigFileLog
 
 instance Show ConfigLog where
     show ConfigNoLog       = "no log"
@@ -139,7 +129,6 @@ data Config m a = Config
     , errorHandler   :: Maybe (SomeException -> m ())
     , defaultTimeout :: Maybe Int
     , other          :: Maybe a
-    , backend        :: Maybe ConfigBackend
     , proxyType      :: Maybe ProxyType
     }
 
@@ -158,7 +147,6 @@ instance Show (Config m a) where
                      , "compression: "    ++ _compression
                      , "verbose: "        ++ _verbose
                      , "defaultTimeout: " ++ _defaultTimeout
-                     , "backend: "        ++ _backend
                      , "proxyType: "      ++ _proxyType
                      ]
 
@@ -176,7 +164,6 @@ instance Show (Config m a) where
         _compression    = show $ compression    c
         _verbose        = show $ verbose        c
         _defaultTimeout = show $ defaultTimeout c
-        _backend        = show $ backend        c
         _proxyType      = show $ proxyType      c
 
 
@@ -205,7 +192,6 @@ instance Monoid (Config m a) where
         , errorHandler   = Nothing
         , defaultTimeout = Nothing
         , other          = Nothing
-        , backend        = Nothing
         , proxyType      = Nothing
         }
 
@@ -225,7 +211,6 @@ instance Monoid (Config m a) where
         , errorHandler   = ov errorHandler
         , defaultTimeout = ov defaultTimeout
         , other          = ov other
-        , backend        = ov backend
         , proxyType      = ov proxyType
         }
       where
@@ -326,9 +311,6 @@ getDefaultTimeout = defaultTimeout
 getOther :: Config m a -> Maybe a
 getOther = other
 
-getBackend :: Config m a -> Maybe ConfigBackend
-getBackend = backend
-
 getProxyType :: Config m a -> Maybe ProxyType
 getProxyType = proxyType
 
@@ -378,9 +360,6 @@ setDefaultTimeout x c = c { defaultTimeout = Just x }
 
 setOther          :: a                       -> Config m a -> Config m a
 setOther x c = c { other = Just x }
-
-setBackend        :: ConfigBackend           -> Config m a -> Config m a
-setBackend x c = c { backend = Just x }
 
 setProxyType      :: ProxyType               -> Config m a -> Config m a
 setProxyType x c = c { proxyType = Just x }

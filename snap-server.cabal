@@ -52,10 +52,6 @@ extra-source-files:
   test/testserver/static/hello.txt
 
 
-Flag libev
-    Description: Use libev?
-    Default:     False
-
 Flag portable
   Description: Compile in cross-platform mode. No platform-specific code or
                optimizations such as C routines will be used.
@@ -86,8 +82,7 @@ Library
     Snap.Internal.Http.Server.HttpPort,
     Snap.Internal.Http.Server.SimpleBackend,
     Snap.Internal.Http.Server.TimeoutManager,
-    Snap.Internal.Http.Server.TLS,
-    Snap.Internal.Http.Server.LibevBackend
+    Snap.Internal.Http.Server.TLS
 
   build-depends:
     array                     >= 0.2      && <0.5,
@@ -137,10 +132,6 @@ Library
     cpp-options: -DPORTABLE
   else
     build-depends: unix
-
-  if flag(libev)
-    build-depends: hlibev >= 0.2.8 && < 0.5
-    cpp-options: -DLIBEV
 
   if flag(openssl)
     cpp-options: -DOPENSSL

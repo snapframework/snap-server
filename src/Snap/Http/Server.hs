@@ -69,7 +69,6 @@ simpleHttpServe config handler = do
                     (fromJust $ getErrorLog conf) $
             \(alog, elog) -> Int.httpServe tout
                              (listeners conf)
-                             (fmap backendToInternal $ getBackend conf)
                              (fromJust $ getHostname  conf)
                              alog
                              elog
@@ -177,9 +176,3 @@ setUnicodeLocale =
 #else
     const $ return ()
 #endif
-
-
-------------------------------------------------------------------------------
-backendToInternal :: ConfigBackend -> Int.EventLoopType
-backendToInternal ConfigSimpleBackend = Int.EventLoopSimple
-backendToInternal ConfigLibEvBackend  = Int.EventLoopLibEv
