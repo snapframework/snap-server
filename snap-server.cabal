@@ -116,8 +116,7 @@ Library
     transformers              >= 0.2      && < 0.4,
     unix-compat               >= 0.2      && < 0.4,
     vector                    >= 0.7      && < 0.10,
-    vector-algorithms         >= 0.4      && < 0.6,
-    PSQueue                   >= 1.1      && < 1.2
+    vector-algorithms         >= 0.4      && < 0.6
 
   extensions:
     BangPatterns,
