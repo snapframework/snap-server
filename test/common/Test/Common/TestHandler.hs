@@ -185,6 +185,10 @@ uploadHandler = do
                             else disallow
 
 
+serverHeaderHandler :: Snap ()
+serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
+
+
 testHandler :: Snap ()
 testHandler = withCompression $
     route [ ("pong"              , pongHandler                       )
@@ -198,4 +202,5 @@ testHandler = withCompression $
           , ("upload/handle"     , uploadHandler                     )
           , ("timeout/tickle"    , timeoutTickleHandler              )
           , ("timeout/badtickle" , badTimeoutTickleHandler           )
+          , ("server-header"     , serverHeaderHandler               )
           ]

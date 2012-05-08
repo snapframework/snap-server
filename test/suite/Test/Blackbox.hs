@@ -59,6 +59,7 @@ testFunctions = [ testPong
                 , testFileUpload
                 , testTimeoutTickle
                 , testTimeoutBadTickle
+                , testServerHeader
                 ]
 
 
@@ -396,6 +397,19 @@ fetchReq req = go `catch` (\(e::SomeException) -> do
 
 
 ------------------------------------------------------------------------------
+fetchResponse :: String -> IO (HTTP.Response)
+fetchResponse url = do
+    req <- parseURL url `catch` (\(e::SomeException) -> do
+               debug $ "parseURL threw exception: " ++ show e
+               throwIO e)
+    go req `catch` (\(e::SomeException) -> do
+                       debug $ "simpleHttp threw exception: " ++ show e
+                       throwIO e)
+  where
+    go req = HTTP.withManager $ HTTP.httpLbs req
+
+
+------------------------------------------------------------------------------
 fetch :: String -> IO (L.ByteString)
 fetch url = do
     req <- parseURL url `catch` (\(e::SomeException) -> do
@@ -440,3 +454,14 @@ testTimeoutBadTickle ssl port name =
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/timeout/badtickle"
         expectException $ fetch uri
+
+
+------------------------------------------------------------------------------
+testServerHeader :: Bool -> Int -> String -> Test
+testServerHeader ssl port name =
+    testCase (name ++ "/blackbox/server-header") $ do
+        let uri = (if ssl then "https" else "http")
+                  ++ "://127.0.0.1:" ++ show port ++ "/server-header"
+        rsp <- fetchResponse uri
+        let serverHeader = lookup "server" $ HTTP.responseHeaders rsp
+        assertEqual "server header" (Just "foo") serverHeader

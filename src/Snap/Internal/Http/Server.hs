@@ -34,7 +34,7 @@ import           Data.Int
 import           Data.IORef
 import           Data.List (foldl')
 import qualified Data.Map as Map
-import           Data.Maybe (catMaybes, fromJust, fromMaybe)
+import           Data.Maybe (catMaybes, fromJust, fromMaybe, isJust)
 import           Data.Monoid
 import           Data.Time
 import           Data.Typeable
@@ -388,8 +388,11 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
                            "sending response"
 
           date <- liftIO getDateString
+          let insHeader = H.set "Server" sERVER_HEADER
           let ins = H.set "Date" date .
-                    H.set "Server" sERVER_HEADER
+                    if isJust (getHeader "Server" rsp)
+                       then id
+                       else insHeader
           let rsp' = updateHeaders ins rsp
           (bytesSent,_) <- sendResponse req rsp' buffer writeEnd onSendFile
                            `catch` errCatch "sending response" req
