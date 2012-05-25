@@ -73,6 +73,7 @@ simpleHttpServe config handler = do
                              (fromJust $ getHostname  conf)
                              alog
                              elog
+                             (maybe (const $ return ()) ($ config) $ getInitHandler config)
                              (runSnap handler)
 
     maybeSpawnLogger f (ConfigFileLog fp) =

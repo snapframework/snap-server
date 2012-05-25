@@ -59,10 +59,11 @@ data EventLoopCpu = EventLoopCpu
 
 ------------------------------------------------------------------------------
 simpleEventLoop :: EventLoop
-simpleEventLoop defaultTimeout sockets cap elog handler = do
+simpleEventLoop defaultTimeout sockets cap elog initial handler = do
     loops <- Prelude.mapM (newLoop defaultTimeout sockets handler elog)
                           [0..(cap-1)]
 
+    initial
     debug "simpleEventLoop: waiting for mvars"
 
     --wait for all threads to exit

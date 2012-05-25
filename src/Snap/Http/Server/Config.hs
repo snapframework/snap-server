@@ -41,6 +41,7 @@ module Snap.Http.Server.Config
   , getSSLKey
   , getSSLPort
   , getVerbose
+  , getInitHandler
 
   , setAccessLog
   , setBackend
@@ -59,6 +60,7 @@ module Snap.Http.Server.Config
   , setSSLKey
   , setSSLPort
   , setVerbose
+  , setInitHandler
   ) where
 
 ------------------------------------------------------------------------------
@@ -76,6 +78,7 @@ import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Typeable
+import           Network(Socket)
 import           Prelude hiding (catch)
 import           Snap.Core
 import           Snap.Iteratee ((>==>), enumBuilder)
@@ -141,6 +144,7 @@ data Config m a = Config
     , other          :: Maybe a
     , backend        :: Maybe ConfigBackend
     , proxyType      :: Maybe ProxyType
+    , initHandler    :: Maybe (Config m a -> [Socket] -> IO ())
     }
 
 instance Show (Config m a) where
@@ -207,6 +211,7 @@ instance Monoid (Config m a) where
         , other          = Nothing
         , backend        = Nothing
         , proxyType      = Nothing
+        , initHandler    = Nothing
         }
 
     a `mappend` b = Config
@@ -227,6 +232,7 @@ instance Monoid (Config m a) where
         , other          = ov other
         , backend        = ov backend
         , proxyType      = ov proxyType
+        , initHandler    = ov initHandler
         }
       where
         ov f = getLast $! (mappend `on` (Last . f)) a b
@@ -332,6 +338,12 @@ getBackend = backend
 getProxyType :: Config m a -> Maybe ProxyType
 getProxyType = proxyType
 
+-- | An action that is run after the server has been started, given the arguments
+--   for the 'Config' (after any command line parsing has been performed) and the
+--   'Socket's. There will be two 'Socket's for SSL connections, and one otherwise.
+getInitHandler :: Config m a -> Maybe (Config m a -> [Socket] -> IO ())
+getInitHandler = initHandler
+
 
 ------------------------------------------------------------------------------
 setHostname       :: ByteString              -> Config m a -> Config m a
@@ -384,6 +396,9 @@ setBackend x c = c { backend = Just x }
 
 setProxyType      :: ProxyType               -> Config m a -> Config m a
 setProxyType x c = c { proxyType = Just x }
+
+setInitHandler    :: (Config m a -> [Socket] -> IO ()) -> Config m a -> Config m a
+setInitHandler x c = c { initHandler = Just x }
 
 
 ------------------------------------------------------------------------------
