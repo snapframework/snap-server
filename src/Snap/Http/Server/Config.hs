@@ -61,6 +61,13 @@ module Snap.Http.Server.Config
   , setSSLPort
   , setVerbose
   , setStartupHook
+
+  , StartupHookData
+  , emptyStartupHookData
+  , getStartupHookSockets
+  , getStartupHookConfig
+  , setStartupHookSockets
+  , setStartupHookConfig
   ) where
 
 ------------------------------------------------------------------------------
@@ -144,7 +151,7 @@ data Config m a = Config
     , other          :: Maybe a
     , backend        :: Maybe ConfigBackend
     , proxyType      :: Maybe ProxyType
-    , startupHook    :: Maybe (Config m a -> [Socket] -> IO ())
+    , startupHook    :: Maybe (StartupHookData m a -> IO ())
     }
 
 instance Show (Config m a) where
@@ -338,10 +345,9 @@ getBackend = backend
 getProxyType :: Config m a -> Maybe ProxyType
 getProxyType = proxyType
 
--- | An action that is run after the server has been started, given the arguments
---   for the 'Config' (after any command line parsing has been performed) and the
---   'Socket's. There will be two 'Socket's for SSL connections, and one otherwise.
-getStartupHook :: Config m a -> Maybe (Config m a -> [Socket] -> IO ())
+-- | An action that is run after the server has been started, given a
+--   'StartupHookData'.
+getStartupHook :: Config m a -> Maybe (StartupHookData m a -> IO ())
 getStartupHook = startupHook
 
 
@@ -397,8 +403,34 @@ setBackend x c = c { backend = Just x }
 setProxyType      :: ProxyType               -> Config m a -> Config m a
 setProxyType x c = c { proxyType = Just x }
 
-setStartupHook    :: (Config m a -> [Socket] -> IO ()) -> Config m a -> Config m a
+setStartupHook    :: (StartupHookData m a -> IO ()) -> Config m a -> Config m a
 setStartupHook x c = c { startupHook = Just x }
+
+
+------------------------------------------------------------------------------
+
+-- | Arguments passed to 'setStartupHook'.
+data StartupHookData m a = StartupHookData
+    { startupHookConfig :: Config m a
+    , startupHookSockets :: [Socket]
+    }
+
+emptyStartupHookData :: StartupHookData m a
+emptyStartupHookData = StartupHookData emptyConfig []
+
+-- | The the 'Socket's openned by the server. There will be two 'Socket's for SSL connections, and one otherwise.
+getStartupHookSockets :: StartupHookData m a -> [Socket]
+getStartupHookSockets = startupHookSockets
+
+-- The 'Config', after any command line parsing has been performed.
+getStartupHookConfig :: StartupHookData m a -> Config m a
+getStartupHookConfig = startupHookConfig
+
+setStartupHookSockets :: [Socket] -> StartupHookData m a -> StartupHookData m a
+setStartupHookSockets x c = c { startupHookSockets = x }
+
+setStartupHookConfig :: Config m a -> StartupHookData m a -> StartupHookData m a
+setStartupHookConfig x c = c { startupHookConfig = x }
 
 
 ------------------------------------------------------------------------------
