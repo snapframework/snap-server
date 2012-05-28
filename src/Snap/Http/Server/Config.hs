@@ -41,7 +41,7 @@ module Snap.Http.Server.Config
   , getSSLKey
   , getSSLPort
   , getVerbose
-  , getInitHandler
+  , getStartupHook
 
   , setAccessLog
   , setBackend
@@ -60,7 +60,7 @@ module Snap.Http.Server.Config
   , setSSLKey
   , setSSLPort
   , setVerbose
-  , setInitHandler
+  , setStartupHook
   ) where
 
 ------------------------------------------------------------------------------
@@ -144,7 +144,7 @@ data Config m a = Config
     , other          :: Maybe a
     , backend        :: Maybe ConfigBackend
     , proxyType      :: Maybe ProxyType
-    , initHandler    :: Maybe (Config m a -> [Socket] -> IO ())
+    , startupHook    :: Maybe (Config m a -> [Socket] -> IO ())
     }
 
 instance Show (Config m a) where
@@ -211,7 +211,7 @@ instance Monoid (Config m a) where
         , other          = Nothing
         , backend        = Nothing
         , proxyType      = Nothing
-        , initHandler    = Nothing
+        , startupHook    = Nothing
         }
 
     a `mappend` b = Config
@@ -232,7 +232,7 @@ instance Monoid (Config m a) where
         , other          = ov other
         , backend        = ov backend
         , proxyType      = ov proxyType
-        , initHandler    = ov initHandler
+        , startupHook    = ov startupHook
         }
       where
         ov f = getLast $! (mappend `on` (Last . f)) a b
@@ -341,8 +341,8 @@ getProxyType = proxyType
 -- | An action that is run after the server has been started, given the arguments
 --   for the 'Config' (after any command line parsing has been performed) and the
 --   'Socket's. There will be two 'Socket's for SSL connections, and one otherwise.
-getInitHandler :: Config m a -> Maybe (Config m a -> [Socket] -> IO ())
-getInitHandler = initHandler
+getStartupHook :: Config m a -> Maybe (Config m a -> [Socket] -> IO ())
+getStartupHook = startupHook
 
 
 ------------------------------------------------------------------------------
@@ -397,8 +397,8 @@ setBackend x c = c { backend = Just x }
 setProxyType      :: ProxyType               -> Config m a -> Config m a
 setProxyType x c = c { proxyType = Just x }
 
-setInitHandler    :: (Config m a -> [Socket] -> IO ()) -> Config m a -> Config m a
-setInitHandler x c = c { initHandler = Just x }
+setStartupHook    :: (Config m a -> [Socket] -> IO ()) -> Config m a -> Config m a
+setStartupHook x c = c { startupHook = Just x }
 
 
 ------------------------------------------------------------------------------
