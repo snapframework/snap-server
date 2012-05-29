@@ -40,7 +40,7 @@ import           Data.Time
 import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
-import           Network.Socket (withSocketsDo)
+import           Network.Socket (withSocketsDo, Socket)
 import           Prelude hiding (catch)
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
@@ -166,9 +166,10 @@ httpServe :: Int                         -- ^ default timeout
           -> ByteString                  -- ^ local hostname (server name)
           -> Maybe (ByteString -> IO ()) -- ^ access log action
           -> Maybe (ByteString -> IO ()) -- ^ error log action
+          -> ([Socket] -> IO ())         -- ^ initialisation
           -> ServerHandler               -- ^ handler procedure
           -> IO ()
-httpServe defaultTimeout ports mevType localHostname alog' elog'
+httpServe defaultTimeout ports mevType localHostname alog' elog' initial
           handler = withSocketsDo $ spawnAll alog' elog'
   where
     --------------------------------------------------------------------------
@@ -187,8 +188,9 @@ httpServe defaultTimeout ports mevType localHostname alog' elog'
             else return ()
 
         nports <- mapM bindPort ports
+        let socks = map (\x -> case x of ListenHttp s -> s; ListenHttps s _ -> s) nports
 
-        (runEventLoop evType defaultTimeout nports numCapabilities (logE elog)
+        (runEventLoop evType defaultTimeout nports numCapabilities (logE elog) (initial socks)
                     $ runHTTP defaultTimeout alog elog handler localHostname)
           `finally` do
             logE elog "Server.httpServe: SHUTDOWN"

@@ -41,6 +41,7 @@ module Snap.Http.Server.Config
   , getSSLKey
   , getSSLPort
   , getVerbose
+  , getStartupHook
 
   , setAccessLog
   , setBackend
@@ -59,6 +60,14 @@ module Snap.Http.Server.Config
   , setSSLKey
   , setSSLPort
   , setVerbose
+  , setStartupHook
+
+  , StartupHookData
+  , emptyStartupHookData
+  , getStartupHookSockets
+  , getStartupHookConfig
+  , setStartupHookSockets
+  , setStartupHookConfig
   ) where
 
 ------------------------------------------------------------------------------
@@ -76,6 +85,7 @@ import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Typeable
+import           Network(Socket)
 import           Prelude hiding (catch)
 import           Snap.Core
 import           Snap.Iteratee ((>==>), enumBuilder)
@@ -141,6 +151,7 @@ data Config m a = Config
     , other          :: Maybe a
     , backend        :: Maybe ConfigBackend
     , proxyType      :: Maybe ProxyType
+    , startupHook    :: Maybe (StartupHookData m a -> IO ())
     }
 
 instance Show (Config m a) where
@@ -207,6 +218,7 @@ instance Monoid (Config m a) where
         , other          = Nothing
         , backend        = Nothing
         , proxyType      = Nothing
+        , startupHook    = Nothing
         }
 
     a `mappend` b = Config
@@ -227,6 +239,7 @@ instance Monoid (Config m a) where
         , other          = ov other
         , backend        = ov backend
         , proxyType      = ov proxyType
+        , startupHook    = ov startupHook
         }
       where
         ov f = getLast $! (mappend `on` (Last . f)) a b
@@ -332,6 +345,11 @@ getBackend = backend
 getProxyType :: Config m a -> Maybe ProxyType
 getProxyType = proxyType
 
+-- | An action that is run after the server has been started, given a
+--   'StartupHookData'.
+getStartupHook :: Config m a -> Maybe (StartupHookData m a -> IO ())
+getStartupHook = startupHook
+
 
 ------------------------------------------------------------------------------
 setHostname       :: ByteString              -> Config m a -> Config m a
@@ -384,6 +402,35 @@ setBackend x c = c { backend = Just x }
 
 setProxyType      :: ProxyType               -> Config m a -> Config m a
 setProxyType x c = c { proxyType = Just x }
+
+setStartupHook    :: (StartupHookData m a -> IO ()) -> Config m a -> Config m a
+setStartupHook x c = c { startupHook = Just x }
+
+
+------------------------------------------------------------------------------
+
+-- | Arguments passed to 'setStartupHook'.
+data StartupHookData m a = StartupHookData
+    { startupHookConfig :: Config m a
+    , startupHookSockets :: [Socket]
+    }
+
+emptyStartupHookData :: StartupHookData m a
+emptyStartupHookData = StartupHookData emptyConfig []
+
+-- | The the 'Socket's opened by the server. There will be two 'Socket's for SSL connections, and one otherwise.
+getStartupHookSockets :: StartupHookData m a -> [Socket]
+getStartupHookSockets = startupHookSockets
+
+-- The 'Config', after any command line parsing has been performed.
+getStartupHookConfig :: StartupHookData m a -> Config m a
+getStartupHookConfig = startupHookConfig
+
+setStartupHookSockets :: [Socket] -> StartupHookData m a -> StartupHookData m a
+setStartupHookSockets x c = c { startupHookSockets = x }
+
+setStartupHookConfig :: Config m a -> StartupHookData m a -> StartupHookData m a
+setStartupHookConfig x c = c { startupHookConfig = x }
 
 
 ------------------------------------------------------------------------------

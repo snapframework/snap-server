@@ -22,7 +22,7 @@ data LibevException = LibevException String
 instance Exception LibevException
 
 libEvEventLoop :: EventLoop
-libEvEventLoop _ _ _ _ _ = throwIO $
+libEvEventLoop _ _ _ _ _ _ = throwIO $
     LibevException "libev event loop is not supported"
 
 #else
@@ -108,10 +108,11 @@ data Connection = Connection
 
 ------------------------------------------------------------------------------
 libEvEventLoop :: EventLoop
-libEvEventLoop defaultTimeout sockets cap elog handler = do
+libEvEventLoop defaultTimeout sockets cap elog initial handler = do
     backends <- Prelude.mapM (newLoop defaultTimeout sockets handler elog)
                              [0..(cap-1)]
 
+    initial
     debug "libevEventLoop: waiting for loop exit"
     ignoreException (Prelude.mapM_ (takeMVar . _loopExit) backends)
     debug "libevEventLoop: stopping all backends"
