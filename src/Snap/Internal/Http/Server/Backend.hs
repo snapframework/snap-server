@@ -51,6 +51,7 @@ type EventLoop = Int                       -- ^ default timeout
               -> [ListenSocket]            -- ^ list of ports
               -> Int                       -- ^ number of capabilities
               -> (ByteString -> IO ())     -- ^ error log
+              -> IO ()                     -- ^ initialisation function
               -> SessionHandler            -- ^ session handler
               -> IO ()
 

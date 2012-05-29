@@ -945,7 +945,7 @@ testSendFile = testCase "server/sendFile" $ do
 
   where
     serve = (httpServe 60 [HttpPort "*" port] Nothing "localhost"
-                       Nothing Nothing
+                       Nothing Nothing (const $ return ())
                     $ runSnap sendFileFoo)
             `catch` \(_::SomeException) -> return ()
 
@@ -974,6 +974,7 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
                        "localhost"
                        (Just $ const (return ())) -- dummy logging
                        (Just $ const (return ())) -- dummy logging
+                       (const $ return ())
                        (runSnap pongServer))
             (killThread)
             (\tid -> do
@@ -1013,6 +1014,7 @@ testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
                      "localhost"
                      Nothing
                      Nothing
+                     (const $ return ())
                      (runSnap pongServer)
 
     waitabit

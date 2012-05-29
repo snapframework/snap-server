@@ -73,6 +73,8 @@ simpleHttpServe config handler = do
                              (fromJust $ getHostname  conf)
                              alog
                              elog
+                             (\sockets -> let dat = setStartupHookSockets sockets $ setStartupHookConfig config emptyStartupHookData
+                                          in maybe (return ()) ($ dat) $ getStartupHook config)
                              (runSnap handler)
 
     maybeSpawnLogger f (ConfigFileLog fp) =
