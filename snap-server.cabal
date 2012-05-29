@@ -82,6 +82,7 @@ Library
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Backend,
+    Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.ListenHelpers,
     Snap.Internal.Http.Server.HttpPort,
     Snap.Internal.Http.Server.SimpleBackend,

@@ -29,6 +29,9 @@ import           Data.Maybe
 import           Prelude hiding (catch)
 import           Snap.Http.Server.Config
 import qualified Snap.Internal.Http.Server as Int
+import           Snap.Internal.Http.Server.Config (emptyStartupInfo,
+                                                   setStartupSockets,
+                                                   setStartupConfig)
 import           Snap.Core
 import           Snap.Util.GZip
 import           Snap.Util.Proxy
@@ -61,29 +64,40 @@ simpleHttpServe config handler = do
     go conf `finally` output "\nShutting down..."
 
   where
+    --------------------------------------------------------------------------
     go conf = do
         let tout = fromMaybe 60 $ getDefaultTimeout conf
 
         setUnicodeLocale $ fromJust $ getLocale conf
         withLoggers (fromJust $ getAccessLog conf)
-                    (fromJust $ getErrorLog conf) $
-            \(alog, elog) -> Int.httpServe tout
-                             (listeners conf)
-                             (fmap backendToInternal $ getBackend conf)
-                             (fromJust $ getHostname  conf)
-                             alog
-                             elog
-                             (\sockets -> let dat = setStartupHookSockets sockets $ setStartupHookConfig config emptyStartupHookData
-                                          in maybe (return ()) ($ dat) $ getStartupHook config)
-                             (runSnap handler)
+                    (fromJust $ getErrorLog conf) $ \(alog, elog) ->
+                      Int.httpServe tout
+                        (listeners conf)
+                        (fmap backendToInternal $ getBackend conf)
+                        (fromJust $ getHostname  conf)
+                        alog
+                        elog
+                        (\sockets -> let dat = mkStartupInfo sockets conf
+                                     in maybe (return ())
+                                              ($ dat)
+                                              (getStartupHook conf))
+                        (runSnap handler)
 
+    --------------------------------------------------------------------------
+    mkStartupInfo sockets conf =
+        setStartupSockets sockets $
+        setStartupConfig conf emptyStartupInfo
+
+    --------------------------------------------------------------------------
     maybeSpawnLogger f (ConfigFileLog fp) =
         liftM Just $ newLoggerWithCustomErrorFunction f fp
     maybeSpawnLogger _ _                  = return Nothing
 
+    --------------------------------------------------------------------------
     maybeIoLog (ConfigIoLog a) = Just a
     maybeIoLog _               = Nothing
 
+    --------------------------------------------------------------------------
     withLoggers afp efp act =
         bracket (do mvar <- newMVar ()
                     let f s = withMVar mvar
