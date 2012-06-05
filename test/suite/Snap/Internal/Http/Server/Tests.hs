@@ -153,7 +153,7 @@ testMethodParsing =
     testCase "server/method parsing" $ Prelude.mapM_ testOneMethod ms
   where
     ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT, PATCH
-         , ExtMethod "COPY", ExtMethod "MOVE" ]
+         , Method "COPY", Method "MOVE" ]
 
 
 dummyIter :: Iteratee ByteString IO ()
@@ -276,7 +276,7 @@ methodTestText :: Method -> L.ByteString
 methodTestText m = L.concat [ mbs m
                         , " / HTTP/1.1\r\nContent-Length: 0\r\n\r\n" ]
   where
-    mbs (ExtMethod b) = L.fromChunks [b]
+    mbs (Method b) = L.fromChunks [b]
     mbs b = L.pack $ map c2w $ show b
 
 sampleRequest2 :: ByteString
