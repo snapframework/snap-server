@@ -153,7 +153,7 @@ testMethodParsing =
     testCase "server/method parsing" $ Prelude.mapM_ testOneMethod ms
   where
     ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT, PATCH
-         , ExtMethod "COPY", ExtMethod "MOVE"]
+         , ExtMethod "COPY", ExtMethod "MOVE" ]
 
 
 dummyIter :: Iteratee ByteString IO ()
