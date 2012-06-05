@@ -171,8 +171,8 @@ methodFromString "DELETE"  = return DELETE
 methodFromString "TRACE"   = return TRACE
 methodFromString "OPTIONS" = return OPTIONS
 methodFromString "CONNECT" = return CONNECT
-methodFromString s         =
-    throwError $ HttpParseException $ "Bad method '" ++ S.unpack s ++ "'"
+methodFromString "PATCH"   = return PATCH
+methodFromString s         = return $ ExtMethod s
 
 
 ------------------------------------------------------------------------------
