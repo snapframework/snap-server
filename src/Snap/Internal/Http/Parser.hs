@@ -172,7 +172,7 @@ methodFromString "TRACE"   = return TRACE
 methodFromString "OPTIONS" = return OPTIONS
 methodFromString "CONNECT" = return CONNECT
 methodFromString "PATCH"   = return PATCH
-methodFromString s         = return $ ExtMethod s
+methodFromString s         = return $ Method s
 
 
 ------------------------------------------------------------------------------
