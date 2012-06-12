@@ -48,8 +48,8 @@ Executable testsuite
     test-framework-quickcheck2 >= 0.2.12.1 && <0.3,
     text                       >= 0.11     && <0.12,
     time,
-    tls                        >= 0.8.2    && <0.9.6,
-    tls-extra                  >= 0.4      && <0.4.7,
+    tls                        >= 0.8.2    && <0.9.2,
+    tls-extra                  >= 0.4      && <0.4.5,
     transformers,
     vector                     >= 0.7      && <0.10,
     vector-algorithms          >= 0.4      && <0.6,
@@ -225,5 +225,5 @@ Executable benchmark
     base >= 4 && < 5,
     network == 2.3.*,
     http-enumerator >= 0.7.1.6 && <0.8,
-    tls >= 0.8.2 && <= 0.9.2,
+    tls >= 0.8.2 && <0.9.2,
     criterion >= 0.6 && <0.7
