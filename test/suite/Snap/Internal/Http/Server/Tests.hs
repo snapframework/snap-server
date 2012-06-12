@@ -152,7 +152,8 @@ testMethodParsing :: Test
 testMethodParsing =
     testCase "server/method parsing" $ Prelude.mapM_ testOneMethod ms
   where
-    ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT ]
+    ms = [ GET, HEAD, POST, PUT, DELETE, TRACE, OPTIONS, CONNECT, PATCH
+         , Method "COPY", Method "MOVE" ]
 
 
 dummyIter :: Iteratee ByteString IO ()
@@ -272,9 +273,11 @@ testPartialParse = testCase "server/short" $ do
 
 
 methodTestText :: Method -> L.ByteString
-methodTestText m = L.concat [ (L.pack $ map c2w $ show m)
+methodTestText m = L.concat [ mbs m
                         , " / HTTP/1.1\r\nContent-Length: 0\r\n\r\n" ]
-
+  where
+    mbs (Method b) = L.fromChunks [b]
+    mbs b = L.pack $ map c2w $ show b
 
 sampleRequest2 :: ByteString
 sampleRequest2 =
