@@ -31,10 +31,6 @@ library (which should have come with this package).
 
 ### Optional dependencies
 
-The `snap-server` library can optionally use the
-[libev](http://software.schmorp.de/pkg/libev.html) for high-speed, O(1)
-scalable socket event processing.
-
 If you would like SSL support, `snap-server` requires the
 [openssl](http://www.openssl.org/) library.
 
@@ -46,17 +42,11 @@ and [Hackage](http://hackage.haskell.org/packages/hackage.html). Just run
 
     cabal install
 
-to get the "stock" version of Snap. If you would like to try the optional
-`libev` backend, pass the `libev` flag to `cabal install`:
+to install snap-server.
 
-    cabal install -flibev
-
-And if you would like SSL support, pass the `openssl` flag to `cabal install`:
+If you would like SSL support, pass the `openssl` flag to `cabal install`:
 
     cabal install -fopenssl
-
-Note that the "`-flibev`" and "`-fopenssl`" flags are not mutually-exclusive,
-and if you would like you can use them together.
 
 
 ## Building the Haddock Documentation
@@ -75,7 +65,6 @@ The `snap-server` has a fairly comprehensive test suite. To build and run it,
 `cd` into the `test/` directory and run
 
     $ cabal configure            # for the stock backend, or..
-    $ cabal configure -flibev    # for the libev backend, and/or..
     $ cabal configure -fopenssl  # for the SSL backend
     
     $ cabal build

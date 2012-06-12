@@ -71,17 +71,16 @@ simpleHttpServe config handler = do
         setUnicodeLocale $ fromJust $ getLocale conf
         withLoggers (fromJust $ getAccessLog conf)
                     (fromJust $ getErrorLog conf) $ \(alog, elog) ->
-                      Int.httpServe tout
-                        (listeners conf)
-                        (fmap backendToInternal $ getBackend conf)
-                        (fromJust $ getHostname  conf)
-                        alog
-                        elog
-                        (\sockets -> let dat = mkStartupInfo sockets conf
-                                     in maybe (return ())
-                                              ($ dat)
-                                              (getStartupHook conf))
-                        (runSnap handler)
+                        Int.httpServe tout
+                          (listeners conf)
+                          (fromJust $ getHostname  conf)
+                          alog
+                          elog
+                          (\sockets -> let dat = mkStartupInfo sockets conf
+                                       in maybe (return ())
+                                                ($ dat)
+                                                (getStartupHook conf))
+                          (runSnap handler)
 
     --------------------------------------------------------------------------
     mkStartupInfo sockets conf =
@@ -193,9 +192,3 @@ setUnicodeLocale =
 #else
     const $ return ()
 #endif
-
-
-------------------------------------------------------------------------------
-backendToInternal :: ConfigBackend -> Int.EventLoopType
-backendToInternal ConfigSimpleBackend = Int.EventLoopSimple
-backendToInternal ConfigLibEvBackend  = Int.EventLoopLibEv

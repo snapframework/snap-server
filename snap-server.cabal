@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.8.1.1
+version:        0.9.0
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -52,10 +52,6 @@ extra-source-files:
   test/testserver/static/hello.txt
 
 
-Flag libev
-    Description: Use libev?
-    Default:     False
-
 Flag portable
   Description: Compile in cross-platform mode. No platform-specific code or
                optimizations such as C routines will be used.
@@ -87,8 +83,7 @@ Library
     Snap.Internal.Http.Server.HttpPort,
     Snap.Internal.Http.Server.SimpleBackend,
     Snap.Internal.Http.Server.TimeoutManager,
-    Snap.Internal.Http.Server.TLS,
-    Snap.Internal.Http.Server.LibevBackend
+    Snap.Internal.Http.Server.TLS
 
   build-depends:
     array                     >= 0.2      && <0.5,
@@ -110,7 +105,7 @@ Library
     murmur-hash               >= 0.1      && < 0.2,
     network                   >= 2.3      && < 2.4,
     old-locale,
-    snap-core                 >= 0.8.1    && < 0.9,
+    snap-core                 >= 0.9      && < 0.10,
     template-haskell          >= 2.2      && < 2.8,
     text                      >= 0.11     && < 0.12,
     time                      >= 1.0      && < 1.5,
@@ -137,10 +132,6 @@ Library
     cpp-options: -DPORTABLE
   else
     build-depends: unix
-
-  if flag(libev)
-    build-depends: hlibev >= 0.2.8 && < 0.5
-    cpp-options: -DLIBEV
 
   if flag(openssl)
     cpp-options: -DOPENSSL

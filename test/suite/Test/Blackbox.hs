@@ -64,8 +64,8 @@ testFunctions = [ testPong
 
 
 ------------------------------------------------------------------------------
-tests :: Int -> String -> [Test]
-tests port name = map (\f -> f False port name) testFunctions
+tests :: Int -> [Test]
+tests port = map (\f -> f False port "") testFunctions
 
 
 ------------------------------------------------------------------------------
@@ -77,35 +77,34 @@ slowTestOptions ssl =
 
 
 ------------------------------------------------------------------------------
-ssltests :: String -> Maybe Int -> [Test]
-ssltests name = maybe [] httpsTests
+ssltests :: Maybe Int -> [Test]
+ssltests = maybe [] httpsTests
     where httpsTests port = map (\f -> f True port sslname) testFunctions
-          sslname = "ssl/" ++ name
+          sslname = "ssl/"
 
 ------------------------------------------------------------------------------
 startTestServer :: Int
                 -> Maybe Int
-                -> ConfigBackend
                 -> IO (ThreadId, MVar ())
-startTestServer port sslport backend = do
-    let cfg = setAccessLog
-                  (ConfigFileLog $ "ts-access." ++ show backend ++ ".log") .
-              setErrorLog
-                  (ConfigFileLog $ "ts-error." ++ show backend ++ ".log")  .
-              setBind      "*"                                             .
-              setPort      port                                            .
-              setBackend   backend                                         .
-              setDefaultTimeout 10                                         .
-              setVerbose   False                                           $
+startTestServer port sslport = do
+    let cfg = setAccessLog      (ConfigFileLog "ts-access.log") .
+              setErrorLog       (ConfigFileLog "ts-error.log")  .
+              setBind           "*"                             .
+              setPort           port                            .
+              setDefaultTimeout 10                              .
+              setVerbose        False                           $
               defaultConfig
 
-    let cfg' = case sslport of
-                Nothing -> cfg
-                Just p  -> setSSLPort p          .
-                           setSSLBind "*"        .
-                           setSSLCert "cert.pem" .
-                           setSSLKey  "key.pem"  $
-                           cfg
+    let cfg' = maybe cfg
+                     (\p ->
+                      setSSLPort   p                                   .
+                      setSSLBind   "*"                                 .
+                      setSSLCert   "cert.pem"                          .
+                      setSSLKey    "key.pem"                           .
+                      setAccessLog (ConfigFileLog "ts-access-ssl.log") .
+                      setErrorLog  (ConfigFileLog "ts-error-ssl.log")  $
+                      cfg)
+                     sslport
 
     mvar <- newEmptyMVar
     tid  <- forkIO $ do
@@ -146,7 +145,7 @@ doPong ssl port = do
 
 ------------------------------------------------------------------------------
 testPong :: Bool -> Int -> String -> Test
-testPong ssl port name = testCase (name ++ "/blackbox/pong") $ do
+testPong ssl port name = testCase (name ++ "blackbox/pong") $ do
     doc <- doPong ssl port
     assertEqual "pong response" "PONG" doc
 
@@ -154,7 +153,7 @@ testPong ssl port name = testCase (name ++ "/blackbox/pong") $ do
 ------------------------------------------------------------------------------
 -- FIXME: waiting on http-enumerator patch for HEAD behaviour
 -- testHeadPong :: Bool -> Int -> String -> Test
--- testHeadPong ssl port name = testCase (name ++ "/blackbox/pong/HEAD") $ do
+-- testHeadPong ssl port name = testCase (name ++ "blackbox/pong/HEAD") $ do
 --     doc <- headPong ssl port
 --     assertEqual "pong HEAD response" "" doc
 
@@ -163,7 +162,7 @@ testPong ssl port name = testCase (name ++ "/blackbox/pong") $ do
 testEcho :: Bool -> Int -> String -> Test
 testEcho ssl port name =
     plusTestOptions (slowTestOptions ssl) $
-    testProperty (name ++ "/blackbox/echo") $
+    testProperty (name ++ "blackbox/echo") $
     QC.mapSize (if ssl then min 100 else min 300) $
     monadicIO $ forAllM arbitrary prop
   where
@@ -179,7 +178,7 @@ testEcho ssl port name =
 testFileUpload :: Bool -> Int -> String -> Test
 testFileUpload ssl port name =
     plusTestOptions (slowTestOptions ssl) $
-    testProperty (name ++ "/blackbox/upload") $
+    testProperty (name ++ "blackbox/upload") $
     QC.mapSize (if ssl then min 100 else min 300) $
     monadicIO $
     forAllM arbitrary prop
@@ -249,7 +248,7 @@ testFileUpload ssl port name =
 testRot13 :: Bool -> Int -> String -> Test
 testRot13 ssl port name =
     plusTestOptions (slowTestOptions ssl) $
-    testProperty (name ++ "/blackbox/rot13") $
+    testProperty (name ++ "blackbox/rot13") $
     monadicIO $ forAllM arbitrary prop
   where
     prop txt = do
@@ -264,7 +263,7 @@ testRot13 ssl port name =
 ------------------------------------------------------------------------------
 -- TODO: this one doesn't work w/ SSL
 testSlowLoris :: Bool -> Int -> String -> Test
-testSlowLoris ssl port name = testCase (name ++ "/blackbox/slowloris") $
+testSlowLoris ssl port name = testCase (name ++ "blackbox/slowloris") $
                               if ssl then return () else withSock port go
 
   where
@@ -294,7 +293,7 @@ testSlowLoris ssl port name = testCase (name ++ "/blackbox/slowloris") $
 -- TODO: doesn't work w/ ssl
 testBlockingRead :: Bool -> Int -> String -> Test
 testBlockingRead ssl port name =
-    testCase (name ++ "/blackbox/testBlockingRead") $
+    testCase (name ++ "blackbox/testBlockingRead") $
              if ssl then return () else runIt
 
   where
@@ -324,7 +323,7 @@ testBlockingRead ssl port name =
 -- test server's ability to trap/recover from IO errors
 testPartial :: Bool -> Int -> String -> Test
 testPartial ssl port name =
-    testCase (name ++ "/blackbox/testPartial") $
+    testCase (name ++ "blackbox/testPartial") $
     if ssl then return () else runIt
 
   where
@@ -346,7 +345,7 @@ testPartial ssl port name =
 -- TODO: no ssl
 testBigResponse :: Bool -> Int -> String -> Test
 testBigResponse ssl port name =
-    testCase (name ++ "/blackbox/testBigResponse") $
+    testCase (name ++ "blackbox/testBigResponse") $
     if ssl then return () else runIt
   where
     runIt = withSock port $ \sock -> do
@@ -441,7 +440,7 @@ post url body hdrs = do
 -- 2. that "flush" is passed along through a gzip operation.
 testTimeoutTickle :: Bool -> Int -> String -> Test
 testTimeoutTickle ssl port name =
-    testCase (name ++ "/blackbox/timeout/tickle") $ do
+    testCase (name ++ "blackbox/timeout/tickle") $ do
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/timeout/tickle"
         doc <- liftM (S.concat . L.toChunks) $ fetch uri
@@ -452,7 +451,7 @@ testTimeoutTickle ssl port name =
 ------------------------------------------------------------------------------
 testTimeoutBadTickle :: Bool -> Int -> String -> Test
 testTimeoutBadTickle ssl port name =
-    testCase (name ++ "/blackbox/timeout/badtickle") $ do
+    testCase (name ++ "blackbox/timeout/badtickle") $ do
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/timeout/badtickle"
         expectException $ fetch uri

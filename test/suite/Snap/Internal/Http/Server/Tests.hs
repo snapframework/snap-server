@@ -944,7 +944,7 @@ testSendFile = testCase "server/sendFile" $ do
                        m)
 
   where
-    serve = (httpServe 60 [HttpPort "*" port] Nothing "localhost"
+    serve = (httpServe 60 [HttpPort "*" port] "localhost"
                        Nothing Nothing (const $ return ())
                     $ runSnap sendFileFoo)
             `catch` \(_::SomeException) -> return ()
@@ -970,7 +970,6 @@ testServerStartupShutdown = testCase "server/startup/shutdown" $ do
     bracket (forkIO $
              httpServe 20
                        [HttpPort "*" port]
-                       Nothing
                        "localhost"
                        (Just $ const (return ())) -- dummy logging
                        (Just $ const (return ())) -- dummy logging
@@ -1009,8 +1008,7 @@ testServerShutdownWithOpenConns :: Test
 testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
     tid <- forkIO $
            httpServe 20
-                     [HttpPort "127.0.0.1" port]
-                     Nothing
+                     [HttpPort "*" port]
                      "localhost"
                      Nothing
                      Nothing
@@ -1052,7 +1050,7 @@ testServerShutdownWithOpenConns = testCase "server/shutdown-open-conns" $ do
 
   where
     waitabit = threadDelay $ 2*((10::Int)^(6::Int))
-    port = 8146
+    port = 8149
 
 
 

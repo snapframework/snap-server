@@ -3,10 +3,6 @@ version:        0.1.1
 build-type:     Simple
 cabal-version:  >= 1.6
 
-Flag libev
-    Description: Use libev?
-    Default:     False
-
 Flag portable
   Description: Compile in cross-platform mode. No platform-specific code or
                optimizations such as C routines will be used.
@@ -45,7 +41,7 @@ Executable testsuite
     old-locale,
     parallel                   >= 2        && <4,
     process,
-    snap-core                  >= 0.8.1    && <0.9,
+    snap-core                  >= 0.9      && <0.10,
     template-haskell,
     test-framework             >= 0.6      && <0.7,
     test-framework-hunit       >= 0.2.7    && <0.3,
@@ -75,10 +71,6 @@ Executable testsuite
 
   if !os(windows)
     build-depends: unix
-
-  if flag(libev)
-    build-depends: hlibev >= 0.2.5 && < 0.5
-    cpp-options: -DLIBEV
 
   if flag(openssl)
     cpp-options: -DOPENSSL
@@ -120,7 +112,7 @@ Executable pongserver
     parallel                  >= 2       && <4,
     MonadCatchIO-transformers >= 0.2.1   && <0.4,
     network                   == 2.3.*,
-    snap-core                 >= 0.8.1   && <0.9,
+    snap-core                 >= 0.9     && <0.10,
     template-haskell,
     time,
     transformers,
@@ -134,10 +126,6 @@ Executable pongserver
     cpp-options: -DPORTABLE
   else
     build-depends: unix
-
-  if flag(libev)
-    build-depends: hlibev >= 0.2.5 && < 0.3
-    cpp-options: -DLIBEV
 
   if flag(openssl)
     cpp-options: -DOPENSSL
@@ -196,7 +184,7 @@ Executable testserver
     network                    == 2.3.*,
     old-locale,
     parallel                   >= 2        && <4,
-    snap-core                  >= 0.8.1    && <0.9,
+    snap-core                  >= 0.9      && <0.10,
     template-haskell,
     test-framework             >= 0.6      && <0.7,
     test-framework-hunit       >= 0.2.7    && <0.3,
@@ -209,10 +197,6 @@ Executable testserver
 
   if !os(windows)
     build-depends: unix
-
-  if flag(libev)
-    build-depends: hlibev >= 0.2.5 && < 0.3
-    cpp-options: -DLIBEV
 
   if flag(openssl)
     cpp-options: -DOPENSSL

@@ -57,7 +57,6 @@ import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Server.HttpPort
 import qualified Snap.Internal.Http.Server.TLS as TLS
 import           Snap.Internal.Http.Server.SimpleBackend
-import           Snap.Internal.Http.Server.LibevBackend
 
 import           Snap.Internal.Iteratee.Debug
 import           Snap.Iteratee hiding (head, take, map)
@@ -104,12 +103,6 @@ instance Show ListenPort where
 
 
 ------------------------------------------------------------------------------
-data EventLoopType = EventLoopSimple
-                   | EventLoopLibEv
-  deriving (Show)
-
-
-------------------------------------------------------------------------------
 -- This exception will be thrown if we decided to terminate the request before
 -- running the user handler.
 data TerminatedBeforeHandlerException = TerminatedBeforeHandlerException
@@ -121,15 +114,6 @@ instance Exception TerminatedBeforeHandlerException
 data ExceptionAlreadyCaught = ExceptionAlreadyCaught
   deriving (Show, Typeable)
 instance Exception ExceptionAlreadyCaught
-
-
-------------------------------------------------------------------------------
-defaultEvType :: EventLoopType
-#ifdef LIBEV
-defaultEvType = EventLoopLibEv
-#else
-defaultEvType = EventLoopSimple
-#endif
 
 
 ------------------------------------------------------------------------------
@@ -161,24 +145,21 @@ runServerMonad lh s la le m = evalStateT m st
 ------------------------------------------------------------------------------
 httpServe :: Int                         -- ^ default timeout
           -> [ListenPort]                -- ^ ports to listen on
-          -> Maybe EventLoopType         -- ^ Specify a given event loop,
-                                         --   otherwise a default is picked
           -> ByteString                  -- ^ local hostname (server name)
           -> Maybe (ByteString -> IO ()) -- ^ access log action
           -> Maybe (ByteString -> IO ()) -- ^ error log action
           -> ([Socket] -> IO ())         -- ^ initialisation
           -> ServerHandler               -- ^ handler procedure
           -> IO ()
-httpServe defaultTimeout ports mevType localHostname alog' elog' initial
-          handler = withSocketsDo $ spawnAll alog' elog'
+httpServe defaultTimeout ports localHostname alog' elog' initial handler =
+    withSocketsDo $ spawnAll alog' elog'
+
   where
     --------------------------------------------------------------------------
     spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
 
-        let evType = maybe defaultEvType id mevType
-
-        logE elog $ S.concat [ "Server.httpServe: START ("
-                             , toBS $ show evType, ")"]
+        logE elog $ S.concat [ "Server.httpServe: START, binding to "
+                             , bshow ports ]
 
         let isHttps p = case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}
         let initHttps = foldr (\p b -> b || isHttps p) False ports
@@ -190,7 +171,7 @@ httpServe defaultTimeout ports mevType localHostname alog' elog' initial
         nports <- mapM bindPort ports
         let socks = map (\x -> case x of ListenHttp s -> s; ListenHttps s _ -> s) nports
 
-        (runEventLoop evType defaultTimeout nports numCapabilities (logE elog) (initial socks)
+        (simpleEventLoop defaultTimeout nports numCapabilities (logE elog) (initial socks)
                     $ runHTTP defaultTimeout alog elog handler localHostname)
           `finally` do
             logE elog "Server.httpServe: SHUTDOWN"
@@ -205,11 +186,6 @@ httpServe defaultTimeout ports mevType localHostname alog' elog' initial
     bindPort (HttpPort  baddr port         ) = bindHttp  baddr port
     bindPort (HttpsPort baddr port cert key) =
         TLS.bindHttps baddr port cert key
-
-
-    --------------------------------------------------------------------------
-    runEventLoop EventLoopSimple       = simpleEventLoop
-    runEventLoop EventLoopLibEv        = libEvEventLoop
 
 
 ------------------------------------------------------------------------------

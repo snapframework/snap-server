@@ -20,27 +20,19 @@ import qualified Snap.Internal.Http.Server.TimeoutManager.Tests
 import qualified Test.Blackbox
 
 ports :: Int -> [Int]
-ports sp = [sp..]
+ports sp = [sp]
 
 #ifdef OPENSSL
 sslports :: Int -> [Maybe Int]
-sslports sp = map Just [(sp + 100)..]
+sslports sp = map Just [(sp + 100)]
 #else
 sslports :: Int -> [Maybe Int]
 sslports _ = repeat Nothing
 #endif
 
-#ifdef LIBEV
-backends :: Int -> [(Int,Maybe Int,ConfigBackend)]
-backends sp = zip3 (ports sp)
-                   (sslports sp)
-                   [ConfigSimpleBackend, ConfigLibEvBackend]
-#else
-backends :: Int -> [(Int,Maybe Int,ConfigBackend)]
-backends sp = zip3 (ports sp)
-                   (sslports sp)
-                   [ConfigSimpleBackend]
-#endif
+backends :: Int -> [(Int,Maybe Int)]
+backends sp = zip (ports sp)
+                  (sslports sp)
 
 getStartPort :: IO Int
 getStartPort = (liftM read (getEnv "STARTPORT") >>= evaluate)
@@ -51,8 +43,8 @@ main :: IO ()
 main = withSocketsDo $ do
     sp <- getStartPort
     let bends = backends sp
-    tinfos <- forM bends $ \(port,sslport,b) ->
-        Test.Blackbox.startTestServer port sslport b
+    tinfos <- forM bends $ \(port,sslport) ->
+        Test.Blackbox.startTestServer port sslport
 
     defaultMain (tests ++ concatMap blackbox bends) `finally` do
         mapM_ killThread $ map fst tinfos
@@ -68,11 +60,9 @@ main = withSocketsDo $ do
             , testGroup "Snap.Internal.Http.Server.TimeoutManager.Tests"
                         Snap.Internal.Http.Server.TimeoutManager.Tests.tests
             ]
-        blackbox (port, sslport, b) =
-            [ testGroup ("Test.Blackbox " ++ backendName)
-                        $ Test.Blackbox.tests port backendName
-            , testGroup ("Test.Blackbox SSL " ++ backendName)
-                        $ Test.Blackbox.ssltests backendName sslport
+        blackbox (port, sslport) =
+            [ testGroup ("Test.Blackbox")
+                        $ Test.Blackbox.tests port
+            , testGroup ("Test.Blackbox SSL")
+                        $ Test.Blackbox.ssltests sslport
             ]
-          where
-            backendName = show b

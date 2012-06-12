@@ -11,8 +11,7 @@ Snap Status and Features
 
 The Snap core system consists of:
 
-  * a high-speed HTTP server, with an optional high-concurrency backend using
-    the [libev](http://software.schmorp.de/pkg/libev.html) library
+  * a high-speed HTTP server
 
   * a sensible and clean monad for web programming
 

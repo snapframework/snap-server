@@ -7,7 +7,6 @@ Snap HTTP server.
 
 module Snap.Http.Server.Config
   ( Config
-  , ConfigBackend(..)
   , ConfigLog(..)
 
   , emptyConfig
@@ -20,7 +19,6 @@ module Snap.Http.Server.Config
   , fmapOpt
 
   , getAccessLog
-  , getBackend
   , getBind
   , getCompression
   , getDefaultTimeout
@@ -39,7 +37,6 @@ module Snap.Http.Server.Config
   , getStartupHook
 
   , setAccessLog
-  , setBackend
   , setBind
   , setCompression
   , setDefaultTimeout
@@ -56,7 +53,6 @@ module Snap.Http.Server.Config
   , setSSLPort
   , setVerbose
   , setStartupHook
-
   , StartupInfo
   , getStartupSockets
   , getStartupConfig
