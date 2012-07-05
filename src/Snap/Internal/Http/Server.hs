@@ -160,6 +160,7 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
   where
     --------------------------------------------------------------------------
     errorHandlers = [ Handler sslException
+                    , Handler threadWasKilled
                     , Handler otherException ]
 
     --------------------------------------------------------------------------
@@ -173,6 +174,9 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
         logE elog' msg
         SC.hPutStrLn stderr msg
         throw e
+
+    ------------------------------------------------------------------------------
+    threadWasKilled (_ :: AsyncException) = return ()
 
     ------------------------------------------------------------------------------
     otherException (e :: SomeException) = do
