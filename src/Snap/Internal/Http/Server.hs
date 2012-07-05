@@ -36,15 +36,18 @@ import           Data.List (foldl')
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, fromJust, fromMaybe, isJust)
 import           Data.Monoid
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import           Data.Time
 import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
 import           Network.Socket (withSocketsDo, Socket)
 import           Prelude hiding (catch)
+import           System.IO
+import           System.Locale
 import           System.PosixCompat.Files hiding (setFileSize)
 import           System.Posix.Types (FileOffset)
-import           System.Locale
 ------------------------------------------------------------------------------
 import           System.FastLogger (timestampedLogEntry, combinedLogEntry)
 import           Snap.Internal.Http.Types
@@ -152,9 +155,35 @@ httpServe :: Int                         -- ^ default timeout
           -> ServerHandler               -- ^ handler procedure
           -> IO ()
 httpServe defaultTimeout ports localHostname alog' elog' initial handler =
-    withSocketsDo $ spawnAll alog' elog'
+    withSocketsDo $ spawnAll alog' elog' `catches` errorHandlers
 
   where
+    --------------------------------------------------------------------------
+    errorHandlers = [ Handler sslException
+                    , Handler otherException ]
+
+    --------------------------------------------------------------------------
+    sslException (e :: TLS.TLSException) = do
+        let msg = SC.concat [
+                    "This version of snap-server was not built with SSL "
+                  , "support.\n"
+                  , "Please compile snap-server with -fopenssl to enable it."
+                  ]
+
+        logE elog' msg
+        SC.hPutStrLn stderr msg
+        throw e
+
+    ------------------------------------------------------------------------------
+    otherException (e :: SomeException) = do
+        let msg = SC.concat [
+                    "Error on startup: \n"
+                  , T.encodeUtf8 $ T.pack $ show e
+                  ]
+        logE elog' msg
+        SC.hPutStrLn stderr msg
+        throw e
+
     --------------------------------------------------------------------------
     spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
 
