@@ -34,7 +34,8 @@ import           Data.Int
 import           Data.IORef
 import           Data.List (foldl')
 import qualified Data.Map as Map
-import           Data.Maybe (catMaybes, fromJust, fromMaybe, isJust)
+import           Data.Maybe ( catMaybes, fromJust, fromMaybe, isJust
+                            , isNothing )
 import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -46,8 +47,6 @@ import           Network.Socket (withSocketsDo, Socket)
 import           Prelude hiding (catch)
 import           System.IO
 import           System.Locale
-import           System.PosixCompat.Files hiding (setFileSize)
-import           System.Posix.Types (FileOffset)
 ------------------------------------------------------------------------------
 import           System.FastLogger (timestampedLogEntry, combinedLogEntry)
 import           Snap.Internal.Http.Types
@@ -430,7 +429,7 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
                        then id
                        else insHeader
           let rsp' = updateHeaders ins rsp
-          (bytesSent,_) <- sendResponse req rsp' buffer writeEnd onSendFile
+          (bytesSent,_) <- sendResponse rsp' buffer writeEnd onSendFile
                            `catch` errCatch "sending response" req
 
           debug $ "Server.httpSession: sent " ++
@@ -715,19 +714,20 @@ receiveRequest writeEnd = do
 
 ------------------------------------------------------------------------------
 -- Response must be well-formed here
-sendResponse :: forall a . Request
-             -> Response
+sendResponse :: forall a . Response
              -> Buffer
              -> Iteratee ByteString IO a             -- ^ iteratee write end
              -> (FilePath -> Int64 -> Int64 -> IO a) -- ^ function to call on
                                                      -- sendfile
              -> ServerMonad (Int64, a)
-sendResponse req rsp' buffer writeEnd' onSendFile = do
-    let rsp'' = renderCookies rsp'
-    (rsp, shouldClose) <- liftIO $ fixupResponse rsp''
+sendResponse rsp0 buffer writeEnd' onSendFile = do
+    let rsp1 = renderCookies rsp0
 
-    when shouldClose $
-         modify $! \s -> s { _forceConnectionClose = True }
+    let (rsp, shouldClose) = if isNothing $ rspContentLength rsp1
+                               then noCL rsp1
+                               else (rsp1, False)
+
+    when shouldClose $ modify $! \s -> s { _forceConnectionClose = True }
 
     let (!headerString,!hlen) = mkHeaderBuilder rsp
     let writeEnd = fixCLIteratee hlen rsp writeEnd'
@@ -746,6 +746,32 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
     return $! (bs,x)
 
   where
+    --------------------------------------------------------------------------
+    noCL :: Response -> (Response, Bool)
+    noCL r =
+        if rspHttpVersion r >= (1,1)
+          then
+            let r'    = setHeader "Transfer-Encoding" "chunked" r
+                origE = rspBodyToEnum $ rspBody r
+                e     = \i -> joinI $ origE $$ chunkIt i
+            in (r' { rspBody = Enum e }, False)
+        else
+           -- HTTP/1.0 and no content-length? We'll have to close the
+           -- socket.
+           (setHeader "Connection" "close" r, True)
+    {-# INLINE noCL #-}
+
+
+    --------------------------------------------------------------------------
+    chunkIt :: forall x . Enumeratee Builder Builder IO x
+    chunkIt = checkDone $ continue . step
+      where
+        step k EOF = k (Chunks [chunkedTransferTerminator]) >>== return
+        step k (Chunks []) = continue $ step k
+        step k (Chunks xs) = k (Chunks [chunkedTransferEncoding $ mconcat xs])
+                             >>== chunkIt
+
+
     --------------------------------------------------------------------------
     whenEnum :: Iteratee ByteString IO a
              -> Builder
@@ -807,7 +833,7 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
 
     --------------------------------------------------------------------------
-    (major,minor) = rspHttpVersion rsp'
+    (major,minor) = rspHttpVersion rsp0
 
 
     --------------------------------------------------------------------------
@@ -836,31 +862,6 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
 
     --------------------------------------------------------------------------
-    noCL :: Response -> (Response, Bool)
-    noCL r =
-        -- are we in HTTP/1.1?
-        let sendChunked = (rspHttpVersion r) == (1,1)
-        in if sendChunked
-             then
-               let r'    = setHeader "Transfer-Encoding" "chunked" r
-                   origE = rspBodyToEnum $ rspBody r
-                   e      = \i -> joinI $ origE $$ chunkIt i
-               in (r' { rspBody = Enum e }, False)
-           else
-              -- HTTP/1.0 and no content-length? We'll have to close the
-              -- socket.
-              (setHeader "Connection" "close" r, True)
-
-    --------------------------------------------------------------------------
-    chunkIt :: forall x . Enumeratee Builder Builder IO x
-    chunkIt = checkDone $ continue . step
-      where
-        step k EOF = k (Chunks [chunkedTransferTerminator]) >>== return
-        step k (Chunks []) = continue $ step k
-        step k (Chunks xs) = k (Chunks [chunkedTransferEncoding $ mconcat xs])
-                             >>== chunkIt
-
-    --------------------------------------------------------------------------
     fixCLIteratee :: Int                       -- ^ header length
                   -> Response                  -- ^ response
                   -> Iteratee ByteString IO a  -- ^ write end
@@ -874,24 +875,6 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
         mbCL = rspContentLength resp
 
-    --------------------------------------------------------------------------
-    hasCL :: Int64 -> Response -> Response
-    hasCL cl r = setHeader "Content-Length" (toByteString $ fromShow cl) r
-
-
-    --------------------------------------------------------------------------
-    setFileSize :: FilePath -> Response -> IO Response
-    setFileSize fp r = {-# SCC "setFileSize" #-} do
-        fs <- liftM fromIntegral $ getFileSize fp
-        return $! r { rspContentLength = Just fs }
-
-
-    --------------------------------------------------------------------------
-    handle304 :: Response -> Response
-    handle304 r = setResponseBody (enumBuilder mempty) $
-                  updateHeaders (H.delete "Transfer-Encoding") $
-                  setContentLength 0 r
-
 
     --------------------------------------------------------------------------
     renderCookies :: Response -> Response
@@ -901,36 +884,6 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
                 then h
                 else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
         cookies = fmap cookieToBS . Map.elems $ rspCookies r
-
-
-    --------------------------------------------------------------------------
-    fixupResponse :: Response
-                  -> IO (Response, Bool)   -- ^ if the Bool is true then we
-                                           -- should close the connection.
-    fixupResponse r = {-# SCC "fixupResponse" #-} do
-        let r' = deleteHeader "Content-Length" r
-        let code = rspStatus r'
-        let r'' = if code == 204 || code == 304
-                   then handle304 r'
-                   else r'
-
-        (r''', shouldClose) <- do
-            z <- case rspBody r'' of
-                   (Enum _)                  -> return r''
-                   (SendFile f Nothing)      -> setFileSize f r''
-                   (SendFile _ (Just (s,e))) -> return $!
-                                                setContentLength (e-s) r''
-
-            return $! case rspContentLength z of
-                        Nothing   -> noCL z
-                        (Just sz) -> (hasCL sz z, False)
-
-        -- HEAD requests cannot have bodies per RFC 2616 sec. 9.4
-        r'''' <- if rqMethod req == HEAD
-                   then return $! deleteHeader "Transfer-Encoding" $
-                        r''' { rspBody = Enum $ enumBuilder mempty }
-                   else return $! r'''
-        return $! (r'''', shouldClose)
 
 
     --------------------------------------------------------------------------
@@ -1000,11 +953,6 @@ cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
     hOnly   = if isHOnly then "; HttpOnly" else ""
     fmt     = fromStr . formatTime defaultTimeLocale
                                    "%a, %d-%b-%Y %H:%M:%S GMT"
-
-
-------------------------------------------------------------------------------
-getFileSize :: FilePath -> IO FileOffset
-getFileSize fp = liftM fileSize $ getFileStatus fp
 
 
 ------------------------------------------------------------------------------

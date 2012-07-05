@@ -160,13 +160,6 @@ dummyIter :: Iteratee ByteString IO ()
 dummyIter = consume >> return ()
 
 
-mkRequest :: ByteString -> IO Request
-mkRequest s = do
-    step <- runIteratee $ liftM fromJust $ rsm $ receiveRequest dummyIter
-    let iter = enumBS s step
-    run_ iter
-
-
 testReceiveRequest :: Iteratee ByteString IO (Request,L.ByteString)
 testReceiveRequest = do
     r  <- liftM fromJust $ rsm $ receiveRequest dummyIter
@@ -383,11 +376,10 @@ rsm = runServerMonad "localhost" (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58382 F
 
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "server/HttpResponse1" $ do
-    req   <- mkRequest sampleRequest
     buf   <- allocBuffer 16384
 
     b     <- run_ $ rsm $
-             sendResponse req rsp1 buf copyingStream2Stream testOnSendFile >>=
+             sendResponse rsp1 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
     assertBool "http response" (b == text1 || b == text2)
@@ -406,7 +398,7 @@ testHttpResponse1 = testCase "server/HttpResponse1" $ do
                      ]
 
     rsp1 = updateHeaders (H.insert "Foo" "Bar") $
-           setContentLength 10 $
+           setContentLength' 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
                                      fromByteString "0123456789")) $
@@ -435,10 +427,9 @@ testOnSendFile f st sz = do
 
 testHttpResponse2 :: Test
 testHttpResponse2 = testCase "server/HttpResponse2" $ do
-    req   <- mkRequest sampleRequest
     buf   <- allocBuffer 16384
     b2    <- liftM (S.concat . L.toChunks) $ run_ $ rsm $
-             sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
+             sendResponse rsp2 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
     assertBool "http prefix"
@@ -455,7 +446,7 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
 
   where
     rsp1 = updateHeaders (H.insert "Foo" "Bar") $
-           setContentLength 10 $
+           setContentLength' 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
                                      fromByteString "0123456789")) $
@@ -466,11 +457,10 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
 
 testHttpResponse3 :: Test
 testHttpResponse3 = testCase "server/HttpResponse3" $ do
-    req   <- mkRequest sampleRequest
     buf   <- allocBuffer 16384
 
     b3 <- run_ $ rsm $
-          sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
+          sendResponse rsp3 buf copyingStream2Stream testOnSendFile >>=
                        return . snd
 
     let lns = LC.lines b3
@@ -498,13 +488,13 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
         hdrs = strToHeaders s
 
     rsp1 = updateHeaders (H.insert "Foo" "Bar") $
-           setContentLength 10 $
+           setContentLength' 10 $
            setResponseStatus 600 "Test" $
            modifyResponseBody (>==> (enumBuilder $
                                      fromByteString "0123456789")) $
            setResponseBody returnI $
            emptyResponse { rspHttpVersion = (1,0) }
-    rsp2 = rsp1 { rspContentLength = Nothing }
+    rsp2 = deleteHeader "Content-Length" $ rsp1 { rspContentLength = Nothing }
     rsp3 = setContentType "text/plain" $ (rsp2 { rspHttpVersion = (1,1) })
 
 
@@ -512,10 +502,8 @@ testHttpResponse4 :: Test
 testHttpResponse4 = testCase "server/HttpResponse4" $ do
     buf   <- allocBuffer 16384
 
-    req <- mkRequest sampleRequest
-
     b <- run_ $ rsm $
-         sendResponse req rsp1 buf copyingStream2Stream testOnSendFile >>=
+         sendResponse rsp1 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
     assertEqual "http response" (L.concat [
@@ -525,16 +513,15 @@ testHttpResponse4 = testCase "server/HttpResponse4" $ do
 
   where
     rsp1 = setResponseStatus 304 "Test" $
+           setContentLength' 0 $
            emptyResponse { rspHttpVersion = (1,0) }
 
 
 testHttpResponseCookies :: Test
 testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
     buf <- allocBuffer 16384
-    req <- mkRequest sampleRequest
-
     b <- run_ $ rsm $
-          sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
+          sendResponse rsp2 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
     let lns = LC.lines b
@@ -550,7 +537,7 @@ testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
     assertBool "http response" ok
 
   where
-    check s = (H.lookup "Content-Length" hdrs == Just ["0\r"]) &&
+    check s = (H.lookup "Connection" hdrs == Just ["close\r"]) &&
               (ch $ H.lookup "Set-Cookie" hdrs)
       where
         hdrs = strToHeaders s
@@ -589,9 +576,9 @@ echoServer _ _ req = do
     liftIO $ writeIORef (rqBody req) (SomeEnumerator $ joinI . I.take 0)
     return (req, rsp b cl)
   where
-    rsp s cl = emptyResponse { rspBody = Enum $
-                                         enumBuilder (fromLazyByteString s)
-                             , rspContentLength = Just $ fromIntegral cl }
+    rsp s cl = setContentLength' cl $
+               emptyResponse { rspBody = Enum $
+                                         enumBuilder (fromLazyByteString s) }
 
 
 echoServer2 :: ServerHandler
@@ -928,7 +915,7 @@ testExpectGarbage = testCase "server/expectGarbage" $ do
 pongServer :: Snap ()
 pongServer = modifyResponse $ setResponseBody enum .
                               setContentType "text/plain" .
-                              setContentLength 4
+                              setContentLength' 4
   where
     enum = enumBuilder $ fromByteString "PONG"
 
@@ -1069,3 +1056,8 @@ copyingStream2Stream = go []
         maybe (return $ L.fromChunks $ reverse l)
               (\x -> let !z = S.copy x in go (z:l))
               mbx
+
+
+setContentLength' :: Int64 -> Response -> Response
+setContentLength' cl = setHeader "Content-Length" (S.pack $ show cl) .
+                       setContentLength cl
