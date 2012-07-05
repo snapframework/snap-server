@@ -720,7 +720,11 @@ sendResponse :: forall a . Request
              -> ServerMonad (Int64, a)
 sendResponse req rsp' buffer writeEnd' onSendFile = do
     let rsp'' = renderCookies rsp'
-    rsp <- fixupResponse rsp''
+    (rsp, shouldClose) <- liftIO $ fixupResponse rsp''
+
+    when shouldClose $
+         modify $! \s -> s { _forceConnectionClose = True }
+
     let (!headerString,!hlen) = mkHeaderBuilder rsp
     let writeEnd = fixCLIteratee hlen rsp writeEnd'
 
@@ -828,25 +832,20 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
 
     --------------------------------------------------------------------------
-    noCL :: Response
-         -> ServerMonad Response
-    noCL r = {-# SCC "noCL" #-} do
+    noCL :: Response -> (Response, Bool)
+    noCL r =
         -- are we in HTTP/1.1?
         let sendChunked = (rspHttpVersion r) == (1,1)
-        if sendChunked
-          then do
-              let r' = setHeader "Transfer-Encoding" "chunked" r
-              let origE = rspBodyToEnum $ rspBody r
-
-              let e = \i -> joinI $ origE $$ chunkIt i
-
-              return $! r' { rspBody = Enum e }
-
-          else do
+        in if sendChunked
+             then
+               let r'    = setHeader "Transfer-Encoding" "chunked" r
+                   origE = rspBodyToEnum $ rspBody r
+                   e      = \i -> joinI $ origE $$ chunkIt i
+               in (r' { rspBody = Enum e }, False)
+           else
               -- HTTP/1.0 and no content-length? We'll have to close the
               -- socket.
-              modify $! \s -> s { _forceConnectionClose = True }
-              return $! setHeader "Connection" "close" r
+              (setHeader "Connection" "close" r, True)
 
     --------------------------------------------------------------------------
     chunkIt :: forall x . Enumeratee Builder Builder IO x
@@ -872,21 +871,15 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
         mbCL = rspContentLength resp
 
     --------------------------------------------------------------------------
-    hasCL :: Int64
-          -> Response
-          -> ServerMonad Response
-    hasCL cl r = {-# SCC "hasCL" #-}
-        -- set the content-length header
-        return $! setHeader "Content-Length" (toByteString $ fromShow cl) r
+    hasCL :: Int64 -> Response -> Response
+    hasCL cl r = setHeader "Content-Length" (toByteString $ fromShow cl) r
 
 
     --------------------------------------------------------------------------
-    setFileSize :: FilePath -> Response -> ServerMonad Response
-    setFileSize fp r =
-        {-# SCC "setFileSize" #-}
-        do
-            fs <- liftM fromIntegral $ liftIO $ getFileSize fp
-            return $! r { rspContentLength = Just fs }
+    setFileSize :: FilePath -> Response -> IO Response
+    setFileSize fp r = {-# SCC "setFileSize" #-} do
+        fs <- liftM fromIntegral $ getFileSize fp
+        return $! r { rspContentLength = Just fs }
 
 
     --------------------------------------------------------------------------
@@ -908,7 +901,8 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
 
     --------------------------------------------------------------------------
     fixupResponse :: Response
-                  -> ServerMonad Response
+                  -> IO (Response, Bool)   -- ^ if the Bool is true then we
+                                           -- should close the connection.
     fixupResponse r = {-# SCC "fixupResponse" #-} do
         let r' = deleteHeader "Content-Length" r
         let code = rspStatus r'
@@ -916,22 +910,23 @@ sendResponse req rsp' buffer writeEnd' onSendFile = do
                    then handle304 r'
                    else r'
 
-        r''' <- do
+        (r''', shouldClose) <- do
             z <- case rspBody r'' of
                    (Enum _)                  -> return r''
                    (SendFile f Nothing)      -> setFileSize f r''
                    (SendFile _ (Just (s,e))) -> return $!
                                                 setContentLength (e-s) r''
 
-            case rspContentLength z of
-              Nothing   -> noCL z
-              (Just sz) -> hasCL sz z
+            return $! case rspContentLength z of
+                        Nothing   -> noCL z
+                        (Just sz) -> (hasCL sz z, False)
 
         -- HEAD requests cannot have bodies per RFC 2616 sec. 9.4
-        if rqMethod req == HEAD
-          then return $! deleteHeader "Transfer-Encoding" $
-                         r''' { rspBody = Enum $ enumBuilder mempty }
-          else return $! r'''
+        r'''' <- if rqMethod req == HEAD
+                   then return $! deleteHeader "Transfer-Encoding" $
+                        r''' { rspBody = Enum $ enumBuilder mempty }
+                   else return $! r'''
+        return $! (r'''', shouldClose)
 
 
     --------------------------------------------------------------------------
