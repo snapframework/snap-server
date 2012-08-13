@@ -44,7 +44,9 @@ import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
 import           Network.Socket (withSocketsDo, Socket)
+#if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
+#endif
 import           System.IO
 import           System.Locale
 ------------------------------------------------------------------------------

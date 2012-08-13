@@ -26,7 +26,9 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.List
 import           Data.Maybe
+#if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
+#endif
 import           Snap.Http.Server.Config
 import qualified Snap.Internal.Http.Server as Int
 import           Snap.Internal.Http.Server.Config (emptyStartupInfo,

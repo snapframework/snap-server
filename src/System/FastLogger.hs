@@ -27,7 +27,9 @@ import           Data.IORef
 import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+#if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
+#endif
 import           System.IO
 
 import           Snap.Internal.Http.Server.Date

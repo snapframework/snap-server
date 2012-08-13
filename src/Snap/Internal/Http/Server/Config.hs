@@ -28,7 +28,9 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Typeable
 import           Network(Socket)
+#if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
+#endif
 import           Snap.Core
 import           Snap.Iteratee ((>==>), enumBuilder)
 import           Snap.Internal.Debug (debug)

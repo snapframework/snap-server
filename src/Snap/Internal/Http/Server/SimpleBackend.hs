@@ -26,7 +26,9 @@ import           Foreign hiding (new)
 import           Foreign.C
 import           GHC.Conc (labelThread, forkOnIO)
 import           Network.Socket
+#if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
+#endif
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
 import           Snap.Internal.Http.Server.Date
