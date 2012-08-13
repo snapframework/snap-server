@@ -4,11 +4,19 @@ module System.SendFile.Linux (sendFile) where
 
 import Data.Int
 import Foreign.C.Error (eAGAIN, getErrno, throwErrno)
+#if MIN_VERSION_base(4,5,0)
+import Foreign.C.Types (CSize(..), CInt(..))
+#else
 import Foreign.C.Types (CSize)
+#endif
 import Foreign.Marshal (alloca)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (poke)
+#if MIN_VERSION_base(4,5,0)
+import System.Posix.Types (Fd(..), COff(..), CSsize(..))
+#else
 import System.Posix.Types (Fd, COff, CSsize)
+#endif
 
 sendFile :: IO () -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
 sendFile onBlock out_fd in_fd off count
