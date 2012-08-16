@@ -1,4 +1,6 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+
 -- | Linux system-dependent code for 'sendfile'.
 module System.SendFile.Linux (sendFile) where
 

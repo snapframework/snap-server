@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 -- | FreeBSD system-dependent code for 'sendfile'.
 module System.SendFile.FreeBSD (sendFile) where
@@ -5,11 +6,19 @@ module System.SendFile.FreeBSD (sendFile) where
 import Control.Concurrent (threadWaitWrite)
 import Data.Int
 import Foreign.C.Error (eAGAIN, eINTR, getErrno, throwErrno)
+#if MIN_VERSION_base(4,5,0)
+import Foreign.C.Types (CSize(..), CInt(..))
+#else
 import Foreign.C.Types (CInt, CSize)
+#endif
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (peek)
+#if MIN_VERSION_base(4,5,0)
+import System.Posix.Types (COff(..), Fd(..))
+#else
 import System.Posix.Types (COff, Fd)
+#endif
 
 sendFile :: IO () -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
 sendFile onBlock out_fd in_fd off count
