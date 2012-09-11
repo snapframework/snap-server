@@ -28,7 +28,6 @@ import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Unsafe as S
 import           Data.ByteString.Internal (w2c)
 import qualified Data.ByteString.Lazy.Char8 as L
-import qualified Data.ByteString.Nums.Careless.Hex as Cvt
 import           Data.Char
 import           Data.Int
 import           Data.Typeable
@@ -207,15 +206,12 @@ chunkParserToEnumeratee getChunk client = do
 ------------------------------------------------------------------------------
 pGetTransferChunk :: Parser (Maybe ByteString)
 pGetTransferChunk = do
-    !hex <- liftM fromHex $ (takeWhile (isHexDigit . w2c))
+    !hex <- liftM unsafeFromHex $ (takeWhile (isHexDigit . w2c))
     takeTill ((== '\r') . w2c)
     crlf
-    if hex <= 0
+    if hex <= (0 :: Int)
       then return Nothing
       else do
           x <- take hex
           crlf
           return $! Just x
-  where
-    fromHex :: ByteString -> Int
-    fromHex s = Cvt.hex (L.fromChunks [s])

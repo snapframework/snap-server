@@ -28,7 +28,6 @@ import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as SC
 import qualified Data.ByteString.Lazy as L
 import           Data.ByteString.Internal (c2w, w2c)
-import qualified Data.ByteString.Nums.Careless.Int as Cvt
 import           Data.Enumerator.Internal
 import           Data.Int
 import           Data.IORef
@@ -63,6 +62,7 @@ import qualified Snap.Internal.Http.Server.TLS as TLS
 import           Snap.Internal.Http.Server.SimpleBackend
 
 import           Snap.Internal.Iteratee.Debug
+import           Snap.Internal.Parsing (unsafeFromInt)
 import           Snap.Iteratee hiding (head, take, map)
 import qualified Snap.Iteratee as I
 
@@ -600,7 +600,7 @@ receiveRequest writeEnd = do
 
 
         hdrs = rqHeaders req
-        mbCL = H.lookup "content-length" hdrs >>= return . Cvt.int . head
+        mbCL = H.lookup "content-length" hdrs >>= return . unsafeFromInt . head
 
 
     --------------------------------------------------------------------------
@@ -694,7 +694,7 @@ receiveRequest writeEnd = do
 
         hdrs            = toHeaders kvps
 
-        mbContentLength = liftM (Cvt.int . head) $
+        mbContentLength = liftM (unsafeFromInt . head) $
                           H.lookup "content-length" hdrs
 
         cookies         = concat $
@@ -704,7 +704,7 @@ receiveRequest writeEnd = do
 
         contextPath     = "/"
 
-        parseHost h = (a, Cvt.int (S.drop 1 b))
+        parseHost h = (a, unsafeFromInt (S.drop 1 b))
           where
             (a,b) = S.break (== (c2w ':')) h
 
