@@ -133,9 +133,19 @@ bindHttps bindAddress bindPort cert key = do
 
 ------------------------------------------------------------------------------
 freePort :: ListenSocket -> IO ()
-freePort (ListenHttps sock _) = Socket.sClose sock
+freePort (ListenHttps sock ctx) = do
+    Socket.sClose sock
+    -- FIXME(greg): this is a desperation tactic. Better to find and kill the
+    -- hypothesized liveness bug in HsOpenSSL.
+    --
+    -- Touch the context so that the garbage collector doesn't zap it.
+    !_ <- contextGetCAStore ctx
+    return $! ()
 freePort _ = return ()
 
+
+------------------------------------------------------------------------------
+data SessionContext = SessionContext SSL SSLContext
 
 ------------------------------------------------------------------------------
 createSession :: ListenSocket -> Int -> CInt -> IO () -> IO NetworkSession
@@ -144,21 +154,27 @@ createSession (ListenHttps _ ctx) recvSize socket _ = do
     handle (\(e::SomeException) -> Socket.sClose csock >> throwIO e) $ do
         ssl <- connection ctx csock
         accept ssl
-        return $! NetworkSession socket (unsafeCoerce ssl) recvSize
+        let sctx = SessionContext ssl ctx
+        return $! NetworkSession socket (unsafeCoerce sctx) recvSize
 createSession _ _ _ _ = error "can't call createSession on a ListenHttp"
 
 
 ------------------------------------------------------------------------------
 endSession :: NetworkSession -> IO ()
-endSession (NetworkSession _ aSSL _) =
-    shutdown (unsafeCoerce aSSL) Unidirectional
+endSession (NetworkSession _ aSSL _) = do
+    let (SessionContext ssl ctx) = unsafeCoerce aSSL
+    shutdown ssl Unidirectional
 
+    -- FIXME(greg): fix this properly, see above
+    -- Touch the context so that the garbage collector doesn't zap it.
+    !_ <- contextGetCAStore ctx
+    return $! ()
 
 ------------------------------------------------------------------------------
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send tickleTimeout _ (NetworkSession _ aSSL sz) bs = go bs
   where
-    ssl = unsafeCoerce aSSL
+    (SessionContext ssl _) = unsafeCoerce aSSL
 
     -- I think we have to chop the data into chunks here because HsOpenSSL
     -- won't; of course, blaze-builder may already be doing this for us, but I
@@ -179,6 +195,6 @@ recv _ (NetworkSession _ aSSL recvLen) = do
     b <- SSL.read ssl recvLen
     return $! if S.null b then Nothing else Just b
   where
-    ssl = unsafeCoerce aSSL
+    (SessionContext ssl _) = unsafeCoerce aSSL
 
 #endif
