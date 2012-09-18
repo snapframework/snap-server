@@ -46,18 +46,20 @@ main = withSocketsDo $ do
         Test.Blackbox.startTestServer port sslport
 
     defaultMain (tests ++ concatMap blackbox bends) `finally` do
+        putStrLn "shutting down test servers..."
         mapM_ killThread $ map fst tinfos
         mapM_ takeMVar $ map snd tinfos
 
-  where tests =
-            [ testGroup "Snap.Internal.Http.Parser.Tests"
+  where
+    tests = [ testGroup "Snap.Internal.Http.Parser.Tests"
                         Snap.Internal.Http.Parser.Tests.tests
             , testGroup "Snap.Internal.Http.Server.Tests"
                         Snap.Internal.Http.Server.Tests.tests
             , testGroup "Snap.Internal.Http.Server.TimeoutManager.Tests"
                         Snap.Internal.Http.Server.TimeoutManager.Tests.tests
             ]
-        blackbox (port, sslport) =
+
+    blackbox (port, sslport) =
             [ testGroup ("Test.Blackbox")
                         $ Test.Blackbox.tests port
             , testGroup ("Test.Blackbox SSL")
