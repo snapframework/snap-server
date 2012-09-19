@@ -6,7 +6,7 @@ module System.SendFile.Linux (sendFile) where
 
 import Data.Int
 import Foreign.C.Error (eAGAIN, getErrno, throwErrno)
-#if __GLASGOW_HASKELL__ > 740
+#if __GLASGOW_HASKELL__ >= 703
 import Foreign.C.Types (CSize(..), CInt(..))
 #else
 import Foreign.C.Types (CSize)
@@ -14,7 +14,7 @@ import Foreign.C.Types (CSize)
 import Foreign.Marshal (alloca)
 import Foreign.Ptr (Ptr, nullPtr)
 import Foreign.Storable (poke)
-#if __GLASGOW_HASKELL__ > 740
+#if __GLASGOW_HASKELL__ >= 703
 import System.Posix.Types (Fd(..), COff(..), CSsize(..))
 #else
 import System.Posix.Types (Fd, COff, CSsize)
