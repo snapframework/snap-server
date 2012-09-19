@@ -174,7 +174,7 @@ endSession (NetworkSession _ aSSL _) = do
 send :: IO () -> IO () -> NetworkSession -> ByteString -> IO ()
 send tickleTimeout _ (NetworkSession _ aSSL sz) bs = go bs
   where
-    (SessionContext ssl ctx) = unsafeCoerce aSSL
+    (SessionContext ssl _) = unsafeCoerce aSSL
 
     -- I think we have to chop the data into chunks here because HsOpenSSL
     -- won't; of course, blaze-builder may already be doing this for us, but I
@@ -184,10 +184,6 @@ send tickleTimeout _ (NetworkSession _ aSSL sz) bs = go bs
               else do
                 SSL.write ssl a
                 tickleTimeout
-                -- FIXME(greg): fix this properly, see above
-                -- Touch the context so that the garbage collector doesn't zap
-                -- it.
-                !_ <- contextGetCAStore ctx
                 go b
       where
         (a,b) = S.splitAt sz s
@@ -196,10 +192,9 @@ send tickleTimeout _ (NetworkSession _ aSSL sz) bs = go bs
 ------------------------------------------------------------------------------
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
 recv _ (NetworkSession _ aSSL recvLen) = do
-    b  <- SSL.read ssl recvLen
-    !_ <- contextGetCAStore ctx
+    b <- SSL.read ssl recvLen
     return $! if S.null b then Nothing else Just b
   where
-    (SessionContext ssl ctx) = unsafeCoerce aSSL
+    (SessionContext ssl _) = unsafeCoerce aSSL
 
 #endif
