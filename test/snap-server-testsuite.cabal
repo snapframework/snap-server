@@ -107,7 +107,7 @@ Executable pongserver
     template-haskell,
     time,
     transformers,
-    unix-compat               >= 0.2     && <0.4,
+    unix-compat               >= 0.2     && <0.5,
     utf8-string               >= 0.3.6   && <0.4
 
   if flag(portable) || os(windows)
