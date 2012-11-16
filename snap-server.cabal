@@ -1,0 +1,125 @@
+name:           snap-server
+version:        1.0.0
+synopsis:       A web server for the Snap Framework
+description:
+  Snap is a simple and fast web development framework and server written in
+  Haskell. For more information or to download the latest version, you can
+  visit the Snap project website at <http://snapframework.com/>.
+  .
+  The Snap HTTP server is a high performance web server library written in
+  Haskell. Together with the @snap-core@ library upon which it depends, it
+  provides a clean and efficient Haskell programming interface to the HTTP
+  protocol.
+
+license:        BSD3
+license-file:   LICENSE
+author:         Snap Framework Authors  (see CONTRIBUTORS)
+maintainer:     snap@snapframework.com
+build-type:     Simple
+cabal-version:  >= 1.6
+homepage:       http://snapframework.com/
+category:       Web, Snap
+
+extra-source-files:
+  CONTRIBUTORS,
+  LICENSE,
+  README.md,
+  README.SNAP.md
+
+
+Flag portable
+  Description: Compile in cross-platform mode. No platform-specific code or
+               optimizations such as C routines will be used.
+  Default: False
+
+Flag openssl
+  Description: Enable https support using the HsOpenSSL library.
+  Default: False
+
+
+Library
+  hs-source-dirs: src
+
+  exposed-modules:
+    Snap.Http.Server,
+    Snap.Http.Server.Config,
+    System.FastLogger
+
+  other-modules:
+    Paths_snap_server,
+    Snap.Internal.Http.Server.Config,
+    Snap.Internal.Http.Server.Date
+
+  build-depends:
+    attoparsec                >= 0.10     && < 0.11,
+    base                      >= 4        && < 5,
+    blaze-builder             >= 0.2.1.4  && < 0.4,
+    bytestring                >= 0.9.1    && < 0.11,
+    case-insensitive          >= 0.3      && < 0.5,
+    containers                >= 0.3      && < 0.6,
+    filepath                  >= 1.1      && < 1.4,
+    io-streams                >= 0.1      && < 0.2,
+    lifted-base               >= 0.1      && < 0.2,
+    monad-control             >= 0.3      && < 0.4,
+    network                   >= 2.3      && < 2.5,
+    old-locale,
+    snap-core                 >= 1.0      && < 1.1,
+    template-haskell          >= 2.2      && < 2.9,
+    text                      >= 0.11     && < 0.12,
+    time                      >= 1.0      && < 1.5,
+    transformers              >= 0.3      && < 0.4,
+    transformers-base         >= 0.4      && < 0.5,
+    unix-compat               >= 0.2      && < 0.5
+
+  extensions:
+    BangPatterns,
+    CPP,
+    MagicHash,
+    Rank2Types,
+    OverloadedStrings,
+    ScopedTypeVariables,
+    DeriveDataTypeable,
+    PackageImports,
+    ViewPatterns,
+    ForeignFunctionInterface,
+    EmptyDataDecls,
+    GeneralizedNewtypeDeriving
+
+  if flag(portable) || os(windows)
+    cpp-options: -DPORTABLE
+  else
+    build-depends: unix
+
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL >= 0.10 && <0.11
+
+  if os(linux) && !flag(portable)
+    cpp-options: -DLINUX -DHAS_SENDFILE
+    other-modules:
+      System.SendFile,
+      System.SendFile.Linux
+
+  if os(darwin) && !flag(portable)
+    cpp-options: -DOSX -DHAS_SENDFILE
+    other-modules:
+      System.SendFile,
+      System.SendFile.Darwin
+
+  if os(freebsd) && !flag(portable)
+    cpp-options: -DFREEBSD -DHAS_SENDFILE
+    other-modules:
+      System.SendFile,
+      System.SendFile.FreeBSD
+
+  ghc-prof-options: -prof -auto-all
+
+  if impl(ghc >= 6.12.0)
+    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fno-warn-unused-do-bind
+  else
+    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+
+
+source-repository head
+  type:     git
+  location: git://github.com/snapframework/snap-server.git
