@@ -15,6 +15,8 @@ rm -Rf $DIR
 mkdir -p $DIR
 
 EXCLUDES='Main
+Snap.Internal.Http.Server.Parser.Tests
+Snap.Test.Common
 '
 
 EXCL=""
