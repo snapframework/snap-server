@@ -41,7 +41,7 @@ import           Snap.Internal.Parsing            (crlf, parseCookie,
 ------------------------------------------------------------------------------
 -- | an internal version of the headers part of an HTTP request
 data IRequest = IRequest
-    { iMethod         :: {-# UNPACK #-} !Method
+    { iMethod         :: !Method
     , iRequestUri     :: {-# UNPACK #-} !ByteString
     , iHttpMajor      :: {-# UNPACK #-} !Int
     , iHttpMinor      :: {-# UNPACK #-} !Int
