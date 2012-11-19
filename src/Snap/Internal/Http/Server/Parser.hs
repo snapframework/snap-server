@@ -6,7 +6,7 @@
 
 module Snap.Internal.Http.Server.Parser
   ( IRequest(..)
-  , HttpParseException
+  , HttpParseException(..)
   , parseRequest
   , readChunkedTransferEncoding
   , parseFromStream
@@ -47,7 +47,7 @@ data IRequest = IRequest
     , iHttpMinor      :: {-# UNPACK #-} !Int
     , iRequestHeaders :: ![(ByteString, ByteString)]
     }
-
+  deriving (Eq)
 
 ------------------------------------------------------------------------------
 instance Show IRequest where
