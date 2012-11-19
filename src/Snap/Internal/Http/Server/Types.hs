@@ -74,12 +74,11 @@ type DataFinishedHook hookState = hookState -> Request -> Response -> IO ()
 -- | Data and services that all HTTP response handlers share.
 --
 data ServerConfig hookState = ServerConfig
-    { logError              :: {-# UNPACK #-} !(Builder -> IO ())
-    , onAccept              :: {-# UNPACK #-} !(AcceptHook hookState)
-    , onParse               :: {-# UNPACK #-} !(ParseHook hookState)
-    , onUserHandlerFinished :: {-# UNPACK #-}
-                               !(UserHandlerFinishedHook hookState)
-    , onDataFinished        :: {-# UNPACK #-} !(DataFinishedHook hookState)
+    { logError              :: !(Builder -> IO ())
+    , onAccept              :: !(AcceptHook hookState)
+    , onParse               :: !(ParseHook hookState)
+    , onUserHandlerFinished :: !(UserHandlerFinishedHook hookState)
+    , onDataFinished        :: !(DataFinishedHook hookState)
     , localAddress          :: {-# UNPACK #-} !ByteString
     , localHostname         :: {-# UNPACK #-} !ByteString
     , localPort             :: {-# UNPACK #-} !Int

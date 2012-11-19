@@ -8,7 +8,7 @@ module Snap.Internal.Http.Server.Date
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception
+import           Control.Exception        (mask_)
 import           Control.Monad
 import           Data.ByteString          (ByteString)
 import           Data.IORef
@@ -65,7 +65,7 @@ updateState (DateState dateString logString time) = do
 
 ------------------------------------------------------------------------------
 ensureFreshDate :: IO ()
-ensureFreshDate = block $ do
+ensureFreshDate = mask_ $ do
     now <- epochTime
     old <- readIORef $ _lastFetchTime dateState
     when (now > old) $ updateState dateState
@@ -73,14 +73,14 @@ ensureFreshDate = block $ do
 
 ------------------------------------------------------------------------------
 getDateString :: IO ByteString
-getDateString = block $ do
+getDateString = mask_ $ do
     ensureFreshDate
     readIORef $ _cachedDateString dateState
 
 
 ------------------------------------------------------------------------------
 getLogDateString :: IO ByteString
-getLogDateString = block $ do
+getLogDateString = mask_ $ do
     ensureFreshDate
     readIORef $ _cachedLogString dateState
 
