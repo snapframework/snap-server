@@ -214,11 +214,44 @@ Test-suite testsuite
 
   ghc-prof-options: -prof -auto-all
 
-  if impl(ghc >= 6.12.0)
-    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
-                 -fno-warn-unused-do-bind -fhpc
-  else
-    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fhpc
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+               -fno-warn-unused-do-bind -fhpc
+
+
+Executable benchmark
+  hs-source-dirs:   benchmark src
+  main-is:          Benchmark.hs
+  default-language: Haskell2010
+
+  other-modules:
+    Snap.Internal.Http.Parser.Benchmark,
+    Snap.Internal.Http.Parser.Data,
+    Snap.Internal.Http.Server.Parser
+
+  build-depends:
+    attoparsec  >= 0.10 && <0.11,
+    base        >= 4    && <5,
+    bytestring  >= 0.9  && <0.11,
+    criterion   >= 0.6  && <0.7,
+    io-streams  >= 0.1  && <0.2,
+    snap-core   >= 1.0  && <1.1
+
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+               -fno-warn-unused-do-bind -rtsopts
+
+  other-extensions:
+    BangPatterns,
+    CPP,
+    MagicHash,
+    Rank2Types,
+    OverloadedStrings,
+    ScopedTypeVariables,
+    DeriveDataTypeable,
+    PackageImports,
+    ViewPatterns,
+    ForeignFunctionInterface,
+    EmptyDataDecls,
+    GeneralizedNewtypeDeriving
 
 
 source-repository head

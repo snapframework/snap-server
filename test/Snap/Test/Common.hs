@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -22,7 +23,9 @@ import           Data.Monoid
 import           Data.Typeable
 import           Network.Socket
 import qualified Network.Socket.ByteString   as N
+#if !(MIN_VERSION_base(4,6,0))
 import           Prelude                     hiding (catch)
+#endif
 import           System.Timeout
 import           Test.HUnit                  (assertFailure)
 import           Test.QuickCheck
