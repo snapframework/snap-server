@@ -45,13 +45,14 @@ data IRequest = IRequest
     , iRequestUri     :: {-# UNPACK #-} !ByteString
     , iHttpMajor      :: {-# UNPACK #-} !Int
     , iHttpMinor      :: {-# UNPACK #-} !Int
+    , iHost           :: !(Maybe ByteString)
     , iRequestHeaders :: ![(ByteString, ByteString)]
     }
   deriving (Eq)
 
 ------------------------------------------------------------------------------
 instance Show IRequest where
-    show (IRequest m u major minor r) =
+    show (IRequest m u major minor host r) =
         concat [ show m
                , " "
                , show u
@@ -59,6 +60,8 @@ instance Show IRequest where
                , show major
                , "."
                , show minor
+               , " "
+               , show host
                , " "
                , show r ]
 
@@ -80,14 +83,22 @@ parseRequest input = do
           then parseRequest input
           else do
             let (!mStr,!s)      = bSp line
-            let (!uri,!vStr)    = bSp s
+            let (!uri, !vStr)   = bSp s
             let method          = methodFromString mStr
-            (!major, !minor) <- pVer vStr
+            (!major, !minor)   <- pVer vStr
+            let (host, uri')    = getHost uri
 
             hdrs    <- pHeaders input
-            return $! Just $! IRequest method uri major minor hdrs
+            return $! Just $! IRequest method uri' major minor host hdrs
 
   where
+    getHost s | S.isPrefixOf "http://" s
+                  = let s'            = S.drop 7 s
+                        (!host, !uri) = S.break (== '/') s'
+                    in (Just host, uri)
+              | otherwise = (Nothing, s)
+
+
     pVer s = if S.isPrefixOf "HTTP/" s
                then either (throwIO . HttpParseException)
                            return
@@ -110,11 +121,13 @@ pLine input = go id
   where
     noCRLF = HttpParseException "parse error: expected line ending in crlf"
 
+    eolchar c = c == '\r'
+
     go !dl = do
         !mb <- Streams.read input
         !s  <- maybe (throwIO noCRLF) return mb
 
-        let (!a,!b) = S.breakSubstring "\r\n" s
+        let (!a,!b) = S.break eolchar s
 
         if S.null b
           then go (dl . (a:))
