@@ -238,6 +238,7 @@ Executable benchmark
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -rtsopts
+  ghc-prof-options: -prof -auto-all
 
   other-extensions:
     BangPatterns,
