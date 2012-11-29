@@ -22,6 +22,9 @@ steps:
       # - global: Align the import names and import list throughout the entire
       #   file.
       #
+      # - file: Like global, but don't add padding when there are no qualified
+      #   imports in the file.
+      #
       # - group: Only align the imports per group (a group is formed by adjacent
       #   import lines).
       #
@@ -59,7 +62,7 @@ steps:
 
 # A common setting is the number of columns (parts of) code will be wrapped
 # to. Different steps take this into account. Default: 80.
-columns: 78
+columns: 80
 
 # Sometimes, language extensions are specified in a cabal file or from the
 # command line instead of using language pragmas in the file. stylish-haskell

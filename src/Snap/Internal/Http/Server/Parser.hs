@@ -43,8 +43,7 @@ import           Snap.Internal.Parsing            (crlf, parseCookie,
 data IRequest = IRequest
     { iMethod         :: !Method
     , iRequestUri     :: {-# UNPACK #-} !ByteString
-    , iHttpMajor      :: {-# UNPACK #-} !Int
-    , iHttpMinor      :: {-# UNPACK #-} !Int
+    , iHttpVersion    :: {-# UNPACK #-} !(Int, Int)
     , iHost           :: !(Maybe ByteString)
     , iRequestHeaders :: ![(ByteString, ByteString)]
     }
@@ -52,7 +51,7 @@ data IRequest = IRequest
 
 ------------------------------------------------------------------------------
 instance Show IRequest where
-    show (IRequest m u major minor host r) =
+    show (IRequest m u (major, minor) host r) =
         concat [ show m
                , " "
                , show u
@@ -85,11 +84,11 @@ parseRequest input = do
             let (!mStr,!s)      = bSp line
             let (!uri, !vStr)   = bSp s
             let method          = methodFromString mStr
-            (!major, !minor)   <- pVer vStr
+            version            <- pVer vStr
             let (host, uri')    = getHost uri
 
             hdrs    <- pHeaders input
-            return $! Just $! IRequest method uri' major minor host hdrs
+            return $! Just $! IRequest method uri' version host hdrs
 
   where
     getHost s | S.isPrefixOf "http://" s

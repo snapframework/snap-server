@@ -6,6 +6,7 @@ module Snap.Internal.Http.Server.Types
   , ParseHook
   , DataFinishedHook
   , UserHandlerFinishedHook
+  , SessionFinishedHook
   , ServerHandler
   , SessionHandler
   ) where
@@ -31,6 +32,7 @@ type UserHandlerFinishedHook hookState =
 
 type DataFinishedHook hookState = hookState -> Request -> Response -> IO ()
 
+type SessionFinishedHook hookState = hookState -> IO ()
 
                           ---------------------------
                           -- snap server lifecycle --
@@ -45,11 +47,11 @@ type DataFinishedHook hookState = hookState -> Request -> Response -> IO ()
 --
 -- 2. create a 'PerSessionData' object
 --
--- 3. call the 'AcceptHook'
+-- 3. call the 'AcceptHook'.
 --
 -- 4. Enter the 'SessionHandler', which:
 --
--- 5. parses the HTTP request
+-- 5. parses the HTTP request. If the session is over, we stop here.
 --
 -- 6. calls the 'ParseHook'
 --
@@ -74,27 +76,32 @@ type DataFinishedHook hookState = hookState -> Request -> Response -> IO ()
 -- | Data and services that all HTTP response handlers share.
 --
 data ServerConfig hookState = ServerConfig
-    { logError              :: !(Builder -> IO ())
-    , onAccept              :: !(AcceptHook hookState)
-    , onParse               :: !(ParseHook hookState)
-    , onUserHandlerFinished :: !(UserHandlerFinishedHook hookState)
-    , onDataFinished        :: !(DataFinishedHook hookState)
-    , localAddress          :: {-# UNPACK #-} !ByteString
-    , localHostname         :: {-# UNPACK #-} !ByteString
-    , localPort             :: {-# UNPACK #-} !Int
+    { _logError              :: !(Builder -> IO ())
+    , _onAccept              :: !(AcceptHook hookState)
+    , _onParse               :: !(ParseHook hookState)
+    , _onUserHandlerFinished :: !(UserHandlerFinishedHook hookState)
+    , _onDataFinished        :: !(DataFinishedHook hookState)
+    , _onSessionFinished     :: !(SessionFinishedHook hookState)
+
+      -- | will be overridden by a @Host@ header if it appears.
+    , _localHostname         :: !ByteString
+    , _localPort             :: {-# UNPACK #-} !Int
+    , _defaultTimeout        :: {-# UNPACK #-} !Int
+    , _isSecure              :: {-# UNPACK #-} !Bool
     }
 
 
 ------------------------------------------------------------------------------
 -- | All of the things a session needs to service a single HTTP request.
 data PerSessionData = PerSessionData
-    { forceConnectionClose :: {-# UNPACK #-} !(IORef Bool)
-    , twiddleTimeout       :: !((Int -> Int) -> IO ())
-    , sendfileHandler      :: !(FilePath -> Int64 -> Int64 -> IO ())
-    , remoteAddress        :: {-# UNPACK #-} !ByteString
-    , remotePort           :: {-# UNPACK #-} !Int
-    , readEnd              :: {-# UNPACK #-} !(InputStream ByteString)
-    , writeEnd             :: {-# UNPACK #-} !(OutputStream ByteString)
+    { _forceConnectionClose :: {-# UNPACK #-} !(IORef Bool)
+    , _twiddleTimeout       :: !((Int -> Int) -> IO ())
+    , _sendfileHandler      :: !(FilePath -> Int64 -> Int64 -> IO ())
+    , _localAddress         :: !ByteString
+    , _remoteAddress        :: !ByteString
+    , _remotePort           :: {-# UNPACK #-} !Int
+    , _readEnd              :: !(InputStream ByteString)
+    , _writeEnd             :: !(OutputStream Builder)
     }
 
 
