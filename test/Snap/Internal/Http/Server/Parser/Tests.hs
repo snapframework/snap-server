@@ -49,7 +49,7 @@ tests = [ testShow
 ------------------------------------------------------------------------------
 testShow :: Test
 testShow = testCase "parser/show" $ do
-    let i = IRequest GET "/" 1 1 Nothing []
+    let i = IRequest GET "/" (1, 1) Nothing []
     let !b = show i `using` rdeepseq
     return $ b `seq` ()
 
@@ -160,7 +160,7 @@ testTrivials :: Test
 testTrivials = testCase "parser/trivials" $ do
     coverTypeableInstance (undefined :: HttpParseException)
     coverShowInstance (HttpParseException "ok")
-    coverEqInstance (IRequest GET "" 0 0 Nothing [])
+    coverEqInstance (IRequest GET "" (0, 0) Nothing [])
 
 
 ------------------------------------------------------------------------------
@@ -190,19 +190,19 @@ testSimpleParse :: Test
 testSimpleParse = testCase "parser/simpleParse" $ do
     Streams.fromList ["GET / HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (Just $ IRequest GET "/" 1 1 Nothing [])
+        assertEqual "simple" (Just $ IRequest GET "/" (1, 1) Nothing [])
 
     Streams.fromList ["GET http://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (Just $ IRequest GET "/" 1 1 (Just "foo.com") [])
+        assertEqual "simple" (Just $ IRequest GET "/" (1, 1) (Just "foo.com") [])
 
     Streams.fromList ["\r\nGET / HTTP/1.1\r\nz:b\r\n", "", "\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple2" (Just $ IRequest GET "/" 1 1 Nothing [("z", "b")])
+        assertEqual "simple2" (Just $ IRequest GET "/" (1, 1) Nothing [("z", "b")])
 
     Streams.fromList ["GET /\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple3" (Just $ IRequest GET "/" 1 0 Nothing [])
+        assertEqual "simple3" (Just $ IRequest GET "/" (1, 0) Nothing [])
 
     expectException (
         Streams.fromList ["\r\nGET / HTTP/1.1\r\nz:b\r\n  \r\n"] >>=

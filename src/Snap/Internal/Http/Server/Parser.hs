@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns       #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE PackageImports     #-}
 {-# LANGUAGE Rank2Types         #-}
 
 module Snap.Internal.Http.Server.Parser
@@ -91,18 +90,18 @@ parseRequest input = do
             return $! Just $! IRequest method uri' version host hdrs
 
   where
-    getHost s | S.isPrefixOf "http://" s
+    getHost s | "http://" `S.isPrefixOf` s
                   = let s'            = S.drop 7 s
                         (!host, !uri) = S.break (== '/') s'
                     in (Just host, uri)
               | otherwise = (Nothing, s)
 
 
-    pVer s = if S.isPrefixOf "HTTP/" s
+    pVer s = if "HTTP/" `S.isPrefixOf` s
                then either (throwIO . HttpParseException)
                            return
                            (parseOnly pVers (S.drop 5 s))
-               else return $! (1, 0)
+               else return (1, 0)
 
     isSp  = (== ' ')
     bSp   = splitWith isSp

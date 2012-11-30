@@ -176,7 +176,7 @@ httpSession !serverHandler !config !sessionData = begin
             readEnd' <- if isChunked
                           then readChunkedTransferEncoding readEnd
                           else return readEnd
-            maybe noContentLength Streams.takeBytes mbCL $ readEnd'
+            maybe noContentLength Streams.takeBytes mbCL readEnd'
 
         ----------------------------------------------------------------------
         noContentLength :: InputStream ByteString

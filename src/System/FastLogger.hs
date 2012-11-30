@@ -15,25 +15,40 @@ module System.FastLogger
 
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder
-import           Blaze.ByteString.Builder.Char.Utf8
-import           Control.Concurrent
-import           Control.Exception
+import           Blaze.ByteString.Builder           (Builder, fromByteString,
+                                                     fromWord8, toByteString,
+                                                     toLazyByteString)
+import           Blaze.ByteString.Builder.Char.Utf8 (fromShow)
+import           Control.Concurrent                 (MVar, ThreadId, forkIO,
+                                                     killThread, newEmptyMVar,
+                                                     putMVar, takeMVar,
+                                                     threadDelay, tryPutMVar,
+                                                     withMVar)
+import           Control.Exception                  (AsyncException,
+                                                     Handler (..),
+                                                     SomeException, catch,
+                                                     catches)
+import           Control.Monad                      (unless, void, when)
 import           Data.ByteString.Char8              (ByteString)
 import qualified Data.ByteString.Char8              as S
 import           Data.ByteString.Internal           (c2w)
 import qualified Data.ByteString.Lazy.Char8         as L
-import           Data.Int
-import           Data.IORef
-import           Data.Monoid
+import           Data.Int                           (Int64)
+import           Data.IORef                         (IORef, atomicModifyIORef,
+                                                     newIORef, readIORef,
+                                                     writeIORef)
+import           Data.Monoid                        (mappend, mconcat, mempty)
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                            hiding (catch)
 #endif
-import           System.IO
+import           System.IO                          (IOMode (AppendMode),
+                                                     hClose, hFlush, openFile,
+                                                     stderr, stdout)
 
-import           Snap.Internal.Http.Server.Date
+import           Snap.Internal.Http.Server.Date     (getCurrentDateTime,
+                                                     getLogDateString)
 
 
 ------------------------------------------------------------------------------
@@ -149,46 +164,37 @@ combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
 -- (or use 'combinedLogEntry').
 logMsg :: Logger -> ByteString -> IO ()
 logMsg !lg !s = do
-    let !s' = fromByteString s `mappend` (fromWord8 $ c2w '\n')
+    let !s' = fromByteString s `mappend` fromWord8 (c2w '\n')
     atomicModifyIORef (_queuedMessages lg) $ \d -> (d `mappend` s',())
-    tryPutMVar (_dataWaiting lg) () >> return ()
+    void $ tryPutMVar (_dataWaiting lg) ()
 
 
 ------------------------------------------------------------------------------
 loggingThread :: Logger -> IO ()
-loggingThread (Logger queue notifier filePath _ errAct) = do
-    initialize >>= go
-
+loggingThread (Logger queue notifier filePath _ errAct) = initialize >>= go
   where
     --------------------------------------------------------------------------
-    openIt =
-        if filePath == "-"
-          then return stdout
-          else
-            if filePath == "stderr"
-              then return stderr
-              else openFile filePath AppendMode `catch`
-                     \(e::SomeException) -> do
-                       logInternalError $ "Can't open log file \"" ++
-                                          filePath ++ "\".\n"
-                       logInternalError $ "Exception: " ++ show e ++ "\n"
-                       logInternalError $ "Logging to stderr instead. " ++
-                                          "**THIS IS BAD, YOU OUGHT TO " ++
-                                          "FIX THIS**\n\n"
-                       return stderr
+    openIt | filePath == "-"      = return stdout
+           | filePath == "stderr" = return stderr
+           | otherwise =
+               openFile filePath AppendMode `catch` \(e::SomeException) -> do
+                   logInternalError $ "Can't open log file \"" ++
+                                      filePath ++ "\".\n"
+                   logInternalError $ "Exception: " ++ show e ++ "\n"
+                   logInternalError $ "Logging to stderr instead. " ++
+                                      "**THIS IS BAD, YOU OUGHT TO " ++
+                                      "FIX THIS**\n\n"
+                   return stderr
 
     --------------------------------------------------------------------------
-    closeIt h = if h == stdout || h == stderr
-                  then return ()
-                  else hClose h
+    closeIt h = unless (h == stdout || h == stderr) $ hClose h
 
     --------------------------------------------------------------------------
     logInternalError = errAct . T.encodeUtf8 . T.pack
 
     --------------------------------------------------------------------------
     go (href, lastOpened) =
-        (loop (href, lastOpened))
-          `catches`
+        loop (href, lastOpened) `catches`
           [ Handler $ \(_::AsyncException) -> killit (href, lastOpened)
           , Handler $ \(e::SomeException)  -> do
                 logInternalError $ "logger got exception: "
@@ -221,19 +227,17 @@ loggingThread (Logger queue notifier filePath _ errAct) = do
             hFlush h) `catch` \(e::SomeException) -> do
                 logInternalError $ "got exception writing to log " ++
                                    filePath ++ ": " ++ show e ++ "\n"
-                logInternalError $ "writing log entries to stderr.\n"
+                logInternalError "writing log entries to stderr.\n"
                 mapM_ errAct $ L.toChunks msgs
 
         -- close the file every 15 minutes (for log rotation)
         t   <- getCurrentDateTime
         old <- readIORef lastOpened
 
-        if t-old > 900
-          then do
-              closeIt h
-              openIt >>= writeIORef href
-              writeIORef lastOpened t
-          else return ()
+        when (t - old > 900) $ do
+            closeIt h
+            openIt >>= writeIORef href
+            writeIORef lastOpened t
 
     --------------------------------------------------------------------------
     loop !d = do

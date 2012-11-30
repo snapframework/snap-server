@@ -64,23 +64,22 @@ quickHttpServe = undefined
 -- | Given a string like \"en_US\", this sets the locale to \"en_US.UTF-8\".
 -- This doesn't work on Windows.
 setUnicodeLocale :: String -> IO ()
-setUnicodeLocale =
 #ifndef PORTABLE
-    \lang -> mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
-               [ "LANG"
-               , "LC_CTYPE"
-               , "LC_NUMERIC"
-               , "LC_TIME"
-               , "LC_COLLATE"
-               , "LC_MONETARY"
-               , "LC_MESSAGES"
-               , "LC_PAPER"
-               , "LC_NAME"
-               , "LC_ADDRESS"
-               , "LC_TELEPHONE"
-               , "LC_MEASUREMENT"
-               , "LC_IDENTIFICATION"
-               , "LC_ALL" ]
+setUnicodeLocale lang = mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
+                            [ "LANG"
+                            , "LC_CTYPE"
+                            , "LC_NUMERIC"
+                            , "LC_TIME"
+                            , "LC_COLLATE"
+                            , "LC_MONETARY"
+                            , "LC_MESSAGES"
+                            , "LC_PAPER"
+                            , "LC_NAME"
+                            , "LC_ADDRESS"
+                            , "LC_TELEPHONE"
+                            , "LC_MEASUREMENT"
+                            , "LC_IDENTIFICATION"
+                            , "LC_ALL" ]
 #else
-    const $ return ()
+setUnicodeLocale = const $ return ()
 #endif

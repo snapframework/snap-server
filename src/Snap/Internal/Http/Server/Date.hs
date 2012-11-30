@@ -44,7 +44,8 @@ fetchTime = do
     !now <- epochTime
     !t1  <- formatHttpTime now
     !t2  <- formatLogTime now
-    return $! (t1, t2, now)
+    let !out = (t1, t2, now)
+    return out
 
 
 ------------------------------------------------------------------------------

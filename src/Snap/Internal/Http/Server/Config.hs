@@ -472,72 +472,72 @@ optDescrs :: MonadSnap m =>
              Config m a         -- ^ the configuration defaults.
           -> [OptDescr (Maybe (Config m a))]
 optDescrs defaults =
-    [ Option [] ["hostname"]
+    [ Option "" ["hostname"]
              (ReqArg (Just . setConfig setHostname . bsFromString) "NAME")
              $ "local hostname" ++ defaultC getHostname
-    , Option ['b'] ["address"]
+    , Option "b" ["address"]
              (ReqArg (\s -> Just $ mempty { bind = Just $ bsFromString s })
                      "ADDRESS")
              $ "address to bind to" ++ defaultO bind
-    , Option ['p'] ["port"]
+    , Option "p" ["port"]
              (ReqArg (\s -> Just $ mempty { port = Just $ read s}) "PORT")
              $ "port to listen on" ++ defaultO port
-    , Option [] ["ssl-address"]
+    , Option "" ["ssl-address"]
              (ReqArg (\s -> Just $ mempty { sslbind = Just $ bsFromString s })
                      "ADDRESS")
              $ "ssl address to bind to" ++ defaultO sslbind
-    , Option [] ["ssl-port"]
+    , Option "" ["ssl-port"]
              (ReqArg (\s -> Just $ mempty { sslport = Just $ read s}) "PORT")
              $ "ssl port to listen on" ++ defaultO sslport
-    , Option [] ["ssl-cert"]
+    , Option "" ["ssl-cert"]
              (ReqArg (\s -> Just $ mempty { sslcert = Just s}) "PATH")
              $ "path to ssl certificate in PEM format" ++ defaultO sslcert
-    , Option [] ["ssl-key"]
+    , Option "" ["ssl-key"]
              (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey
-    , Option [] ["access-log"]
+    , Option "" ["access-log"]
              (ReqArg (Just . setConfig setAccessLog . ConfigFileLog) "PATH")
-             $ "access log" ++ (defaultC $ getAccessLog)
-    , Option [] ["error-log"]
+             $ "access log" ++ defaultC getAccessLog
+    , Option "" ["error-log"]
              (ReqArg (Just . setConfig setErrorLog . ConfigFileLog) "PATH")
-             $ "error log" ++ (defaultC $ getErrorLog)
-    , Option [] ["no-access-log"]
+             $ "error log" ++ defaultC getErrorLog
+    , Option "" ["no-access-log"]
              (NoArg $ Just $ setConfig setAccessLog ConfigNoLog)
-             $ "don't have an access log"
-    , Option [] ["no-error-log"]
+             "don't have an access log"
+    , Option "" ["no-error-log"]
              (NoArg $ Just $ setConfig setErrorLog ConfigNoLog)
-             $ "don't have an error log"
-    , Option ['c'] ["compression"]
+             "don't have an error log"
+    , Option "c" ["compression"]
              (NoArg $ Just $ setConfig setCompression True)
              $ "use gzip compression on responses" ++
                defaultB getCompression "compressed" "uncompressed"
-    , Option ['t'] ["timeout"]
+    , Option "t" ["timeout"]
              (ReqArg (\t -> Just $ mempty {
                               defaultTimeout = Just $ read t
                             }) "SECS")
              $ "set default timeout in seconds" ++ defaultC defaultTimeout
-    , Option [] ["no-compression"]
+    , Option "" ["no-compression"]
              (NoArg $ Just $ setConfig setCompression False)
              $ "serve responses uncompressed" ++
                defaultB compression "compressed" "uncompressed"
-    , Option ['v'] ["verbose"]
+    , Option "v" ["verbose"]
              (NoArg $ Just $ setConfig setVerbose True)
              $ "print server status updates to stderr" ++
                defaultC getVerbose
-    , Option ['q'] ["quiet"]
+    , Option "q" ["quiet"]
              (NoArg $ Just $ setConfig setVerbose False)
              $ "do not print anything to stderr" ++
                defaultB getVerbose "verbose" "quiet"
-    , Option [] ["proxy"]
-             (ReqArg (\t -> Just $ setConfig setProxyType $ read t)
+    , Option "" ["proxy"]
+             (ReqArg (Just . setConfig setProxyType . read)
                      "X_Forwarded_For")
              $ concat [ "Set --proxy=X_Forwarded_For if your snap application "
                       , "is behind an HTTP reverse proxy to ensure that "
                       , "rqRemoteAddr is set properly."
                       , defaultC getProxyType ]
-    , Option ['h'] ["help"]
+    , Option "h" ["help"]
              (NoArg Nothing)
-             $ "display this help and exit"
+             "display this help and exit"
     ]
 
   where

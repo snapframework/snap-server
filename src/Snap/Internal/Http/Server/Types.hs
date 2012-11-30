@@ -87,7 +87,7 @@ data ServerConfig hookState = ServerConfig
     , _localHostname         :: !ByteString
     , _localPort             :: {-# UNPACK #-} !Int
     , _defaultTimeout        :: {-# UNPACK #-} !Int
-    , _isSecure              :: {-# UNPACK #-} !Bool
+    , _isSecure              :: !Bool
     }
 
 
