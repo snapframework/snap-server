@@ -8,17 +8,20 @@ module Snap.Internal.Http.Server.Session
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder         (flush, fromByteString)
+import           Blaze.ByteString.Builder         (Builder, flush,
+                                                   fromByteString)
 import           Blaze.ByteString.Builder.Char8   (fromChar, fromShow)
 import           Control.Applicative              ((<$>), (<|>))
 import           Control.Arrow                    (first, second)
-import           Control.Exception                (Exception,
-                                                   SomeException (..), throwIO)
+import           Control.Exception                (Exception, Handler (..),
+                                                   SomeException (..), catches,
+                                                   throwIO)
 import           Control.Monad                    (when)
 import           Data.ByteString.Char8            (ByteString)
 import qualified Data.ByteString.Char8            as S
 import qualified Data.CaseInsensitive             as CI
 import           Data.Int                         (Int64)
+import           Data.IORef                       (writeIORef)
 import qualified Data.Map                         as Map
 import           Data.Maybe                       (fromMaybe)
 import           Data.Monoid                      (mconcat)
@@ -26,6 +29,7 @@ import           Data.Typeable                    (Typeable)
 import           System.IO.Streams                (InputStream)
 import qualified System.IO.Streams                as Streams
 ------------------------------------------------------------------------------
+import           Snap.Core                        (EscapeSnap (..))
 import           Snap.Internal.Http.Server.Parser (IRequest (..), parseCookie,
                                                    parseRequest,
                                                    parseUrlEncoded,
@@ -38,7 +42,8 @@ import           Snap.Internal.Http.Server.Types  (AcceptHook, DataFinishedHook,
                                                    SessionFinishedHook,
                                                    SessionHandler,
                                                    UserHandlerFinishedHook)
-import           Snap.Internal.Http.Types         (Method (..), Request (..))
+import           Snap.Internal.Http.Types         (Method (..), Request (..),
+                                                   getHeader)
 import           Snap.Internal.Parsing            (unsafeFromInt)
 import qualified Snap.Types.Headers               as H
 ------------------------------------------------------------------------------
@@ -64,33 +69,34 @@ mAX_HEADERS_SIZE = 256 * 1024
 
 
 ------------------------------------------------------------------------------
-httpSession :: ServerHandler hookState
+httpSession :: hookState
+            -> ServerHandler hookState
             -> ServerConfig hookState
             -> PerSessionData
             -> IO ()
-httpSession !serverHandler !config !sessionData = begin
+httpSession !hookState !serverHandler !config !sessionData = begin
   where
     --------------------------------------------------------------------------
-    defaultTimeout = _defaultTimeout config
-    localAddress   = _localAddress sessionData
-    localPort      = _localPort config
-    localHostname  = _localHostname config
-    readEnd        = _readEnd sessionData
-    remoteAddress  = _remoteAddress sessionData
-    remotePort     = _remotePort sessionData
-    tickle         = _twiddleTimeout sessionData
-    writeEnd       = _writeEnd sessionData
-    isSecure       = _isSecure config
+    defaultTimeout       = _defaultTimeout config
+    localAddress         = _localAddress sessionData
+    localPort            = _localPort config
+    localHostname        = _localHostname config
+    readEnd              = _readEnd sessionData
+    remoteAddress        = _remoteAddress sessionData
+    remotePort           = _remotePort sessionData
+    tickle               = _twiddleTimeout sessionData
+    writeEnd             = _writeEnd sessionData
+    isSecure             = _isSecure config
+    forceConnectionClose = _forceConnectionClose sessionData
+    logError             = _logError config
 
     --------------------------------------------------------------------------
     {-# INLINE begin #-}
     begin :: IO ()
     begin = do
-        -- call "accept hook"
-        hookState <- _onAccept config sessionData
         -- parse HTTP request
         receiveRequest >>= maybe (_onSessionFinished config hookState)
-                                 (processRequest hookState)
+                                 processRequest
 
     --------------------------------------------------------------------------
     {-# INLINE receiveRequest #-}
@@ -122,6 +128,7 @@ httpSession !serverHandler !config !sessionData = begin
         readEnd' <- setupReadEnd
         (readEnd'', postParams) <- parseForm readEnd'
         let allParams = Map.unionWith (++) queryParams postParams
+        checkConnectionClose version hdrs
         return $! Request host
                           remoteAddress
                           remotePort
@@ -220,6 +227,18 @@ httpSession !serverHandler !config !sessionData = begin
                 finalReadEnd <- Streams.fromList [contents]
                 return (finalReadEnd, postParams)
 
+    ----------------------------------------------------------------------
+    checkConnectionClose version hdrs = do
+        -- For HTTP/1.1: if there is an explicit Connection: close, close
+        -- the socket.
+        --
+        -- For HTTP/1.0: if there is no explicit Connection: Keep-Alive,
+        -- close the socket.
+        let v = CI.mk <$> H.lookup "Connection" hdrs
+        when ((version == (1, 1) && v == Just "close") ||
+              (version == (1, 0) && v /= Just "keep-alive")) $
+              writeIORef forceConnectionClose True
+
     --------------------------------------------------------------------------
     {-# INLINE badRequestWithNoHost #-}
     badRequestWithNoHost :: IO a
@@ -234,13 +253,54 @@ httpSession !serverHandler !config !sessionData = begin
         terminateSession BadRequestException
 
     --------------------------------------------------------------------------
+    {-# INLINE checkExpect100Continue #-}
+    checkExpect100Continue req =
+        when (getHeader "Expect" req == Just "100-continue") $ do
+            let (major, minor) = rqVersion req
+            let hl = mconcat [ fromByteString "HTTP/"
+                             , fromShow major
+                             , fromChar '.'
+                             , fromShow minor
+                             , fromByteString " 100 Continue\r\n\r\n"
+                             , flush
+                             ]
+            Streams.write (Just hl) writeEnd
+
+    --------------------------------------------------------------------------
     {-# INLINE processRequest #-}
-    processRequest !hookState !ireq = do
+    processRequest !req = do
         -- successfully parsed a request, so restart the timer
         tickle $ max defaultTimeout
 
         -- check for Expect: 100-continue
+        checkExpect100Continue req
+        runServerHandler req
+          `catches` [ Handler escapeSnapHandler
+                    , Handler $ catchUserException "user handler" req
+                    ]
         undefined
+
+    --------------------------------------------------------------------------
+    {-# INLINE runServerHandler #-}
+    runServerHandler !req = do
+        undefined
+
+    --------------------------------------------------------------------------
+    escapeSnapHandler (EscapeHttp escapeHandler) = escapeHandler tickle
+                                                                 readEnd
+                                                                 writeEnd
+    escapeSnapHandler (TerminateConnection e)    = terminateSession e
+
+    --------------------------------------------------------------------------
+    catchUserException :: ByteString -> Request -> SomeException -> IO ()
+    catchUserException phase req e = do
+        logError $ mconcat [
+            fromByteString "Exception leaked to httpSession during phase '"
+          , fromByteString phase
+          , fromByteString "': \n"
+          , requestErrorMessage req e
+          ]
+        terminateSession e
 
 
 ------------------------------------------------------------------------------
@@ -251,3 +311,22 @@ toHeaders = H.fromList . map (first CI.mk)
 ------------------------------------------------------------------------------
 terminateSession :: Exception e => e -> IO a
 terminateSession = throwIO . TerminateSessionException . SomeException
+
+
+------------------------------------------------------------------------------
+requestErrorMessage :: Request -> SomeException -> Builder
+requestErrorMessage req e =
+    mconcat [ fromByteString "During processing of request from "
+            , fromByteString $ rqRemoteAddr req
+            , fromByteString ":"
+            , fromShow $ rqRemotePort req
+            , fromByteString "\nrequest:\n"
+            , fromShow $ show req
+            , fromByteString "\n"
+            , msgB
+            ]
+  where
+    msgB = mconcat [
+             fromByteString "A web handler threw an exception. Details:\n"
+           , fromShow e
+           ]
