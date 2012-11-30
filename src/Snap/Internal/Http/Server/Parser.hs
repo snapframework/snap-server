@@ -94,6 +94,10 @@ parseRequest input = do
                   = let s'            = S.drop 7 s
                         (!host, !uri) = S.break (== '/') s'
                     in (Just host, uri)
+              | "https://" `S.isPrefixOf` s
+                  = let s'            = S.drop 8 s
+                        (!host, !uri) = S.break (== '/') s'
+                    in (Just host, uri)
               | otherwise = (Nothing, s)
 
 

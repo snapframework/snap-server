@@ -108,8 +108,8 @@ httpSession !serverHandler !config !sessionData = begin
         -- message which lacks a Host header field."
         --
         -- Here we interpret this slightly more liberally: if an absolute URI
-        -- is given in the request line, we'll take that if there's no Host
-        -- header.
+        -- including a hostname is given in the request line, we'll take that
+        -- if there's no Host header.
         --
         -- For HTTP/1.0 requests, we pick the configured local hostname by
         -- default.

@@ -196,6 +196,10 @@ testSimpleParse = testCase "parser/simpleParse" $ do
         parseRequest >>=
         assertEqual "simple" (Just $ IRequest GET "/" (1, 1) (Just "foo.com") [])
 
+    Streams.fromList ["GET https://foo.com/ HTTP/1.1\r\n\r\n"] >>=
+        parseRequest >>=
+        assertEqual "simple" (Just $ IRequest GET "/" (1, 1) (Just "foo.com") [])
+
     Streams.fromList ["\r\nGET / HTTP/1.1\r\nz:b\r\n", "", "\r\n"] >>=
         parseRequest >>=
         assertEqual "simple2" (Just $ IRequest GET "/" (1, 1) Nothing [("z", "b")])
