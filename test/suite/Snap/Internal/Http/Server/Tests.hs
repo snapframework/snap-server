@@ -1,9 +1,9 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Snap.Internal.Http.Server.Tests
   ( tests ) where
@@ -11,51 +11,47 @@ module Snap.Internal.Http.Server.Tests
 import           Blaze.ByteString.Builder
 import           Blaze.ByteString.Builder.Enumerator
 import           Control.Concurrent
-import           Control.Exception ( catch
-                                   , try
-                                   , throwIO
-                                   , bracket
-                                   , finally
-                                   , SomeException
-                                   , Exception )
+import           Control.Exception                   (Exception, SomeException,
+                                                      bracket, catch, finally,
+                                                      throwIO, try)
 import           Control.Monad
 import           Control.Monad.Trans
-import qualified Data.ByteString.Char8 as S
-import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Lazy.Char8 as LC
-import           Data.ByteString (ByteString)
-import           Data.ByteString.Internal (c2w)
-import qualified Data.CaseInsensitive as CI
+import           Data.ByteString                     (ByteString)
+import qualified Data.ByteString.Char8               as S
+import           Data.ByteString.Internal            (c2w)
+import qualified Data.ByteString.Lazy                as L
+import qualified Data.ByteString.Lazy.Char8          as LC
+import qualified Data.CaseInsensitive                as CI
 import           Data.Char
-import qualified Data.Enumerator as E
-import qualified Data.Enumerator.List as EL
+import qualified Data.Enumerator                     as E
+import qualified Data.Enumerator.List                as EL
 import           Data.Int
 import           Data.IORef
-import           Data.List (foldl', sort)
-import           Data.Maybe (fromJust, isJust)
+import           Data.List                           (foldl', sort)
+import           Data.Maybe                          (fromJust, isJust)
 import           Data.Time.Calendar
 import           Data.Time.Clock
 import           Data.Typeable
-import qualified Network.HTTP.Enumerator as HTTP
-import qualified Network.Socket.ByteString as N
-import           Prelude hiding (catch, take)
+import qualified Network.HTTP.Conduit                as HTTP
+import qualified Network.Socket.ByteString           as N
+import           Prelude                             hiding (catch, take)
 import qualified Prelude
 import           System.Timeout
 import           Test.Framework
 import           Test.Framework.Providers.HUnit
-import           Test.HUnit hiding (Test, path)
+import           Test.HUnit                          hiding (Test, path)
 
-import qualified Snap.Http.Server as Svr
+import qualified Snap.Http.Server                    as Svr
 
 import           Snap.Core
 import           Snap.Internal.Debug
-import           Snap.Internal.Http.Types
 import           Snap.Internal.Http.Server
-import qualified Snap.Iteratee as I
-import           Snap.Iteratee hiding (map)
 import           Snap.Internal.Http.Server.Backend
+import           Snap.Internal.Http.Types
+import           Snap.Iteratee                       hiding (map)
+import qualified Snap.Iteratee                       as I
 import           Snap.Test.Common
-import qualified Snap.Types.Headers as H
+import qualified Snap.Types.Headers                  as H
 
 data TestException = TestException
   deriving (Show, Typeable)

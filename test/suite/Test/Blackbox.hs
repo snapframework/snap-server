@@ -1,7 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Test.Blackbox
   ( tests
@@ -11,36 +11,38 @@ module Test.Blackbox
 --------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder
 import           Control.Concurrent
-import           Control.Exception (SomeException, catch, throwIO)
+import           Control.Exception                    (SomeException, catch,
+                                                       throwIO)
 import           Control.Monad
 import           Control.Monad.Trans
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8 as S
-import           Data.ByteString.Char8 (ByteString)
-import qualified Data.ByteString.Lazy.Char8 as L
-import           Data.CaseInsensitive (CI)
+import qualified Data.ByteString.Base16               as B16
+import           Data.ByteString.Char8                (ByteString)
+import qualified Data.ByteString.Char8                as S
+import qualified Data.ByteString.Lazy.Char8           as L
+import           Data.CaseInsensitive                 (CI)
+import           Data.Conduit                         (ResourceT)
 import           Data.Int
 import           Data.List
 import           Data.Monoid
-import qualified Network.HTTP.Enumerator as HTTP
-import qualified Network.Socket.ByteString as N
-import           Network.TLS (TLSCertificateUsage(..))
-import           Prelude hiding (catch, take)
+import qualified Network.HTTP.Conduit                 as HTTP
+import qualified Network.Socket.ByteString            as N
+import           Network.TLS                          (CertificateUsage (..))
+import           Prelude                              hiding (catch, take)
 import           System.Timeout
 import           Test.Framework
 import           Test.Framework.Options
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
-import           Test.HUnit hiding (Test, path)
+import           Test.HUnit                           hiding (Test, path)
 import           Test.QuickCheck
-import qualified Test.QuickCheck.Property as QC
-import qualified Test.QuickCheck.Monadic as QC
-import           Test.QuickCheck.Monadic hiding (run, assert)
+import           Test.QuickCheck.Monadic              hiding (assert, run)
+import qualified Test.QuickCheck.Monadic              as QC
+import qualified Test.QuickCheck.Property             as QC
 ------------------------------------------------------------------------------
-import           Snap.Internal.Debug
-import           Snap.Iteratee hiding (map, head)
-import qualified Snap.Iteratee as I
 import           Snap.Http.Server
+import           Snap.Internal.Debug
+import           Snap.Iteratee                        hiding (head, map)
+import qualified Snap.Iteratee                        as I
 import           Snap.Test.Common
 import           Test.Common.Rot13
 import           Test.Common.TestHandler
@@ -379,42 +381,38 @@ seconds = (10::Int) ^ (6::Int)
 
 
 ------------------------------------------------------------------------------
-parseURL :: String -> IO (HTTP.Request IO)
-parseURL url = do
-    req <- HTTP.parseUrl url
-    return $ req { HTTP.checkCerts = const $ const $
-                                     return CertificateUsageAccept }
-
-
-------------------------------------------------------------------------------
-fetchReq :: HTTP.Request IO -> IO (L.ByteString)
+fetchReq :: HTTP.Request (ResourceT IO) -> IO (L.ByteString)
 fetchReq req = go `catch` (\(e::SomeException) -> do
                  debug $ "simpleHttp threw exception: " ++ show e
                  throwIO e)
   where
     go = do
-        rsp <- HTTP.withManager $ HTTP.httpLbs req
+        rsp <- HTTP.withManagerSettings settings $ HTTP.httpLbs req
         return $ HTTP.responseBody rsp
 
+    settings = HTTP.def { HTTP.managerCheckCerts = \_ _ _ ->
+                          return CertificateUsageAccept }
 
 ------------------------------------------------------------------------------
-fetchResponse :: String -> IO (HTTP.Response)
+fetchResponse :: String -> IO (HTTP.Response L.ByteString)
 fetchResponse url = do
-    req <- parseURL url `catch` (\(e::SomeException) -> do
-               debug $ "parseURL threw exception: " ++ show e
+    req <- HTTP.parseUrl url `catch` (\(e::SomeException) -> do
+               debug $ "parseUrl threw exception: " ++ show e
                throwIO e)
     go req `catch` (\(e::SomeException) -> do
                        debug $ "simpleHttp threw exception: " ++ show e
                        throwIO e)
   where
-    go req = HTTP.withManager $ HTTP.httpLbs req
+    go req = HTTP.withManagerSettings settings $ HTTP.httpLbs req
+    settings = HTTP.def { HTTP.managerCheckCerts = \_ _ _ ->
+                          return CertificateUsageAccept }
 
 
 ------------------------------------------------------------------------------
 fetch :: String -> IO (L.ByteString)
 fetch url = do
-    req <- parseURL url `catch` (\(e::SomeException) -> do
-                 debug $ "parseURL threw exception: " ++ show e
+    req <- HTTP.parseUrl url `catch` (\(e::SomeException) -> do
+                 debug $ "HTTP.parseUrl threw exception: " ++ show e
                  throwIO e)
     fetchReq req
 
@@ -425,8 +423,8 @@ post :: String
      -> [(CI ByteString, ByteString)]
      -> IO (L.ByteString)
 post url body hdrs = do
-    req <- parseURL url `catch` (\(e::SomeException) -> do
-                 debug $ "parseURL threw exception: " ++ show e
+    req <- HTTP.parseUrl url `catch` (\(e::SomeException) -> do
+                 debug $ "HTTP.parseUrl threw exception: " ++ show e
                  throwIO e)
     fetchReq $ req { HTTP.requestBody    = HTTP.RequestBodyLBS body
                    , HTTP.method         = "POST"
