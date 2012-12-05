@@ -1,7 +1,14 @@
 {-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE CPP                #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE MagicHash          #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE Rank2Types         #-}
+{-# LANGUAGE UnboxedTuples      #-}
+
+#if __GLASGOW_HASKELL__ >= 702
+{-# LANGUAGE Trustworthy        #-}
+#endif
 
 module Snap.Internal.Http.Server.Parser
   ( IRequest(..)
@@ -17,15 +24,16 @@ module Snap.Internal.Http.Server.Parser
 ------------------------------------------------------------------------------
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
-import           Control.Monad                    (void)
-import           Data.Attoparsec.ByteString.Char8 (Parser, decimal, hexadecimal,
-                                                   parseOnly, take, takeTill,
-                                                   takeWhile)
+import           Control.Monad                    (void, when)
+import           Data.Attoparsec.ByteString.Char8 (Parser, char, decimal,
+                                                   hexadecimal, parseOnly, take,
+                                                   takeTill)
 import           Data.ByteString.Char8            (ByteString)
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (w2c)
 import qualified Data.ByteString.Unsafe           as S
 import           Data.Typeable                    (Typeable)
+import           GHC.Exts                         (Int (..), Int#, (+#))
 import           Prelude                          hiding (head, take, takeWhile)
 import           System.IO.Streams                (InputStream)
 import qualified System.IO.Streams                as Streams
@@ -33,8 +41,7 @@ import           System.IO.Streams.Attoparsec     (parseFromStream)
 ----------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
 import           Snap.Internal.Parsing            (crlf, parseCookie,
-                                                   parseUrlEncoded, strictize,
-                                                   trim)
+                                                   parseUrlEncoded, strictize)
 
 
 ------------------------------------------------------------------------------
@@ -107,12 +114,11 @@ parseRequest input = do
                            (parseOnly pVers (S.drop 5 s))
                else return (1, 0)
 
-    isSp  = (== ' ')
-    bSp   = splitWith isSp
+    bSp   = splitCh ' '
 
     pVers = do
         !x <- decimal
-        _  <- takeWhile (== '.')
+        void (char '.')
         !y <- decimal
         return (x, y)
 
@@ -121,28 +127,86 @@ parseRequest input = do
 pLine :: InputStream ByteString -> IO ByteString
 pLine input = go id
   where
-    noCRLF = HttpParseException "parse error: expected line ending in crlf"
+    throwNoCRLF =
+        throwIO $
+        HttpParseException "parse error: expected line ending in crlf"
 
-    eolchar c = c == '\r'
+    throwBadCRLF =
+        throwIO $
+        HttpParseException "parse error: got cr without subsequent lf"
 
     go !dl = do
         !mb <- Streams.read input
-        !s  <- maybe (throwIO noCRLF) return mb
+        !s  <- maybe throwNoCRLF return mb
 
-        let (!a,!b) = S.break eolchar s
+        case findCRLF s of
+            FoundCRLF idx# -> foundCRLF dl s idx#
+            NoCR           -> noCRLF dl s
+            LastIsCR idx#  -> lastIsCR dl s idx#
+            _              -> throwBadCRLF
 
-        if S.null b
-          then go (dl . (a:))
+    foundCRLF dl s idx# = do
+        let !i1 = (I# idx#)
+        let !i2 = (I# (idx# +# 2#))
+        let !a = S.unsafeTake i1 s
+        when (i2 < S.length s) $ do
+            let !b = S.unsafeDrop i2 s
+            Streams.unRead b input
+
+        -- Optimize for the common case: dl is almost always "id"
+        let l = dl []
+        let !out = if null l then a else S.concat (l ++ [a])
+        return out
+
+    noCRLF dl s = go (dl . (s:))
+
+    lastIsCR dl s idx# = do
+        !t <- Streams.read input >>= maybe throwNoCRLF return
+        if S.null t
+          then lastIsCR dl s idx#
           else do
-            Streams.unRead (S.drop 2 b) input
-            return $! S.concat $! dl [a]
+            let !c = S.unsafeHead t
+            if c /= 10
+              then throwBadCRLF
+              else do
+                  let !a = S.unsafeTake (I# idx#) s
+                  let !b = S.drop 1 t
+                  when (not $ S.null b) $ Streams.unRead b input
+                  let l = dl []
+                  let !out = if null l then a else S.concat (l ++ [a])
+                  return out
 
 
 ------------------------------------------------------------------------------
-splitWith :: (Char -> Bool) -> ByteString -> (ByteString,ByteString)
-splitWith !f !s = let (!a,!b) = S.break f s
-                      !b'     = S.dropWhile f b
-                  in (a, b')
+data CS = FoundCRLF !Int#
+        | NoCR
+        | LastIsCR !Int#
+        | BadCR
+
+
+------------------------------------------------------------------------------
+findCRLF :: ByteString -> CS
+findCRLF b =
+    case S.elemIndex '\r' b of
+      Nothing         -> NoCR
+      Just !i@(I# i#) ->
+          let !i' = i + 1
+          in if i' < S.length b
+               then if S.unsafeIndex b i' == 10
+                      then FoundCRLF i#
+                      else BadCR
+               else LastIsCR i#
+{-# INLINE findCRLF #-}
+
+
+------------------------------------------------------------------------------
+splitCh :: Char -> ByteString -> (ByteString, ByteString)
+splitCh !c !s = maybe (s, S.empty) f (S.elemIndex c s)
+  where
+    f !i = let !a = S.unsafeTake i s
+               !b = S.unsafeDrop (i + 1) s
+           in (a, b)
+{-# INLINE splitCh #-}
 
 
 ------------------------------------------------------------------------------
@@ -160,28 +224,30 @@ pHeaders input = do
             let (!k,!v) = pOne line
             vf <- pCont id
             let vs = vf []
-            let !v' = S.concat (v:vs)
+            let !v' = if null vs then v else S.concat (v:vs)
             go (dlistSoFar . ((k,v'):))
 
       where
-        pOne s = let (k,v) = splitWith (== ':') s
-                 in (trim k, trim v)
+        trimBegin = S.dropWhile isLWS
 
-        isCont c = c == ' ' || c == '\t'
+        pOne s = let (k,v) = splitCh ':' s
+                 in (k, trimBegin v)
+
+        isLWS c = c == ' ' || c == '\t'
 
         pCont !dlist = do
             mbS  <- Streams.peek input
             maybe (return dlist)
                   (\s -> if S.null s
                            then Streams.read input >> pCont dlist
-                           else if isCont $ w2c $ S.unsafeHead s
+                           else if isLWS $ w2c $ S.unsafeHead s
                                   then procCont dlist
                                   else return dlist)
                   mbS
 
         procCont !dlist = do
             line <- pLine input
-            let !t = trim line
+            let !t = trimBegin line
             pCont (dlist . (" ":) . (t:))
 
 
@@ -221,7 +287,7 @@ mAX_CHUNK_SIZE = (2::Int)^(18::Int)
 pGetTransferChunk :: Parser (Maybe ByteString)
 pGetTransferChunk = do
     !hex <- hexadecimal
-    !_   <- takeTill (== '\r')
+    void (takeTill (== '\r'))
     void crlf
     if hex >= mAX_CHUNK_SIZE
       then return $! E.throw $! HttpParseException $!
