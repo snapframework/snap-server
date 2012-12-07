@@ -245,7 +245,8 @@ httpSession !hookState !serverHandler !config !sessionData = begin
     badRequestWithNoHost = do
         let msg = mconcat [
                     fromByteString "HTTP/1.1 400 Bad Request\r\n\r\n"
-                  , fromByteString "Bad request: no Host header"
+                  , fromByteString "400 Bad Request: HTTP/1.1 request with no "
+                  , fromByteString "Host header\r\n"
                   , flush
                   ]
         Streams.write (Just msg) writeEnd
