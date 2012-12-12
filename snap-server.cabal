@@ -151,7 +151,7 @@ Test-suite testsuite
     containers                 >= 0.3      && < 0.6,
     filepath                   >= 1.1      && < 1.4,
     io-streams                 >= 0.1      && < 0.2,
-    lifted-base                >= 0.1      && < 0.2,
+    lifted-base                >= 0.1      && < 0.3,
     monad-control              >= 0.3      && < 0.4,
     network                    >= 2.3      && < 2.5,
     old-locale,
