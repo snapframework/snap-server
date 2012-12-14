@@ -533,7 +533,7 @@ optDescrs defaults =
                      "X_Forwarded_For")
              $ concat [ "Set --proxy=X_Forwarded_For if your snap application "
                       , "is behind an HTTP reverse proxy to ensure that "
-                      , "rqRemoteAddr is set properly."
+                      , "rqClientAddr is set properly."
                       , defaultC getProxyType ]
     , Option "h" ["help"]
              (NoArg Nothing)
@@ -674,9 +674,9 @@ fmapOpt f (Option s l d e) = Option s l (fmapArg f d) e
 requestErrorMessage :: Request -> SomeException -> Builder
 requestErrorMessage req e =
     mconcat [ fromByteString "During processing of request from "
-            , fromByteString $ rqRemoteAddr req
+            , fromByteString $ rqClientAddr req
             , fromByteString ":"
-            , fromShow $ rqRemotePort req
+            , fromShow $ rqClientPort req
             , fromByteString "\nrequest:\n"
             , fromShow $ show req
             , fromByteString "\n"
