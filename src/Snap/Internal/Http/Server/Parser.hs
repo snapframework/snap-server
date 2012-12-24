@@ -4,10 +4,10 @@
 {-# LANGUAGE MagicHash          #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE Rank2Types         #-}
+{-# LANGUAGE Trustworthy        #-}
 {-# LANGUAGE UnboxedTuples      #-}
 
 #if __GLASGOW_HASKELL__ >= 702
-{-# LANGUAGE Trustworthy        #-}
 #endif
 
 module Snap.Internal.Http.Server.Parser
@@ -18,7 +18,6 @@ module Snap.Internal.Http.Server.Parser
   , parseFromStream
   , parseCookie
   , parseUrlEncoded
-  , strictize
   ) where
 
 ------------------------------------------------------------------------------
@@ -41,7 +40,7 @@ import           System.IO.Streams.Attoparsec     (parseFromStream)
 ----------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
 import           Snap.Internal.Parsing            (crlf, parseCookie,
-                                                   parseUrlEncoded, strictize)
+                                                   parseUrlEncoded)
 
 
 ------------------------------------------------------------------------------
