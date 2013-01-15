@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE CPP                #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings  #-}
 
@@ -14,22 +15,28 @@ import           Blaze.ByteString.Builder.Char8   (fromChar, fromShow)
 import           Control.Applicative              ((<$>), (<|>))
 import           Control.Arrow                    (first, second)
 import           Control.Exception                (Exception, Handler (..),
-                                                   SomeException (..), catches,
-                                                   throwIO)
-import           Control.Monad                    (when)
+                                                   SomeException (..), catch,
+                                                   catches, throwIO)
+import           Control.Monad                    (unless, when)
 import           Data.ByteString.Char8            (ByteString)
 import qualified Data.ByteString.Char8            as S
 import qualified Data.CaseInsensitive             as CI
 import           Data.Int                         (Int64)
-import           Data.IORef                       (writeIORef)
+import           Data.IORef                       (readIORef, writeIORef)
 import qualified Data.Map                         as Map
-import           Data.Maybe                       (fromMaybe)
+import           Data.Maybe                       (fromMaybe, isJust)
 import           Data.Monoid                      (mconcat)
 import           Data.Typeable                    (Typeable)
+import           Data.Version                     (showVersion)
+#if !MIN_VERSION_base(4,6,0)
+import           Prelude                          hiding (catch)
+#endif
 import           System.IO.Streams                (InputStream)
 import qualified System.IO.Streams                as Streams
 ------------------------------------------------------------------------------
+import qualified Paths_snap_server                as V
 import           Snap.Core                        (EscapeSnap (..))
+import           Snap.Internal.Http.Server.Date   (getDateString)
 import           Snap.Internal.Http.Server.Parser (IRequest (..), parseCookie,
                                                    parseRequest,
                                                    parseUrlEncoded,
@@ -43,7 +50,8 @@ import           Snap.Internal.Http.Server.Types  (AcceptHook, DataFinishedHook,
                                                    SessionHandler,
                                                    UserHandlerFinishedHook)
 import           Snap.Internal.Http.Types         (Method (..), Request (..),
-                                                   getHeader)
+                                                   Response (..), getHeader,
+                                                   setHeader, updateHeaders)
 import           Snap.Internal.Parsing            (unsafeFromInt)
 import qualified Snap.Types.Headers               as H
 ------------------------------------------------------------------------------
@@ -91,20 +99,24 @@ httpSession !hookState !serverHandler !config !sessionData = begin
     logError             = _logError config
 
     --------------------------------------------------------------------------
-    {-# INLINE begin #-}
+    -- Begin HTTP session processing.
     begin :: IO ()
     begin = do
         -- parse HTTP request
-        receiveRequest >>= maybe (_onSessionFinished config hookState)
-                                 processRequest
+        mreq <- receiveRequest
+        case mreq of
+          Nothing  -> _onSessionFinished config hookState
+          Just req -> processRequest req
+    {-# INLINE begin #-}
 
     --------------------------------------------------------------------------
-    {-# INLINE receiveRequest #-}
+    -- Read the HTTP request from the socket, parse it, and pre-process it.
     receiveRequest :: IO (Maybe Request)
     receiveRequest = do
         readEnd' <- Streams.throwIfProducesMoreThan mAX_HEADERS_SIZE readEnd
         parseRequest readEnd' >>= maybe (return Nothing)
                                         ((Just <$>) . toRequest)
+    {-# INLINE receiveRequest #-}
 
     --------------------------------------------------------------------------
     toRequest :: IRequest -> IO Request
@@ -124,11 +136,20 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                          else return localHostname)
                       return mbHost
 
-        -- Handle transfer-encoding: chunked, etc
+        -- Call setupReadEnd, which handles transfer-encoding: chunked or
+        -- content-length restrictions, etc
         readEnd' <- setupReadEnd
+
+        -- Parse an application/x-www-form-urlencoded form, if it was sent
         (readEnd'', postParams) <- parseForm readEnd'
+
         let allParams = Map.unionWith (++) queryParams postParams
+
+        -- Decide whether the connection should be closed after the response is
+        -- sent (stored in the forceConnectionClose IORef).
         checkConnectionClose version hdrs
+
+        -- The request is now ready for processing.
         return $! Request host
                           remoteAddress
                           remotePort
@@ -179,18 +200,17 @@ httpSession !hookState !serverHandler !config !sessionData = begin
 
         ----------------------------------------------------------------------
         {-# INLINE setupReadEnd #-}
-        setupReadEnd = do
-            readEnd' <- if isChunked
-                          then readChunkedTransferEncoding readEnd
-                          else return readEnd
-            maybe noContentLength Streams.takeBytes mbCL readEnd'
+        setupReadEnd =
+            if isChunked
+              then readChunkedTransferEncoding readEnd
+              else maybe noContentLength Streams.takeBytes mbCL readEnd
 
         ----------------------------------------------------------------------
         noContentLength :: InputStream ByteString
                         -> IO (InputStream ByteString)
         noContentLength readEnd' = do
             when (method `elem` [POST, PUT]) return411
-            Streams.takeBytes 0 readEnd'
+            Streams.fromList []
 
         ----------------------------------------------------------------------
         return411 = do
@@ -208,18 +228,18 @@ httpSession !hookState !serverHandler !config !sessionData = begin
             terminateSession LengthRequiredException
 
         ----------------------------------------------------------------------
-        parseForm readEnd' = if doIt
-                               then getIt
+        parseForm readEnd' = if hasForm
+                               then getForm
                                else return (readEnd', emptyParams)
           where
-            trimIt = fst . S.spanEnd (== ' ') . S.takeWhile (/= ';')
-                         . S.dropWhile (== ' ')
-            mbCT   = trimIt <$> H.lookup "content-type" hdrs
-            doIt   = mbCT == Just "application/x-www-form-urlencoded"
+            trimIt  = fst . S.spanEnd (== ' ') . S.takeWhile (/= ';')
+                          . S.dropWhile (== ' ')
+            mbCT    = trimIt <$> H.lookup "content-type" hdrs
+            hasForm = mbCT == Just "application/x-www-form-urlencoded"
 
             mAX_POST_BODY_SIZE = 1024 * 1024
 
-            getIt = do
+            getForm = do
                 readEnd'' <- Streams.throwIfProducesMoreThan
                                mAX_POST_BODY_SIZE readEnd'
                 contents  <- S.concat <$> Streams.toList readEnd''
@@ -229,11 +249,11 @@ httpSession !hookState !serverHandler !config !sessionData = begin
 
     ----------------------------------------------------------------------
     checkConnectionClose version hdrs = do
-        -- For HTTP/1.1: if there is an explicit Connection: close, close
-        -- the socket.
+        -- For HTTP/1.1: if there is an explicit Connection: close, we'll close
+        -- the socket later.
         --
         -- For HTTP/1.0: if there is no explicit Connection: Keep-Alive,
-        -- close the socket.
+        -- close the socket later.
         let v = CI.mk <$> H.lookup "Connection" hdrs
         when ((version == (1, 1) && v == Just "close") ||
               (version == (1, 0) && v /= Just "keep-alive")) $
@@ -276,14 +296,33 @@ httpSession !hookState !serverHandler !config !sessionData = begin
         -- check for Expect: 100-continue
         checkExpect100Continue req
         runServerHandler req
-          `catches` [ Handler escapeSnapHandler
-                    , Handler $ catchUserException "user handler" req
-                    ]
-        undefined
+            `catches` [ Handler escapeSnapHandler
+                      , Handler $ catchUserException "user handler" req
+                      ]
 
     --------------------------------------------------------------------------
     {-# INLINE runServerHandler #-}
     runServerHandler !req = do
+        (_, rsp0) <- serverHandler config sessionData req
+
+        -- check whether we should close the connection after sending the
+        -- response
+        let v    = rqVersion req
+        let rsp1 = rsp0 { rspHttpVersion = rqVersion req }
+        checkConnectionClose v (rspHeaders rsp1)
+        cc <- readIORef forceConnectionClose
+        let rsp2 = if cc then (setHeader "Connection" "close" rsp1) else rsp1
+
+        -- skip unread portion of request body if rspTransformingRqBody is not
+        -- true
+        unless (rspTransformingRqBody rsp2) $ Streams.skipToEof (rqBody req)
+        date <- getDateString
+        let insServer = if isJust (getHeader "Server" rsp2)
+                          then id
+                          else H.set "Server" sERVER_HEADER
+        let !rsp = updateHeaders (insServer . H.set "Date" date) rsp2
+        bytesSent <- sendResponse rsp `catch`
+                     catchUserException "sending-response" req
         undefined
 
     --------------------------------------------------------------------------
@@ -301,7 +340,22 @@ httpSession !hookState !serverHandler !config !sessionData = begin
           , fromByteString "': \n"
           , requestErrorMessage req e
           ]
+        -- TODO: send 503?
         terminateSession e
+
+    --------------------------------------------------------------------------
+    sendResponse !rsp = do
+        undefined
+
+
+------------------------------------------------------------------------------
+sERVER_HEADER :: ByteString
+sERVER_HEADER = S.concat ["Snap/", snapServerVersion]
+
+
+------------------------------------------------------------------------------
+snapServerVersion :: ByteString
+snapServerVersion = S.pack $ showVersion $ V.version
 
 
 ------------------------------------------------------------------------------
@@ -318,9 +372,9 @@ terminateSession = throwIO . TerminateSessionException . SomeException
 requestErrorMessage :: Request -> SomeException -> Builder
 requestErrorMessage req e =
     mconcat [ fromByteString "During processing of request from "
-            , fromByteString $ rqRemoteAddr req
+            , fromByteString $ rqClientAddr req
             , fromByteString ":"
-            , fromShow $ rqRemotePort req
+            , fromShow $ rqClientPort req
             , fromByteString "\nrequest:\n"
             , fromShow $ show req
             , fromByteString "\n"
