@@ -118,7 +118,7 @@ parseRequest input = do
 
 ------------------------------------------------------------------------------
 pLine :: InputStream ByteString -> IO ByteString
-pLine input = go id
+pLine input = go []
   where
     throwNoCRLF =
         throwIO $
@@ -128,17 +128,17 @@ pLine input = go id
         throwIO $
         HttpParseException "parse error: got cr without subsequent lf"
 
-    go !dl = do
+    go !l = do
         !mb <- Streams.read input
         !s  <- maybe throwNoCRLF return mb
 
         case findCRLF s of
-            FoundCRLF idx# -> foundCRLF dl s idx#
-            NoCR           -> noCRLF dl s
-            LastIsCR idx#  -> lastIsCR dl s idx#
+            FoundCRLF idx# -> foundCRLF l s idx#
+            NoCR           -> noCRLF l s
+            LastIsCR idx#  -> lastIsCR l s idx#
             _              -> throwBadCRLF
 
-    foundCRLF dl s idx# = do
+    foundCRLF l s idx# = do
         let !i1 = (I# idx#)
         let !i2 = (I# (idx# +# 2#))
         let !a = S.unsafeTake i1 s
@@ -147,16 +147,15 @@ pLine input = go id
             Streams.unRead b input
 
         -- Optimize for the common case: dl is almost always "id"
-        let l = dl []
-        let !out = if null l then a else S.concat (l ++ [a])
+        let !out = if null l then a else S.concat (reverse (a:l))
         return out
 
-    noCRLF dl s = go (dl . (s:))
+    noCRLF l s = go (s:l)
 
-    lastIsCR dl s idx# = do
+    lastIsCR l s idx# = do
         !t <- Streams.read input >>= maybe throwNoCRLF return
         if S.null t
-          then lastIsCR dl s idx#
+          then lastIsCR l s idx#
           else do
             let !c = S.unsafeHead t
             if c /= 10
@@ -165,8 +164,7 @@ pLine input = go id
                   let !a = S.unsafeTake (I# idx#) s
                   let !b = S.unsafeDrop 1 t
                   when (not $ S.null b) $ Streams.unRead b input
-                  let l = dl []
-                  let !out = if null l then a else S.concat (l ++ [a])
+                  let !out = if null l then a else S.concat (reverse (a:l))
                   return out
 
 
