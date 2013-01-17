@@ -7,9 +7,6 @@
 {-# LANGUAGE Trustworthy        #-}
 {-# LANGUAGE UnboxedTuples      #-}
 
-#if __GLASGOW_HASKELL__ >= 702
-#endif
-
 module Snap.Internal.Http.Server.Parser
   ( IRequest(..)
   , HttpParseException(..)
@@ -24,12 +21,10 @@ module Snap.Internal.Http.Server.Parser
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
-import           Data.Attoparsec.ByteString.Char8 (Parser, char, decimal,
-                                                   hexadecimal, parseOnly, take,
+import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take,
                                                    takeTill)
-import           Data.ByteString.Char8            (ByteString)
 import qualified Data.ByteString.Char8            as S
-import           Data.ByteString.Internal         (w2c)
+import           Data.ByteString.Internal         (ByteString, w2c)
 import qualified Data.ByteString.Unsafe           as S
 import           Data.Typeable                    (Typeable)
 import           GHC.Exts                         (Int (..), Int#, (+#))
@@ -40,7 +35,8 @@ import           System.IO.Streams.Attoparsec     (parseFromStream)
 ----------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
 import           Snap.Internal.Parsing            (crlf, parseCookie,
-                                                   parseUrlEncoded)
+                                                   parseUrlEncoded,
+                                                   unsafeFromNat)
 
 
 ------------------------------------------------------------------------------
@@ -89,7 +85,7 @@ parseRequest input = do
             let (!mStr,!s)      = bSp line
             let (!uri, !vStr)   = bSp s
             let method          = methodFromString mStr
-            version            <- pVer vStr
+            let !version        = pVer vStr
             let (host, uri')    = getHost uri
 
             hdrs    <- pHeaders input
@@ -97,29 +93,27 @@ parseRequest input = do
 
   where
     getHost s | "http://" `S.isPrefixOf` s
-                  = let s'            = S.drop 7 s
-                        (!host, !uri) = S.break (== '/') s'
+                  = let s'            = S.unsafeDrop 7 s
+                        (!host, !uri) = breakCh '/' s'
                     in (Just host, uri)
               | "https://" `S.isPrefixOf` s
-                  = let s'            = S.drop 8 s
-                        (!host, !uri) = S.break (== '/') s'
+                  = let s'            = S.unsafeDrop 8 s
+                        (!host, !uri) = breakCh '/' s'
                     in (Just host, uri)
               | otherwise = (Nothing, s)
 
 
     pVer s = if "HTTP/" `S.isPrefixOf` s
-               then either (throwIO . HttpParseException)
-                           return
-                           (parseOnly pVers (S.drop 5 s))
-               else return (1, 0)
+               then pVers (S.unsafeDrop 5 s)
+               else (1, 0)
 
     bSp   = splitCh ' '
 
-    pVers = do
-        !x <- decimal
-        void (char '.')
-        !y <- decimal
-        return (x, y)
+    pVers s = (c, d)
+      where
+        (!a, !b)   = splitCh '.' s
+        !c         = unsafeFromNat a
+        !d         = unsafeFromNat b
 
 
 ------------------------------------------------------------------------------
@@ -169,7 +163,7 @@ pLine input = go id
               then throwBadCRLF
               else do
                   let !a = S.unsafeTake (I# idx#) s
-                  let !b = S.drop 1 t
+                  let !b = S.unsafeDrop 1 t
                   when (not $ S.null b) $ Streams.unRead b input
                   let l = dl []
                   let !out = if null l then a else S.concat (l ++ [a])
@@ -209,18 +203,53 @@ splitCh !c !s = maybe (s, S.empty) f (S.elemIndex c s)
 
 
 ------------------------------------------------------------------------------
+breakCh :: Char -> ByteString -> (ByteString, ByteString)
+breakCh !c !s = maybe (s, S.empty) f (S.elemIndex c s)
+  where
+    f !i = let !a = S.unsafeTake i s
+               !b = S.unsafeDrop i s
+           in (a, b)
+{-# INLINE breakCh #-}
+
+
+------------------------------------------------------------------------------
+splitHeader :: ByteString -> (ByteString, ByteString)
+splitHeader !s = maybe (s, S.empty) f (S.elemIndex ':' s)
+  where
+    l = S.length s
+
+    f i = let !a = S.unsafeTake i s
+          in (a, skipSp (i + 1))
+
+    skipSp !i | i >= l    = S.empty
+              | otherwise = let c = S.unsafeIndex s i
+                            in if isLWS $ w2c c
+                                 then skipSp $ i + 1
+                                 else S.unsafeDrop i s
+
+{-# INLINE splitHeader #-}
+
+
+
+------------------------------------------------------------------------------
+isLWS :: Char -> Bool
+isLWS c = c == ' ' || c == '\t'
+{-# INLINE isLWS #-}
+
+
+------------------------------------------------------------------------------
 pHeaders :: InputStream ByteString -> IO [(ByteString,ByteString)]
 pHeaders input = do
     f <- go id
     return $! f []
 
   where
-    go !dlistSoFar = {-# SCC "pHeaders/go" #-} do
+    go !dlistSoFar = do
         line <- pLine input
         if S.null line
           then return dlistSoFar
           else do
-            let (!k,!v) = pOne line
+            let (!k,!v) = splitHeader line
             vf <- pCont id
             let vs = vf []
             let !v' = if null vs then v else S.concat (v:vs)
@@ -228,11 +257,6 @@ pHeaders input = do
 
       where
         trimBegin = S.dropWhile isLWS
-
-        pOne s = let (k,v) = splitCh ':' s
-                 in (k, trimBegin v)
-
-        isLWS c = c == ' ' || c == '\t'
 
         pCont !dlist = do
             mbS  <- Streams.peek input
