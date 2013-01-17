@@ -79,17 +79,14 @@ parseRequest input = do
       then return Nothing
       else do
         line <- pLine input
-        if S.null line
-          then parseRequest input
-          else do
-            let (!mStr,!s)      = bSp line
-            let (!uri, !vStr)   = bSp s
-            let method          = methodFromString mStr
-            let !version        = pVer vStr
-            let (host, uri')    = getHost uri
+        let (!mStr,!s)      = bSp line
+        let (!uri, !vStr)   = bSp s
+        let method          = methodFromString mStr
+        let !version        = pVer vStr
+        let (host, uri')    = getHost uri
 
-            hdrs    <- pHeaders input
-            return $! Just $! IRequest method uri' version host hdrs
+        hdrs    <- pHeaders input
+        return $! Just $! IRequest method uri' version host hdrs
 
   where
     getHost s | "http://" `S.isPrefixOf` s
@@ -251,7 +248,8 @@ pHeaders input = do
             vf <- pCont id
             let vs = vf []
             let !v' = if null vs then v else S.concat (v:vs)
-            go (dlistSoFar . ((k,v'):))
+            let !t = (k,v')
+            go (dlistSoFar . (t:))
 
       where
         trimBegin = S.dropWhile isLWS
