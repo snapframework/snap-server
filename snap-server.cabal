@@ -218,7 +218,8 @@ Test-suite testsuite
                -fno-warn-unused-do-bind -fhpc
 
 
-Executable benchmark
+Benchmark benchmark
+  type:             exitcode-stdio-1.0
   hs-source-dirs:   benchmark src
   main-is:          Benchmark.hs
   default-language: Haskell2010
