@@ -23,9 +23,11 @@ import qualified Data.ByteString.Char8            as S
 import qualified Data.CaseInsensitive             as CI
 import           Data.Int                         (Int64)
 import           Data.IORef                       (readIORef, writeIORef)
+import           Data.List                        (foldl')
 import qualified Data.Map                         as Map
 import           Data.Maybe                       (fromMaybe, isJust)
 import           Data.Monoid                      (mconcat)
+import           Data.Time.Format                 (formatTime)
 import           Data.Typeable                    (Typeable)
 import           Data.Version                     (showVersion)
 #if !MIN_VERSION_base(4,6,0)
@@ -33,6 +35,7 @@ import           Prelude                          hiding (catch)
 #endif
 import           System.IO.Streams                (InputStream)
 import qualified System.IO.Streams                as Streams
+import           System.Locale                    (defaultTimeLocale)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                as V
 import           Snap.Core                        (EscapeSnap (..))
@@ -49,10 +52,11 @@ import           Snap.Internal.Http.Server.Types  (AcceptHook, DataFinishedHook,
                                                    SessionFinishedHook,
                                                    SessionHandler,
                                                    UserHandlerFinishedHook)
-import           Snap.Internal.Http.Types         (Method (..), Request (..),
-                                                   Response (..), getHeader,
+import           Snap.Internal.Http.Types         (Cookie (..), Method (..),
+                                                   Request (..), Response (..),
+                                                   getHeader, setContentLength,
                                                    setHeader, updateHeaders)
-import           Snap.Internal.Parsing            (unsafeFromInt)
+import           Snap.Internal.Parsing            (unsafeFromNat)
 import qualified Snap.Types.Headers               as H
 ------------------------------------------------------------------------------
 
@@ -86,17 +90,18 @@ httpSession !hookState !serverHandler !config !sessionData = begin
   where
     --------------------------------------------------------------------------
     defaultTimeout       = _defaultTimeout config
+    forceConnectionClose = _forceConnectionClose sessionData
+    isSecure             = _isSecure config
     localAddress         = _localAddress sessionData
-    localPort            = _localPort config
     localHostname        = _localHostname config
+    localPort            = _localPort config
+    logAccess            = _logAccess config
+    logError             = _logError config
     readEnd              = _readEnd sessionData
     remoteAddress        = _remoteAddress sessionData
     remotePort           = _remotePort sessionData
     tickle               = _twiddleTimeout sessionData
     writeEnd             = _writeEnd sessionData
-    isSecure             = _isSecure config
-    forceConnectionClose = _forceConnectionClose sessionData
-    logError             = _logError config
 
     --------------------------------------------------------------------------
     -- Begin HTTP session processing.
@@ -181,7 +186,7 @@ httpSession !hookState !serverHandler !config !sessionData = begin
         hdrs        = toHeaders $! iRequestHeaders ireq
         isChunked   = (CI.mk <$> H.lookup "transfer-encoding" hdrs)
                          == Just "chunked"
-        mbCL        = unsafeFromInt <$> H.lookup "content-length" hdrs
+        mbCL        = unsafeFromNat <$> H.lookup "content-length" hdrs
         cookies     = fromMaybe [] (H.lookup "cookie" hdrs >>= parseCookie)
         contextPath = "/"
         uri         = iRequestUri ireq
@@ -323,7 +328,12 @@ httpSession !hookState !serverHandler !config !sessionData = begin
         let !rsp = updateHeaders (insServer . H.set "Date" date) rsp2
         bytesSent <- sendResponse rsp `catch`
                      catchUserException "sending-response" req
-        undefined
+        logAccess req $! maybe (setContentLength bytesSent rsp)
+                               (const rsp)
+                               (rspContentLength rsp)
+        if cc
+          then return $! ()
+          else begin
 
     --------------------------------------------------------------------------
     escapeSnapHandler (EscapeHttp escapeHandler) = escapeHandler tickle
@@ -332,7 +342,7 @@ httpSession !hookState !serverHandler !config !sessionData = begin
     escapeSnapHandler (TerminateConnection e)    = terminateSession e
 
     --------------------------------------------------------------------------
-    catchUserException :: ByteString -> Request -> SomeException -> IO ()
+    catchUserException :: ByteString -> Request -> SomeException -> IO a
     catchUserException phase req e = do
         logError $ mconcat [
             fromByteString "Exception leaked to httpSession during phase '"
@@ -344,8 +354,18 @@ httpSession !hookState !serverHandler !config !sessionData = begin
         terminateSession e
 
     --------------------------------------------------------------------------
+    sendResponse :: Response -> IO Int64
     sendResponse !rsp = do
         undefined
+
+    --------------------------------------------------------------------------
+    renderCookies :: Response -> Response
+    renderCookies r = updateHeaders f r
+      where
+        f h = if null cookies
+                then h
+                else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
+        cookies = fmap cookieToBS . Map.elems $ rspCookies r
 
 
 ------------------------------------------------------------------------------
@@ -385,3 +405,18 @@ requestErrorMessage req e =
              fromByteString "A web handler threw an exception. Details:\n"
            , fromShow e
            ]
+
+
+------------------------------------------------------------------------------
+-- | Convert 'Cookie' into 'ByteString' for output.
+cookieToBS :: Cookie -> ByteString
+cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
+  where
+    cookie  = S.concat [k, "=", v, path, exptime, domain, secure, hOnly]
+    path    = maybe "" (S.append "; path=") mbPath
+    domain  = maybe "" (S.append "; domain=") mbDomain
+    exptime = maybe "" (S.append "; expires=" . fmt) mbExpTime
+    secure  = if isSec then "; Secure" else ""
+    hOnly   = if isHOnly then "; HttpOnly" else ""
+    fmt     = S.pack . formatTime defaultTimeLocale
+                                  "%a, %d-%b-%Y %H:%M:%S GMT"

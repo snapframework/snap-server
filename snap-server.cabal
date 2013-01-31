@@ -51,6 +51,7 @@ Library
     Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
+    Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Types
 
   build-depends:

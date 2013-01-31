@@ -76,7 +76,8 @@ type SessionFinishedHook hookState = hookState -> IO ()
 -- | Data and services that all HTTP response handlers share.
 --
 data ServerConfig hookState = ServerConfig
-    { _logError              :: !(Builder -> IO ())
+    { _logAccess             :: !(Request -> Response -> IO ())
+    , _logError              :: !(Builder -> IO ())
     , _onAccept              :: !(AcceptHook hookState)
     , _onParse               :: !(ParseHook hookState)
     , _onUserHandlerFinished :: !(UserHandlerFinishedHook hookState)
