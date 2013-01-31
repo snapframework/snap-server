@@ -11,7 +11,8 @@ module Snap.Internal.Http.Server.Session
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder         (Builder, flush,
                                                    fromByteString)
-import           Blaze.ByteString.Builder.Char8   (fromChar, fromShow)
+import           Blaze.ByteString.Builder.Char8   (fromChar, fromShow,
+                                                   fromString)
 import           Control.Applicative              ((<$>), (<|>))
 import           Control.Arrow                    (first, second)
 import           Control.Exception                (Exception, Handler (..),
@@ -25,8 +26,8 @@ import           Data.Int                         (Int64)
 import           Data.IORef                       (readIORef, writeIORef)
 import           Data.List                        (foldl')
 import qualified Data.Map                         as Map
-import           Data.Maybe                       (fromMaybe, isJust)
-import           Data.Monoid                      (mconcat)
+import           Data.Maybe                       (fromMaybe, isJust, isNothing)
+import           Data.Monoid                      (mconcat, mempty, (<>))
 import           Data.Time.Format                 (formatTime)
 import           Data.Typeable                    (Typeable)
 import           Data.Version                     (showVersion)
@@ -43,7 +44,8 @@ import           Snap.Internal.Http.Server.Date   (getDateString)
 import           Snap.Internal.Http.Server.Parser (IRequest (..), parseCookie,
                                                    parseRequest,
                                                    parseUrlEncoded,
-                                                   readChunkedTransferEncoding)
+                                                   readChunkedTransferEncoding,
+                                                   writeChunkedTransferEncoding)
 import           Snap.Internal.Http.Server.Types  (AcceptHook, DataFinishedHook,
                                                    ParseHook,
                                                    PerSessionData (..),
@@ -54,9 +56,13 @@ import           Snap.Internal.Http.Server.Types  (AcceptHook, DataFinishedHook,
                                                    UserHandlerFinishedHook)
 import           Snap.Internal.Http.Types         (Cookie (..), Method (..),
                                                    Request (..), Response (..),
-                                                   getHeader, setContentLength,
-                                                   setHeader, updateHeaders)
+                                                   ResponseBody (..),
+                                                   StreamProc, getHeader,
+                                                   headers, rspBodyToEnum,
+                                                   setContentLength, setHeader,
+                                                   updateHeaders)
 import           Snap.Internal.Parsing            (unsafeFromNat)
+import           Snap.Types.Headers               (Headers)
 import qualified Snap.Types.Headers               as H
 ------------------------------------------------------------------------------
 
@@ -355,17 +361,102 @@ httpSession !hookState !serverHandler !config !sessionData = begin
 
     --------------------------------------------------------------------------
     sendResponse :: Response -> IO Int64
-    sendResponse !rsp = do
-        undefined
+    sendResponse !rsp0 = do
+        let !rsp1 = renderCookies rsp0
+        let (rsp, shouldClose) = if isNothing $ rspContentLength rsp1
+                                   then noCL rsp1
+                                   else (rsp1, False)
+        when shouldClose $ writeIORef forceConnectionClose True
+        let (!headerBuilder, !hlen) = mkHeaderBuilder rsp
+        nBodyBytes <- case rspBody rsp of
+                        Stream s ->
+                            whenStream headerBuilder hlen rsp s
+                        SendFile f Nothing ->
+                            whenSendFile headerBuilder hlen rsp f 0
+                        -- ignore end length here because we know we had a
+                        -- content-length, use that instead.
+                        SendFile f (Just (st, _)) ->
+                            whenSendFile headerBuilder hlen rsp f st
+        return $! nBodyBytes - fromIntegral hlen
+
 
     --------------------------------------------------------------------------
-    renderCookies :: Response -> Response
-    renderCookies r = updateHeaders f r
-      where
-        f h = if null cookies
-                then h
-                else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
-        cookies = fmap cookieToBS . Map.elems $ rspCookies r
+    noCL :: Response -> (Response, Bool)
+    noCL r =
+        if rspHttpVersion r >= (1,1)
+          then let r'       = setHeader "Transfer-Encoding" "chunked" r
+                   origBody = rspBodyToEnum $ rspBody r
+                   body     = \os -> do
+                               os' <- writeChunkedTransferEncoding os
+                               origBody os'
+                               return os
+               in (r' { rspBody = Stream body }, False)
+        else
+           -- HTTP/1.0 and no content-length? We'll have to close the
+           -- socket.
+           (setHeader "Connection" "close" r, True)
+    {-# INLINE noCL #-}
+
+    --------------------------------------------------------------------------
+    fixOutputBody :: Int        -- ^ header length
+                  -> Response
+                  -> StreamProc
+                  -> StreamProc
+    fixOutputBody = undefined
+
+    --------------------------------------------------------------------------
+    whenStream = undefined
+    whenSendFile = undefined
+
+
+--------------------------------------------------------------------------
+mkHeaderBuilder :: Response -> (Builder, Int)
+mkHeaderBuilder r = (builder, outlen)
+
+  where
+    (major, minor) = rspHttpVersion r
+    (hdrs, !hlen)  = buildHdrs $ headers r
+    majstr         = show major
+    minstr         = show minor
+    !majlen        = length majstr
+    !minlen        = length minstr
+    statstr        = show $ rspStatus r
+    !statlen       = length statstr
+    crlf           = fromByteString "\r\n"
+    space          = fromChar ' '
+    reason         = rspStatusReason r
+    builder        = mconcat [ fromByteString "HTTP/"
+                             , fromString majstr
+                             , fromChar '.'
+                             , fromString minstr
+                             , space
+                             , fromString $ statstr
+                             , space
+                             , fromByteString reason
+                             , crlf
+                             , hdrs
+                             , crlf
+                             ]
+    !outlen        = 12 + majlen + minlen + statlen + S.length reason + hlen
+
+
+--------------------------------------------------------------------------
+buildHdrs :: Headers -> (Builder,Int)
+buildHdrs hdrs =
+    H.fold f (mempty, 0) hdrs
+  where
+    f (!b, !len) !k !y =
+        let k'    = CI.original k
+            kb    = fromByteString k' <> fromByteString ": "
+            !len' = S.length k' + S.length y + 4
+            b'    = mconcat [ b
+                            , kb
+                            , fromByteString y
+                            , crlf
+                            ]
+        in (b', len + len')
+
+    crlf = fromByteString "\r\n"
 
 
 ------------------------------------------------------------------------------
@@ -420,3 +511,15 @@ cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
     hOnly   = if isHOnly then "; HttpOnly" else ""
     fmt     = S.pack . formatTime defaultTimeLocale
                                   "%a, %d-%b-%Y %H:%M:%S GMT"
+
+
+--------------------------------------------------------------------------
+renderCookies :: Response -> Response
+renderCookies r = updateHeaders f r
+  where
+    f h = if null cookies
+            then h
+            else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
+    cookies = fmap cookieToBS . Map.elems $ rspCookies r
+
+

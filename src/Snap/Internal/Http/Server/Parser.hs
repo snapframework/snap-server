@@ -10,14 +10,18 @@
 module Snap.Internal.Http.Server.Parser
   ( IRequest(..)
   , HttpParseException(..)
-  , parseRequest
   , readChunkedTransferEncoding
+  , writeChunkedTransferEncoding
+  , parseRequest
   , parseFromStream
   , parseCookie
   , parseUrlEncoded
   ) where
 
 ------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder         (Builder)
+import           Blaze.ByteString.Builder.HTTP    (chunkedTransferEncoding,
+                                                   chunkedTransferTerminator)
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
@@ -29,7 +33,7 @@ import qualified Data.ByteString.Unsafe           as S
 import           Data.Typeable                    (Typeable)
 import           GHC.Exts                         (Int (..), Int#, (+#))
 import           Prelude                          hiding (head, take, takeWhile)
-import           System.IO.Streams                (InputStream)
+import           System.IO.Streams                (InputStream, OutputStream)
 import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)
 ----------------------------------------------------------------------------
@@ -289,6 +293,17 @@ readChunkedTransferEncoding :: InputStream ByteString
                             -> IO (InputStream ByteString)
 readChunkedTransferEncoding input =
     Streams.makeInputStream $ parseFromStream pGetTransferChunk input
+
+
+------------------------------------------------------------------------------
+writeChunkedTransferEncoding :: OutputStream Builder
+                             -> IO (OutputStream Builder)
+writeChunkedTransferEncoding os = Streams.makeOutputStream f
+  where
+    f Nothing = do
+        Streams.write (Just chunkedTransferTerminator) os
+        Streams.write Nothing os
+    f x = Streams.write (chunkedTransferEncoding `fmap` x) os
 
 
                              ---------------------
