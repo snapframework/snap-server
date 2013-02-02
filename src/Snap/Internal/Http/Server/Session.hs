@@ -34,7 +34,7 @@ import           Data.Version                     (showVersion)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                          hiding (catch)
 #endif
-import           System.IO.Streams                (InputStream)
+import           System.IO.Streams                (InputStream, OutputStream)
 import qualified System.IO.Streams                as Streams
 import           System.Locale                    (defaultTimeLocale)
 ------------------------------------------------------------------------------
@@ -166,7 +166,7 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                           remotePort
                           localAddress
                           localPort
-                          localHostname
+                          localHost
                           isSecure
                           hdrs
                           readEnd''
@@ -204,22 +204,28 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                                     $ S.break (== '?') uri
 
         ----------------------------------------------------------------------
-        {-# INLINE dropLeadingSlash #-}
         dropLeadingSlash s = let f (a, s') = if a == '/' then s' else s
                                  mbS       = S.uncons s
                              in maybe s f mbS
+        {-# INLINE dropLeadingSlash #-}
 
         ----------------------------------------------------------------------
-        {-# INLINE setupReadEnd #-}
+        -- | We have to transform the read end of the socket, to limit the
+        -- number of bytes read to the content-length, to decode chunked
+        -- transfer encoding, or to immediately yield EOF if the request body
+        -- is empty.
+        setupReadEnd :: IO (InputStream ByteString)
         setupReadEnd =
             if isChunked
               then readChunkedTransferEncoding readEnd
-              else maybe noContentLength Streams.takeBytes mbCL readEnd
+              else maybe (const noContentLength) Streams.takeBytes mbCL readEnd
+        {-# INLINE setupReadEnd #-}
 
         ----------------------------------------------------------------------
-        noContentLength :: InputStream ByteString
-                        -> IO (InputStream ByteString)
-        noContentLength readEnd' = do
+        -- | If a request is not in chunked transfer encoding and lacks a
+        -- content-length, the request body is null string.
+        noContentLength :: IO (InputStream ByteString)
+        noContentLength = do
             when (method `elem` [POST, PUT]) return411
             Streams.fromList []
 
@@ -389,7 +395,6 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                    body     = \os -> do
                                os' <- writeChunkedTransferEncoding os
                                origBody os'
-                               return os
                in (r' { rspBody = Stream body }, False)
         else
            -- HTTP/1.0 and no content-length? We'll have to close the
@@ -398,14 +403,34 @@ httpSession !hookState !serverHandler !config !sessionData = begin
     {-# INLINE noCL #-}
 
     --------------------------------------------------------------------------
-    fixOutputBody :: Int        -- ^ header length
-                  -> Response
-                  -> StreamProc
-                  -> StreamProc
-    fixOutputBody = undefined
+    -- | If the response contains a content-length, make sure the response body
+    -- StreamProc doesn't yield more (or fewer) than the given number of bytes.
+    limitRspBody :: Int                      -- ^ header length
+                 -> Response                 -- ^ response
+                 -> OutputStream ByteString  -- ^ write end of socket
+                 -> IO (OutputStream ByteString)
+    limitRspBody hlen rsp os = maybe (return os) f $ rspContentLength rsp
+      where
+        f cl = case rspBody rsp of
+                 (Stream _) -> Streams.giveExactly (fromIntegral hlen + cl) os
+                 _          -> return os
+    {-# INLINE limitRspBody #-}
 
     --------------------------------------------------------------------------
+    whenStream :: Builder       -- ^ headers
+               -> Int           -- ^ header length
+               -> Response      -- ^ response
+               -> StreamProc    -- ^ output body
+               -> IO Int64      -- ^ returns number of bytes written
     whenStream = undefined
+
+    --------------------------------------------------------------------------
+    whenSendFile :: Builder     -- ^ headers
+                 -> Int         -- ^ header length
+                 -> Response    -- ^ response
+                 -> FilePath    -- ^ file to serve
+                 -> Int64       -- ^ file start offset
+                 -> IO Int64    -- ^ returns number of bytes written
     whenSendFile = undefined
 
 
