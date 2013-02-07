@@ -159,7 +159,7 @@ Executable testserver
     blaze-builder              >= 0.2.1.4  && <0.4,
     blaze-builder-enumerator   >= 0.2.0    && <0.3,
     bytestring,
-    case-insensitive           >= 0.3      && <0.5,
+    case-insensitive           >= 0.3      && <1.1,
     containers,
     directory-tree,
     enumerator                 >= 0.4.15   && <0.5,
