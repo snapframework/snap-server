@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedStrings  #-}
 
 module Snap.Internal.Http.Server.Address
   ( getHostAddr
@@ -8,15 +8,15 @@ module Snap.Internal.Http.Server.Address
   ) where
 
 ------------------------------------------------------------------------------
-import           Network.Socket
-import           Data.Maybe
-import           Control.Monad
 import           Control.Exception
-import           Data.Typeable
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as S
-import           Data.ByteString.Char8 ()
+import           Control.Monad
+import           Data.ByteString          (ByteString)
+import qualified Data.ByteString          as S
+import           Data.ByteString.Char8    ()
 import           Data.ByteString.Internal (c2w, w2c)
+import           Data.Maybe
+import           Data.Typeable
+import           Network.Socket
 
 ------------------------------------------------------------------------------
 data AddressNotSupportedException = AddressNotSupportedException String
@@ -46,20 +46,22 @@ getAddress addr = do
 getSockAddr :: Int
             -> ByteString
             -> IO (Family, SockAddr)
-getSockAddr p s | s == "*" = ipV4Addr p iNADDR_ANY
-getSockAddr p s | s == "::" = ipV6Addr p iN6ADDR_ANY
+getSockAddr p s | s == "*"  =
+                    return $! ( AF_INET
+                              , SockAddrInet (fromIntegral p) iNADDR_ANY
+                              )
+getSockAddr p s | s == "::" =
+                    return $! ( AF_INET6
+                              , SockAddrInet6 (fromIntegral p) 0 iN6ADDR_ANY 0
+                              )
 getSockAddr p s = do
-    let hints = defaultHints { addrFlags = [AI_NUMERICHOST] }
-    ai <- getAddrInfo (Just hints) (Just $ map w2c $ S.unpack s) Nothing
-    if ai == [] then throwIO $ AddressNotSupportedException $ show s
+    let hints = defaultHints { addrFlags = [AI_NUMERICSERV] }
+    ais <- getAddrInfo (Just hints) (Just $ map w2c $ S.unpack s)
+                       (Just $ show p)
+    if null ais
+      then throwIO $ AddressNotSupportedException $ show s
       else do
-        case addrAddress $ head ai of
-          SockAddrInet _ h -> ipV4Addr p h
-          SockAddrInet6 _ _ h _ -> ipV6Addr p h
-          x -> throwIO $ AddressNotSupportedException $ show x
-
-ipV4Addr :: Int -> HostAddress -> IO (Family, SockAddr)
-ipV4Addr p h = return (AF_INET, SockAddrInet (fromIntegral p) h)
-
-ipV6Addr :: Int -> HostAddress6 -> IO (Family, SockAddr)
-ipV6Addr p h = return (AF_INET6, SockAddrInet6 (fromIntegral p) 0 h 0)
+        let ai = head ais
+        let fm = addrFamily ai
+        let sa = addrAddress ai
+        return (fm, sa)
