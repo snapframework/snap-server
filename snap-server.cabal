@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.9.3.2
+version:        0.9.3.3
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
