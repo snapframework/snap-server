@@ -12,64 +12,65 @@ import           Blaze.ByteString.Builder
 import           Blaze.ByteString.Builder.Char8
 import           Blaze.ByteString.Builder.Enumerator
 import           Blaze.ByteString.Builder.HTTP
-import           Control.Arrow (first, second)
-import           Control.Monad.CatchIO hiding ( bracket
-                                              , catches
-                                              , finally
-                                              , Handler
-                                              )
-import qualified Control.Monad.CatchIO as CatchIO
+import           Control.Arrow                           (first, second)
+import           Control.Exception                       hiding (catch, throw)
+import           Control.Monad.CatchIO                   hiding (Handler,
+                                                          bracket, catches,
+                                                          finally)
+import qualified Control.Monad.CatchIO                   as CatchIO
 import           Control.Monad.State.Strict
-import           Control.Exception hiding (catch, throw)
+import           Data.ByteString                         (ByteString)
+import qualified Data.ByteString                         as S
+import qualified Data.ByteString.Char8                   as SC
+import           Data.ByteString.Internal                (c2w, w2c)
+import qualified Data.ByteString.Lazy                    as L
+import qualified Data.CaseInsensitive                    as CI
 import           Data.Char
-import qualified Data.CaseInsensitive as CI
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as S
-import qualified Data.ByteString.Char8 as SC
-import qualified Data.ByteString.Lazy as L
-import           Data.ByteString.Internal (c2w, w2c)
 import           Data.Enumerator.Internal
 import           Data.Int
 import           Data.IORef
-import           Data.List (foldl')
-import qualified Data.Map as Map
-import           Data.Maybe ( catMaybes, fromJust, fromMaybe, isJust
-                            , isNothing )
+import           Data.List                               (foldl')
+import qualified Data.Map                                as Map
+import           Data.Maybe                              (catMaybes, fromJust,
+                                                          fromMaybe, isJust,
+                                                          isNothing)
 import           Data.Monoid
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
+import qualified Data.Text                               as T
+import qualified Data.Text.Encoding                      as T
 import           Data.Time
 import           Data.Typeable
 import           Data.Version
 import           GHC.Conc
-import           Network.Socket (withSocketsDo, Socket)
+import           Network.Socket                          (Socket, withSocketsDo)
 #if !MIN_VERSION_base(4,6,0)
-import           Prelude hiding (catch)
+import           Prelude                                 hiding (catch)
 #endif
 import           System.IO
 import           System.Locale
 ------------------------------------------------------------------------------
-import           System.FastLogger (timestampedLogEntry, combinedLogEntry)
-import           Snap.Internal.Http.Types
 import           Snap.Internal.Debug
-import           Snap.Internal.Exceptions (EscapeHttpException (..))
+import           Snap.Internal.Exceptions                (EscapeHttpException (..))
 import           Snap.Internal.Http.Parser
 import           Snap.Internal.Http.Server.Date
+import           Snap.Internal.Http.Types
+import           System.FastLogger                       (combinedLogEntry,
+                                                          timestampedLogEntry)
 
 import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Server.HttpPort
-import qualified Snap.Internal.Http.Server.TLS as TLS
 import           Snap.Internal.Http.Server.SimpleBackend
+import qualified Snap.Internal.Http.Server.TLS           as TLS
 
 import           Snap.Internal.Iteratee.Debug
-import           Snap.Internal.Parsing (unsafeFromInt)
-import           Snap.Iteratee hiding (head, take, map)
-import qualified Snap.Iteratee as I
+import           Snap.Internal.Parsing                   (unsafeFromInt)
+import           Snap.Iteratee                           hiding (head, map,
+                                                          take)
+import qualified Snap.Iteratee                           as I
 
-import           Snap.Types.Headers (Headers)
-import qualified Snap.Types.Headers as H
+import           Snap.Types.Headers                      (Headers)
+import qualified Snap.Types.Headers                      as H
 
-import qualified Paths_snap_server as V
+import qualified Paths_snap_server                       as V
 
 
 ------------------------------------------------------------------------------
@@ -122,11 +123,11 @@ instance Exception ExceptionAlreadyCaught
 
 ------------------------------------------------------------------------------
 data ServerState = ServerState
-    { _forceConnectionClose  :: Bool
-    , _localHostname         :: ByteString
-    , _sessionPort           :: SessionInfo
-    , _logAccess             :: Request -> Response -> IO ()
-    , _logError              :: ByteString -> IO ()
+    { _forceConnectionClose :: Bool
+    , _localHostname        :: ByteString
+    , _sessionPort          :: SessionInfo
+    , _logAccess            :: Request -> Response -> IO ()
+    , _logError             :: ByteString -> IO ()
     }
 
 
@@ -723,9 +724,10 @@ sendResponse :: forall a . Response
                                                      -- sendfile
              -> ServerMonad (Int64, a)
 sendResponse rsp0 buffer writeEnd' onSendFile = do
-    let rsp1 = renderCookies rsp0
-
-    let (rsp, shouldClose) = if isNothing $ rspContentLength rsp1
+    let !rsp1 = renderCookies rsp0
+    let !code = rspStatus rsp1
+    let (rsp, shouldClose) = if isNothing (rspContentLength rsp1) &&
+                                code /= 204 && code /= 304
                                then noCL rsp1
                                else (rsp1, False)
 

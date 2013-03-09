@@ -524,8 +524,8 @@ testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
 
     let ok = case lns of
                ([ "HTTP/1.0 304 Test\r"
-                , h1, h2, h3, h4
-                , "\r"]) -> check $ LC.unlines [h1,h2,h3,h4]
+                , h1, h2, h3
+                , "\r"]) -> check $ LC.unlines [h1,h2,h3]
                _ -> False
 
     when (not ok) $ LC.putStrLn $
@@ -533,8 +533,7 @@ testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
     assertBool "http response" ok
 
   where
-    check s = (H.lookup "Connection" hdrs == Just ["close\r"]) &&
-              (ch $ H.lookup "Set-Cookie" hdrs)
+    check s = ch $ H.lookup "Set-Cookie" hdrs
       where
         hdrs = strToHeaders s
 
