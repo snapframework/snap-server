@@ -9,18 +9,20 @@ module System.SendFile
   ) where
 
 #if defined(LINUX)
-import System.SendFile.Linux (sendFile)
+import           System.SendFile.Linux   (sendFile)
+#elif defined(FREEBSD)
+import           System.SendFile.FreeBSD (sendFile)
+#elif defined(OSX)
+import           System.SendFile.Darwin  (sendFile)
+#endif
 
+#if defined(LINUX)
 sendFileMode :: String
 sendFileMode = "LINUX_SENDFILE"
-#elif defined(FREEBSD)
-import System.SendFile.FreeBSD (sendFile)
-
+#else if defined(FREEBSD)
 sendFileMode :: String
 sendFileMode = "FREEBSD_SENDFILE"
-#elif defined(OSX)
-import System.SendFile.Darwin (sendFile)
-
+#else if defined(OSX)
 sendFileMode :: String
 sendFileMode = "DARWIN_SENDFILE"
 #endif
