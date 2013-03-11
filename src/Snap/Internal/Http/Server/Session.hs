@@ -9,61 +9,66 @@ module Snap.Internal.Http.Server.Session
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder         (Builder, flush,
-                                                   fromByteString)
-import           Blaze.ByteString.Builder.Char8   (fromChar, fromShow,
-                                                   fromString)
-import           Control.Applicative              ((<$>), (<|>))
-import           Control.Arrow                    (first, second)
-import           Control.Exception                (Exception, Handler (..),
-                                                   SomeException (..), catch,
-                                                   catches, throwIO)
-import           Control.Monad                    (unless, when)
-import           Data.ByteString.Char8            (ByteString)
-import qualified Data.ByteString.Char8            as S
-import qualified Data.CaseInsensitive             as CI
-import           Data.Int                         (Int64)
-import           Data.IORef                       (readIORef, writeIORef)
-import           Data.List                        (foldl')
-import qualified Data.Map                         as Map
-import           Data.Maybe                       (fromMaybe, isJust, isNothing)
-import           Data.Monoid                      (mconcat, mempty, (<>))
-import           Data.Time.Format                 (formatTime)
-import           Data.Typeable                    (Typeable)
-import           Data.Version                     (showVersion)
+import           Blaze.ByteString.Builder                 (Builder, flush,
+                                                           fromByteString)
+import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
+                                                           fromString)
+import           Blaze.ByteString.Builder.Internal.Buffer (Buffer, allocBuffer)
+import           Control.Applicative                      ((<$>), (<|>))
+import           Control.Arrow                            (first, second)
+import           Control.Exception                        (Exception,
+                                                           Handler (..),
+                                                           SomeException (..),
+                                                           catch, catches,
+                                                           throwIO)
+import           Control.Monad                            (unless, when)
+import           Data.ByteString.Char8                    (ByteString)
+import qualified Data.ByteString.Char8                    as S
+import qualified Data.CaseInsensitive                     as CI
+import           Data.Int                                 (Int64)
+import           Data.IORef                               (newIORef, readIORef,
+                                                           writeIORef)
+import           Data.List                                (foldl')
+import qualified Data.Map                                 as Map
+import           Data.Maybe                               (fromMaybe, isJust,
+                                                           isNothing)
+import           Data.Monoid                              (mconcat, mempty,
+                                                           (<>))
+import           Data.Time.Format                         (formatTime)
+import           Data.Typeable                            (Typeable)
+import           Data.Version                             (showVersion)
 #if !MIN_VERSION_base(4,6,0)
-import           Prelude                          hiding (catch)
+import           Prelude                                  hiding (catch)
 #endif
-import           System.IO.Streams                (InputStream, OutputStream)
-import qualified System.IO.Streams                as Streams
-import           System.Locale                    (defaultTimeLocale)
+import           System.IO.Streams                        (InputStream,
+                                                           OutputStream)
+import qualified System.IO.Streams                        as Streams
+import           System.Locale                            (defaultTimeLocale)
 ------------------------------------------------------------------------------
-import qualified Paths_snap_server                as V
-import           Snap.Core                        (EscapeSnap (..))
-import           Snap.Internal.Http.Server.Date   (getDateString)
-import           Snap.Internal.Http.Server.Parser (IRequest (..), parseCookie,
-                                                   parseRequest,
-                                                   parseUrlEncoded,
-                                                   readChunkedTransferEncoding,
-                                                   writeChunkedTransferEncoding)
-import           Snap.Internal.Http.Server.Types  (AcceptHook, DataFinishedHook,
-                                                   ParseHook,
-                                                   PerSessionData (..),
-                                                   ServerConfig (..),
-                                                   ServerHandler,
-                                                   SessionFinishedHook,
-                                                   SessionHandler,
-                                                   UserHandlerFinishedHook)
-import           Snap.Internal.Http.Types         (Cookie (..), Method (..),
-                                                   Request (..), Response (..),
-                                                   ResponseBody (..),
-                                                   StreamProc, getHeader,
-                                                   headers, rspBodyToEnum,
-                                                   setContentLength, setHeader,
-                                                   updateHeaders)
-import           Snap.Internal.Parsing            (unsafeFromNat)
-import           Snap.Types.Headers               (Headers)
-import qualified Snap.Types.Headers               as H
+import qualified Paths_snap_server                        as V
+import           Snap.Core                                (EscapeSnap (..))
+import           Snap.Internal.Http.Server.Date           (getDateString)
+import           Snap.Internal.Http.Server.Parser         (IRequest (..),
+                                                           parseCookie,
+                                                           parseRequest,
+                                                           parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
+import           Snap.Internal.Http.Server.Types          (PerSessionData (..),
+                                                           ServerConfig (..),
+                                                           ServerHandler)
+import           Snap.Internal.Http.Types                 (Cookie (..),
+                                                           Method (..),
+                                                           Request (..),
+                                                           Response (..),
+                                                           ResponseBody (..),
+                                                           StreamProc,
+                                                           getHeader, headers,
+                                                           rspBodyToEnum,
+                                                           setContentLength,
+                                                           setHeader,
+                                                           updateHeaders)
+import           Snap.Internal.Parsing                    (unsafeFromNat)
+import           Snap.Types.Headers                       (Headers)
+import qualified Snap.Types.Headers                       as H
 ------------------------------------------------------------------------------
 
 
@@ -87,22 +92,32 @@ mAX_HEADERS_SIZE = 256 * 1024
 
 
 ------------------------------------------------------------------------------
-httpSession :: hookState
+httpSession :: Buffer
             -> ServerHandler hookState
             -> ServerConfig hookState
             -> PerSessionData
             -> IO ()
-httpSession !hookState !serverHandler !config !sessionData = begin
+httpSession !buffer !serverHandler !config !sessionData = do
+    begin
   where
     --------------------------------------------------------------------------
-    defaultTimeout       = _defaultTimeout config
+    defaultTimeout          = _defaultTimeout config
+    isSecure                = _isSecure config
+    localHostname           = _localHostname config
+    localPort               = _localPort config
+    logAccess               = _logAccess config
+    logError                = _logError config
+    startHook               = _onStart config
+    parseHook               = _onParse config
+    userHandlerFinishedHook = _onUserHandlerFinished config
+    dataFinishedHook        = _onDataFinished config
+    exceptionHook           = _onException config
+    escapeHook              = _onEscape config
+
+    --------------------------------------------------------------------------
     forceConnectionClose = _forceConnectionClose sessionData
-    isSecure             = _isSecure config
+    isNewConnection      = _isNewConnection sessionData
     localAddress         = _localAddress sessionData
-    localHostname        = _localHostname config
-    localPort            = _localPort config
-    logAccess            = _logAccess config
-    logError             = _logError config
     readEnd              = _readEnd sessionData
     remoteAddress        = _remoteAddress sessionData
     remotePort           = _remotePort sessionData
@@ -110,14 +125,25 @@ httpSession !hookState !serverHandler !config !sessionData = begin
     writeEnd             = _writeEnd sessionData
 
     --------------------------------------------------------------------------
+    newBuffer :: IO (OutputStream Builder)
+    newBuffer = Streams.unsafeBuilderStream (return buffer) writeEnd
+
+    --------------------------------------------------------------------------
     -- Begin HTTP session processing.
     begin :: IO ()
     begin = do
-        -- parse HTTP request
-        mreq <- receiveRequest
-        case mreq of
-          Nothing  -> _onSessionFinished config hookState
-          Just req -> processRequest req
+        -- the timer resets to its default value here.
+        tickle $ const defaultTimeout
+
+        -- peek first to ensure startHook gets generated at the right time.
+        Streams.peek readEnd >>= maybe (return $! ()) (const $ do
+            hookState <- startHook sessionData >>= newIORef
+            -- parse HTTP request
+            mreq <- receiveRequest
+            case mreq of
+              Nothing  -> return $! ()
+              Just req -> do parseHook hookState req
+                             processRequest hookState req)
     {-# INLINE begin #-}
 
     --------------------------------------------------------------------------
@@ -240,8 +266,9 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                                , fromByteString "411 Length Required\r\n"
                                , flush
                                ]
-            Streams.write (Just resp) writeEnd
-            Streams.write Nothing writeEnd
+            writeEndB <- newBuffer
+            Streams.write (Just resp) writeEndB
+            Streams.write Nothing writeEndB
             terminateSession LengthRequiredException
 
         ----------------------------------------------------------------------
@@ -286,8 +313,9 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                   , fromByteString "Host header\r\n"
                   , flush
                   ]
-        Streams.write (Just msg) writeEnd
-        Streams.write Nothing writeEnd
+        writeEndB <- newBuffer
+        Streams.write (Just msg) writeEndB
+        Streams.write Nothing writeEndB
         terminateSession BadRequestException
 
     --------------------------------------------------------------------------
@@ -302,25 +330,26 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                              , fromByteString " 100 Continue\r\n\r\n"
                              , flush
                              ]
-            Streams.write (Just hl) writeEnd
+            newBuffer >>= Streams.write (Just hl)
 
     --------------------------------------------------------------------------
     {-# INLINE processRequest #-}
-    processRequest !req = do
+    processRequest !hookState !req = do
         -- successfully parsed a request, so restart the timer
         tickle $ max defaultTimeout
 
         -- check for Expect: 100-continue
         checkExpect100Continue req
-        runServerHandler req
+        runServerHandler hookState req
             `catches` [ Handler escapeSnapHandler
                       , Handler $ catchUserException "user handler" req
                       ]
 
     --------------------------------------------------------------------------
     {-# INLINE runServerHandler #-}
-    runServerHandler !req = do
+    runServerHandler !hookState !req = do
         (_, rsp0) <- serverHandler config sessionData req
+        userHandlerFinishedHook hookState req rsp0
 
         -- check whether we should close the connection after sending the
         -- response
@@ -340,17 +369,18 @@ httpSession !hookState !serverHandler !config !sessionData = begin
         let !rsp = updateHeaders (insServer . H.set "Date" date) rsp2
         bytesSent <- sendResponse rsp `catch`
                      catchUserException "sending-response" req
-        logAccess req $! maybe (setContentLength bytesSent rsp)
-                               (const rsp)
-                               (rspContentLength rsp)
+        let rspFinal = maybe (setContentLength bytesSent rsp)
+                             (const rsp)
+                             (rspContentLength rsp)
+        dataFinishedHook hookState req rspFinal
+        logAccess req rspFinal
         if cc
           then return $! ()
-          else begin
+          else writeIORef isNewConnection False >> begin
 
     --------------------------------------------------------------------------
-    escapeSnapHandler (EscapeHttp escapeHandler) = escapeHandler tickle
-                                                                 readEnd
-                                                                 writeEnd
+    escapeSnapHandler (EscapeHttp escapeHandler) = newBuffer >>=
+                                                   escapeHandler tickle readEnd
     escapeSnapHandler (TerminateConnection e)    = terminateSession e
 
     --------------------------------------------------------------------------
@@ -424,7 +454,19 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                -> Response      -- ^ response
                -> StreamProc    -- ^ output body
                -> IO Int64      -- ^ returns number of bytes written
-    whenStream = undefined
+    whenStream headers hlen rsp body = do
+        writeEnd0 <- Streams.ignoreEof writeEnd
+        (writeEnd1, getCount) <- Streams.countOutput writeEnd
+        writeEnd2 <- limitRspBody hlen rsp writeEnd1
+        writeEndB <- Streams.unsafeBuilderStream (return buffer) writeEnd2
+        Streams.write (Just headers) writeEndB
+        writeEnd' <- body writeEndB
+        Streams.write Nothing writeEnd'
+        -- Just in case the user handler didn't.
+        Streams.write Nothing writeEnd1
+        n <- getCount
+        return $! n - fromIntegral hlen
+
 
     --------------------------------------------------------------------------
     whenSendFile :: Builder     -- ^ headers
@@ -433,7 +475,9 @@ httpSession !hookState !serverHandler !config !sessionData = begin
                  -> FilePath    -- ^ file to serve
                  -> Int64       -- ^ file start offset
                  -> IO Int64    -- ^ returns number of bytes written
-    whenSendFile = undefined
+    whenSendFile headers hlen rsp filePath offset = do
+        writeEndB <- newBuffer
+        undefined
 
 
 --------------------------------------------------------------------------
@@ -548,5 +592,3 @@ renderCookies r = updateHeaders f r
             then h
             else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
-
-

@@ -2,17 +2,23 @@
 module Snap.Internal.Http.Server.Types
   ( ServerConfig(..)
   , PerSessionData(..)
-  , AcceptHook
-  , ParseHook
+
+  -- * hooks
   , DataFinishedHook
+  , EscapeSnapHook
+  , ExceptionHook
+  , ParseHook
+  , StartHook
   , UserHandlerFinishedHook
-  , SessionFinishedHook
+
+  -- * handlers
   , ServerHandler
   , SessionHandler
   ) where
 
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder (Builder)
+import           Control.Exception        (SomeException)
 import           Data.ByteString          (ByteString)
 import           Data.Int                 (Int64)
 import           Data.IORef               (IORef)
@@ -23,16 +29,19 @@ import           System.IO.Streams        (InputStream, OutputStream)
                                   -- hooks --
                                   -----------
 ------------------------------------------------------------------------------
-type AcceptHook hookState = PerSessionData -> IO hookState
+type StartHook hookState = PerSessionData -> IO hookState
 
-type ParseHook hookState = hookState -> Request -> IO hookState
+type ParseHook hookState = IORef hookState  -> Request -> IO ()
 
 type UserHandlerFinishedHook hookState =
-         hookState -> Request -> Response -> IO hookState
+    IORef hookState -> Request -> Response -> IO ()
 
-type DataFinishedHook hookState = hookState -> Request -> Response -> IO ()
+type DataFinishedHook hookState =
+    IORef hookState -> Request -> Response -> IO ()
 
-type SessionFinishedHook hookState = hookState -> IO ()
+type ExceptionHook hookState = IORef hookState -> SomeException -> IO ()
+
+type EscapeSnapHook hookState = IORef hookState -> IO ()
 
                           ---------------------------
                           -- snap server lifecycle --
@@ -47,9 +56,9 @@ type SessionFinishedHook hookState = hookState -> IO ()
 --
 -- 2. create a 'PerSessionData' object
 --
--- 3. call the 'AcceptHook'.
+-- 3. Enter the 'SessionHandler', which:
 --
--- 4. Enter the 'SessionHandler', which:
+-- 4. calls the 'StartHook', making a new hookData object.
 --
 -- 5. parses the HTTP request. If the session is over, we stop here.
 --
@@ -60,12 +69,16 @@ type SessionFinishedHook hookState = hookState -> IO ()
 --
 -- 8. the server handler passes control to the user handler
 --
--- 9. a 'Response' is produced
+-- 9. a 'Response' is produced, and the 'UserHandlerFinishedHook' is called.
 --
--- 10. the 'Response' is written to the client, we go to #3.
+-- 10. the 'Response' is written to the client
+--
+-- 11. the 'DataFinishedHook' is called.
+--
+-- 12. we go to #3.
 --
 --    (NOTE(greg): to get the semantics we want here, we need to call
---    Streams.peek before we call the AcceptHook so that we ensure there's a
+--    Streams.peek before we call the StartHook so that we ensure there's a
 --    request coming and our stats don't get distorted by keepalive.
 
 
@@ -78,11 +91,12 @@ type SessionFinishedHook hookState = hookState -> IO ()
 data ServerConfig hookState = ServerConfig
     { _logAccess             :: !(Request -> Response -> IO ())
     , _logError              :: !(Builder -> IO ())
-    , _onAccept              :: !(AcceptHook hookState)
+    , _onStart               :: !(StartHook hookState)
     , _onParse               :: !(ParseHook hookState)
     , _onUserHandlerFinished :: !(UserHandlerFinishedHook hookState)
     , _onDataFinished        :: !(DataFinishedHook hookState)
-    , _onSessionFinished     :: !(SessionFinishedHook hookState)
+    , _onException           :: !(ExceptionHook hookState)
+    , _onEscape              :: !(EscapeSnapHook hookState)
 
       -- | will be overridden by a @Host@ header if it appears.
     , _localHostname         :: !ByteString
@@ -102,7 +116,8 @@ data PerSessionData = PerSessionData
     , _remoteAddress        :: !ByteString
     , _remotePort           :: {-# UNPACK #-} !Int
     , _readEnd              :: !(InputStream ByteString)
-    , _writeEnd             :: !(OutputStream Builder)
+    , _writeEnd             :: !(OutputStream ByteString)
+    , _isNewConnection      :: !(IORef Bool)
     }
 
 
