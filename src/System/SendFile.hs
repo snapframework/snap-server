@@ -19,10 +19,10 @@ import           System.SendFile.Darwin  (sendFile)
 #if defined(LINUX)
 sendFileMode :: String
 sendFileMode = "LINUX_SENDFILE"
-#else if defined(FREEBSD)
+#elif defined(FREEBSD)
 sendFileMode :: String
 sendFileMode = "FREEBSD_SENDFILE"
-#else if defined(OSX)
+#elif defined(OSX)
 sendFileMode :: String
 sendFileMode = "DARWIN_SENDFILE"
 #endif
