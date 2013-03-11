@@ -369,7 +369,9 @@ httpSession !hookState !serverHandler !config !sessionData = begin
     sendResponse :: Response -> IO Int64
     sendResponse !rsp0 = do
         let !rsp1 = renderCookies rsp0
-        let (rsp, shouldClose) = if isNothing $ rspContentLength rsp1
+        let !code = rspStatus rsp1
+        let (rsp, shouldClose) = if isNothing (rspContentLength rsp1) &&
+                                    code /= 204 && code /= 304
                                    then noCL rsp1
                                    else (rsp1, False)
         when shouldClose $ writeIORef forceConnectionClose True
