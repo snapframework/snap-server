@@ -79,21 +79,17 @@ instance Exception HttpParseException
 
 
 ------------------------------------------------------------------------------
-parseRequest :: InputStream ByteString -> IO (Maybe IRequest)
+parseRequest :: InputStream ByteString -> IO IRequest
 parseRequest input = do
-    eof <- Streams.atEOF input
-    if eof
-      then return Nothing
-      else do
-        line <- pLine input
-        let (!mStr,!s)      = bSp line
-        let (!uri, !vStr)   = bSp s
-        let method          = methodFromString mStr
-        let !version        = pVer vStr
-        let (host, uri')    = getHost uri
+    line <- pLine input
+    let (!mStr,!s)      = bSp line
+    let (!uri, !vStr)   = bSp s
+    let method          = methodFromString mStr
+    let !version        = pVer vStr
+    let (host, uri')    = getHost uri
 
-        hdrs    <- pHeaders input
-        return $! Just $! IRequest method uri' version host hdrs
+    hdrs    <- pHeaders input
+    return $! IRequest method uri' version host hdrs
 
   where
     getHost s | "http://" `S.isPrefixOf` s

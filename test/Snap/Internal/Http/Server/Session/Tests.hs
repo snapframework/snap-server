@@ -14,8 +14,11 @@ import           Control.Monad                            (forM_, forever,
                                                            (>=>))
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
+import qualified Data.CaseInsensitive                     as CI
 import           Data.IORef                               (newIORef)
+import qualified Data.Map                                 as Map
 import           Data.Maybe                               (isNothing)
+import           Data.Monoid                              (mempty)
 import qualified Network.Http.Client                      as Http
 import           System.Timeout                           (timeout)
 import           Test.Framework
@@ -25,26 +28,210 @@ import           Test.HUnit                               hiding (Test, path)
 import           Snap.Core
 import           Snap.Internal.Http.Server.Session
 import           Snap.Internal.Http.Server.Types
+import           Snap.Test                                (RequestBuilder)
 import qualified Snap.Test                                as T
-import           Snap.Test.Common                         (eatException)
+import           Snap.Test.Common                         (coverShowInstance, coverTypeableInstance,
+                                                           eatException,
+                                                           expectException)
 import           System.IO.Streams                        (InputStream,
                                                            OutputStream)
 import qualified System.IO.Streams                        as Streams
 import qualified System.IO.Streams.Concurrent             as Streams
+import qualified System.IO.Streams.Debug                  as Streams
 ------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------------------------
 tests :: [Test]
-tests = [ testBasicNop ]
+tests = [ testPong
+        , testPong1_0
+        , testBadParses
+        , testEof
+        , testHttp100
+        , testNoHost
+        , testNoHost1_0
+        , testChunkedRequest
+        , testTrivials
+        ]
 
 
 ------------------------------------------------------------------------------
-mkRequest :: T.RequestBuilder IO a -> IO ByteString
-mkRequest = (T.buildRequest . void) >=> T.requestToString
+testPong :: Test
+testPong = testCase "session/pong" $ do
+    [(resp, body)] <- runRequestPipeline [return ()] snap
+    assertEqual "code" 200 $ Http.getStatusCode resp
+    assertEqual "body" pong body
+    assertEqual "chunked" (Just $ CI.mk "chunked") $
+                          fmap CI.mk $
+                          Http.getHeader resp "Transfer-Encoding"
+  where
+    pong = "PONG"
+    snap = writeBS pong
 
 
 ------------------------------------------------------------------------------
+testPong1_0 :: Test
+testPong1_0 = testCase "session/pong1_0" $ do
+    is <- makeRequest (T.setHttpVersion (1,0)) >>= Streams.fromList . (:[])
+    (os, getInput) <- listOutputStream
+    runSession is os (writeBS "PONG")
+    out <- liftM S.concat getInput
+
+    assertBool "200 ok" $ S.isPrefixOf "HTTP/1.0 200 OK\r\n" out
+    assertBool "PONG" $ S.isSuffixOf "\r\n\r\nPONG" out
+
+
+    -- this test would be good below, except http-streams has a bug parsing
+    -- http/1.1 responses.
+
+{-
+    [(resp, body)] <- runRequestPipelineDebug (_makeDebugPipe "pong/1.0")
+                                              [T.setHttpVersion (1,0)]
+                                              snap
+    assertEqual "code" 200 $ Http.getStatusCode resp
+    assertEqual "body" pong body
+    assertEqual "not chunked" Nothing $ Http.getHeader resp "Transfer-Encoding"
+    assertEqual "connection close" (Just "close") $
+                Http.getHeader resp "Connection"
+  where
+    pong = "PONG"
+    snap = writeBS pong
+-}
+
+------------------------------------------------------------------------------
+testBadParses :: Test
+testBadParses = testGroup "session/badParses" [
+                  check 1 "Not an HTTP Request"
+                , check 2 $ S.concat [ "GET / HTTP/1.1\r\n"
+                                     , "&*%^(*&*@YS\r\n\r324932\n)"
+                                     ]
+                , check 3 "\n"
+                ]
+
+  where
+    check :: Int -> ByteString -> Test
+    check n txt = testCase ("session/badParses/" ++ show n) $ do
+        is <- Streams.fromList [txt]
+        (os, _) <- listOutputStream
+        expectException $ runSession is os (return ())
+
+
+------------------------------------------------------------------------------
+testEof :: Test
+testEof = testCase "session/eof" $ do
+    l <- runRequestPipeline [] snap
+    assertBool "eof1" $ null l
+
+    is <- Streams.fromList [""]
+    (os, getList) <- listOutputStream
+    runSession is os snap
+    out <- getList
+    assertEqual "eof2" [] out
+  where
+    snap = writeBS "OK"
+
+
+------------------------------------------------------------------------------
+testHttp100 :: Test
+testHttp100 = testCase "server/expect100" $ do
+    is <- makeRequest expect100 >>= Streams.fromList . (:[])
+    (os, getList) <- listOutputStream
+    runSession is os (writeBS "OK")
+    out <- liftM S.concat getList
+
+    assertBool "100-continue" $
+               S.isPrefixOf "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK" out
+
+  where
+    expect100 = do
+        queryGetParams
+        T.setHeader "Expect" "100-continue"
+
+
+------------------------------------------------------------------------------
+testNoHost :: Test
+testNoHost = testCase "session/noHost" $ do
+    is <- Streams.fromList ["GET / HTTP/1.1\r\n\r\n"]
+    (os, _) <- listOutputStream
+    expectException $ runSession is os (writeBS "OK")
+
+
+------------------------------------------------------------------------------
+testNoHost1_0 :: Test
+testNoHost1_0 = testCase "session/noHost1_0" $ do
+    is <- Streams.fromList ["GET / HTTP/1.0\r\n\r\n"]
+    (os, getList) <- listOutputStream
+    runSession is os snap
+    out <- liftM S.concat getList
+    assertBool "no host 1.0" $ S.isSuffixOf "\r\nbackup-localhost" out
+  where
+    snap = getRequest >>= writeBS . rqHostName
+
+
+------------------------------------------------------------------------------
+testChunkedRequest :: Test
+testChunkedRequest = testCase "session/chunkedRequest" $ do
+    [(_, body)] <- runRequestPipeline [chunked] snap
+    assertEqual "chunked" "ok" body
+  where
+    snap = do
+        m <- liftM (getHeader "Transfer-Encoding") getRequest
+        if m == Just "chunked"
+          then readRequestBody 2048 >>= writeLBS
+          else writeBS "not ok"
+
+    chunked = do
+        T.put "/" "text/plain" "ok"
+        T.setHeader "Transfer-Encoding" "chunked"
+
+
+
+------------------------------------------------------------------------------
+testTrivials :: Test
+testTrivials = testCase "session/trivials" $ do
+    coverShowInstance $ TerminateSessionException
+                      $ SomeException BadRequestException
+    coverShowInstance LengthRequiredException
+    coverShowInstance BadRequestException
+    coverTypeableInstance (undefined :: TerminateSessionException)
+    coverTypeableInstance (undefined :: BadRequestException)
+    coverTypeableInstance (undefined :: LengthRequiredException)
+
+
+                             ---------------------
+                             -- query fragments --
+                             ---------------------
+
+------------------------------------------------------------------------------
+queryGetParams :: RequestBuilder IO ()
+queryGetParams = do
+    T.get "/foo/bar.html" $ Map.fromList [ ("param1", ["abc", "def"])
+                                         , ("param2", ["def"])
+                                         ]
+    T.addCookies [ Cookie "foo" "bar" Nothing (Just "localhost") (Just "/")
+                          False False ]
+
+
+------------------------------------------------------------------------------
+_queryRawGetParams :: RequestBuilder IO ()
+_queryRawGetParams = do
+    T.get "/foo/bar.html" mempty
+    T.setQueryStringRaw "param1=abc&param2=def%20+&param1=abc"
+
+
+                            -----------------------
+                            -- utility functions --
+                            -----------------------
+
+
+------------------------------------------------------------------------------
+-- | Given a request builder, produce the HTTP request as a ByteString.
+makeRequest :: RequestBuilder IO a -> IO ByteString
+makeRequest = (T.buildRequest . void) >=> T.requestToString
+
+
+------------------------------------------------------------------------------
+-- | Fill in a 'PerSessionData' with some dummy values.
 makePerSessionData :: InputStream ByteString
                    -> OutputStream ByteString
                    -> IO PerSessionData
@@ -71,32 +258,78 @@ makePerSessionData readEnd writeEnd = do
 
 
 ------------------------------------------------------------------------------
-makePipe :: IO ( (InputStream ByteString, OutputStream ByteString)
-               , (InputStream ByteString, OutputStream ByteString)
-               )
+-- | Make a pipe -- the two Input/OutputStream pairs will communicate with each
+-- other from separate threads by using 'Chan's.
+makePipe :: PipeFunc
 makePipe = do
     chan1 <- newChan
     chan2 <- newChan
 
     clientReadEnd  <- Streams.chanToInput  chan1
-    clientWriteEnd <- Streams.chanToOutput chan2
+    clientWriteEnd <- Streams.chanToOutput chan2 >>=
+                      Streams.contramapM (evaluate . S.copy)
     serverReadEnd  <- Streams.chanToInput  chan2
-    serverWriteEnd <- Streams.chanToOutput chan1
+    serverWriteEnd <- Streams.chanToOutput chan1 >>=
+                      Streams.contramapM (evaluate . S.copy)
 
     return ((clientReadEnd, clientWriteEnd), (serverReadEnd, serverWriteEnd))
 
 
 ------------------------------------------------------------------------------
-runRequests :: [T.RequestBuilder IO ()]
-            -> Snap b
-            -> IO [(Http.Response, ByteString)]
-runRequests rbs handler = do
-    ((clientRead, clientWrite), (serverRead, serverWrite)) <- makePipe
+-- | Make a pipe -- the two Input/OutputStream pairs will communicate with each
+-- other from separate threads by using 'Chan's. Data moving through the
+-- streams will be logged to stdout.
+_makeDebugPipe :: ByteString -> PipeFunc
+_makeDebugPipe name = do
+    chan1 <- newChan
+    chan2 <- newChan
+
+    clientReadEnd  <- Streams.chanToInput  chan1 >>=
+                      Streams.debugInputBS (S.append name "/client-rd")
+                                           Streams.stderr
+    clientWriteEnd <- Streams.chanToOutput chan2 >>=
+                      Streams.debugOutputBS (S.append name "/client-wr")
+                                            Streams.stderr >>=
+                      Streams.contramapM (evaluate . S.copy)
+    serverReadEnd  <- Streams.chanToInput  chan2 >>=
+                      Streams.debugInputBS (S.append name "/server-rd")
+                                           Streams.stderr
+    serverWriteEnd <- Streams.chanToOutput chan1 >>=
+                      Streams.debugOutputBS (S.append name "/server-wr")
+                                            Streams.stderr >>=
+                      Streams.contramapM (evaluate . S.copy)
+
+    return ((clientReadEnd, clientWriteEnd), (serverReadEnd, serverWriteEnd))
+
+
+------------------------------------------------------------------------------
+type PipeFunc = IO ( (InputStream ByteString, OutputStream ByteString)
+                   , (InputStream ByteString, OutputStream ByteString)
+                   )
+
+------------------------------------------------------------------------------
+-- | Given a bunch of requests, convert them to bytestrings and pipeline them
+-- into the 'httpSession' code, recording the results.
+runRequestPipeline :: [T.RequestBuilder IO ()]
+                   -> Snap b
+                   -> IO [(Http.Response, ByteString)]
+runRequestPipeline = runRequestPipelineDebug makePipe
+
+
+------------------------------------------------------------------------------
+-- | Given a bunch of requests, convert them to bytestrings and pipeline them
+-- into the 'httpSession' code, recording the results.
+runRequestPipelineDebug :: PipeFunc
+                        -> [T.RequestBuilder IO ()]
+                        -> Snap b
+                        -> IO [(Http.Response, ByteString)]
+runRequestPipelineDebug pipeFunc rbs handler = do
+    ((clientRead, clientWrite), (serverRead, serverWrite)) <- pipeFunc
 
     sigClient <- newEmptyMVar
     results   <- newMVar []
 
-    forM_ rbs (mkRequest >=> flip Streams.write clientWrite . Just)
+    forM_ rbs $ makeRequest >=> flip Streams.write clientWrite . Just
     Streams.write Nothing clientWrite
 
     conn <- Http.makeConnection "localhost"
@@ -105,23 +338,15 @@ runRequests rbs handler = do
                                 clientRead
     m <- mask $ \restore -> do
         ctid <- forkIO $ clientThread restore conn results sigClient
-        stid <- forkIO $ restore (serverThread serverRead serverWrite)
-        timeout 10000000 $ restore (takeMVar sigClient `finally` do
+        stid <- forkIO $ restore (runSession serverRead serverWrite handler)
+        timeout 10000000 $ restore (takeMVar sigClient) `finally` do
                                         killThread ctid
-                                        killThread stid)
+                                        killThread stid
 
     when (isNothing m) $ error "timeout"
     readMVar results
 
   where
-    serverThread readEnd writeEnd = do
-        buffer         <- allocBuffer 64000
-        perSessionData <- makePerSessionData readEnd writeEnd
-        httpSession buffer (snapToServerHandler handler)
-                           (makeServerConfig ())
-                           perSessionData
-        Streams.write Nothing writeEnd
-
     clientThread restore conn results sig =
         eatException (restore loop `finally` putMVar sig ())
       where
@@ -130,6 +355,20 @@ runRequests rbs handler = do
                 !out <- liftM S.concat $ Streams.toList istr
                 return (rsp, out)
             modifyMVar_ results (return . (++ [(resp, body)]))
+
+
+------------------------------------------------------------------------------
+runSession :: InputStream ByteString
+           -> OutputStream ByteString
+           -> Snap a
+           -> IO ()
+runSession readEnd writeEnd handler = do
+    buffer         <- allocBuffer 64000
+    perSessionData <- makePerSessionData readEnd writeEnd
+    httpSession buffer (snapToServerHandler handler)
+                       (makeServerConfig ())
+                       perSessionData
+    Streams.write Nothing writeEnd
 
 
 ------------------------------------------------------------------------------
@@ -142,7 +381,7 @@ makeServerConfig hs = ServerConfig logAccess
                                    onDataFinished
                                    onEx
                                    onEscape
-                                   "localhost"
+                                   "backup-localhost"
                                    8080
                                    10
                                    False
@@ -167,11 +406,8 @@ snapToServerHandler snap serverConfig perSessionData req =
 
 
 ------------------------------------------------------------------------------
-testBasicNop :: Test
-testBasicNop = testCase "session/basicNop" $ do
-    [(resp, body)] <- runRequests [return ()] snap
-    assertEqual "code" 200 $ Http.getStatusCode resp
-    assertEqual "body" "OK" body
-  where
-    snap = writeBS "OK"
-
+listOutputStream :: IO (OutputStream ByteString, IO [ByteString])
+listOutputStream = do
+    (os, out) <- Streams.listOutputStream
+    os' <- Streams.contramapM (evaluate . S.copy) os
+    return (os', out)

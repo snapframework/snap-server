@@ -7,6 +7,9 @@
 ------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.Session
   ( httpSession
+  , BadRequestException(..)
+  , LengthRequiredException(..)
+  , TerminateSessionException(..)
   ) where
 
 ------------------------------------------------------------------------------
@@ -144,23 +147,28 @@ httpSession !buffer !serverHandler !config !sessionData = do
         tickle $ const defaultTimeout
 
         -- peek first to ensure startHook gets generated at the right time.
-        Streams.peek readEnd >>= maybe (return $! ()) (const $ do
+        readEndAtEof >>= (flip unless $ do
             hookState <- startHook sessionData >>= newIORef
             -- parse HTTP request
-            mreq <- receiveRequest
-            case mreq of
-              Nothing  -> return $! ()
-              Just req -> do parseHook hookState req
-                             processRequest hookState req)
+            req <- receiveRequest
+            parseHook hookState req
+            processRequest hookState req)
     {-# INLINE begin #-}
+
+
+    ------------------------------------------------------------------------------
+    readEndAtEof = Streams.read readEnd >>=
+                   maybe (return True)
+                         (\c -> if S.null c
+                                  then readEndAtEof
+                                  else Streams.unRead c readEnd >> return False)
 
     --------------------------------------------------------------------------
     -- Read the HTTP request from the socket, parse it, and pre-process it.
-    receiveRequest :: IO (Maybe Request)
+    receiveRequest :: IO Request
     receiveRequest = do
         readEnd' <- Streams.throwIfProducesMoreThan mAX_HEADERS_SIZE readEnd
-        parseRequest readEnd' >>= maybe (return Nothing)
-                                        ((Just <$>) . toRequest)
+        parseRequest readEnd' >>= toRequest
     {-# INLINE receiveRequest #-}
 
     --------------------------------------------------------------------------
@@ -338,7 +346,8 @@ httpSession !buffer !serverHandler !config !sessionData = do
                              , fromByteString " 100 Continue\r\n\r\n"
                              , flush
                              ]
-            newBuffer >>= Streams.write (Just hl)
+            os <- newBuffer
+            Streams.write (Just hl) os
 
     --------------------------------------------------------------------------
     {-# INLINE processRequest #-}

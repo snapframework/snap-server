@@ -10,7 +10,6 @@ import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
 import           Data.Int                             (Int64)
 import qualified Data.Map                             as Map
-import           Data.Maybe                           (isNothing)
 import           Test.Framework
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
@@ -57,9 +56,8 @@ testShow = testCase "parser/show" $ do
 
 ------------------------------------------------------------------------------
 testNull :: Test
-testNull = testCase "parser/shortParse" $ do
-    f <- Streams.fromList [] >>= parseRequest
-    assertBool "should be Nothing" $ isNothing f
+testNull = testCase "parser/shortParse" $
+           expectException (Streams.fromList [] >>= parseRequest)
 
 
 ------------------------------------------------------------------------------
@@ -182,8 +180,7 @@ testMethods = testCase "parser/methods" $ mapM_ testOne ms
                    parseRequest >>=
                    checkMethod m
 
-    checkMethod _ Nothing  = assertBool "parse failed" False
-    checkMethod m (Just i) = do
+    checkMethod m i = do
         assertEqual "method" m $ iMethod i
         assertEqual "hdrs" [("z", "b"), ("foo", "bar baz")] $ iRequestHeaders i
 
@@ -193,36 +190,36 @@ testSimpleParse :: Test
 testSimpleParse = testCase "parser/simpleParse" $ do
     Streams.fromList ["GET / HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (Just $ IRequest GET "/" (1, 1) Nothing [])
+        assertEqual "simple" (IRequest GET "/" (1, 1) Nothing [])
 
     Streams.fromList ["GET http://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (Just $ IRequest GET "/" (1, 1)
+        assertEqual "simple" (IRequest GET "/" (1, 1)
                                        (Just "foo.com") [])
 
     Streams.fromList ["GET https://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (Just $ IRequest GET "/" (1, 1)
+        assertEqual "simple" (IRequest GET "/" (1, 1)
                                        (Just "foo.com") [])
 
     Streams.fromList ["GET / HTTP/1.1\r\nz:b\r\n", "", "\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple2" (Just $ IRequest GET "/" (1, 1) Nothing
+        assertEqual "simple2" (IRequest GET "/" (1, 1) Nothing
                                         [("z", "b")])
 
     Streams.fromList [ "GET / HTTP/1.1\r\na:a\r", "\nz:b\r\n", ""
                      , "\r\n" ] >>=
         parseRequest >>=
-        assertEqual "simple3" (Just $ IRequest GET "/" (1, 1) Nothing
+        assertEqual "simple3" (IRequest GET "/" (1, 1) Nothing
                                         [("a", "a"), ("z", "b")])
 
     Streams.fromList ["GET /\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple4" (Just $ IRequest GET "/" (1, 0) Nothing [])
+        assertEqual "simple4" (IRequest GET "/" (1, 0) Nothing [])
 
     Streams.fromList ["G", "ET", " /\r", "\n\r", "", "\n"] >>=
         parseRequest >>=
-        assertEqual "simple5" (Just $ IRequest GET "/" (1, 0) Nothing [])
+        assertEqual "simple5" (IRequest GET "/" (1, 0) Nothing [])
 
 
 ------------------------------------------------------------------------------
