@@ -1,1 +1,1 @@
-:set -Wall -isrc -itest -ibenchmark -idist/build/autogen
+:set -Wall -isrc -itest -ibenchmark -idist/build/autogen -DMIN_VERSION_base(x,y,z)=0

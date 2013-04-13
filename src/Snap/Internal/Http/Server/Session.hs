@@ -10,11 +10,16 @@ module Snap.Internal.Http.Server.Session
   ) where
 
 ------------------------------------------------------------------------------
+#if !MIN_VERSION_base(4,6,0)
+import           Prelude                                  hiding (catch)
+#endif
+------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder                 (Builder, flush,
                                                            fromByteString)
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
                                                            fromString)
 import           Blaze.ByteString.Builder.Internal.Buffer (Buffer)
+------------------------------------------------------------------------------
 import           Control.Applicative                      ((<$>), (<|>))
 import           Control.Arrow                            (first, second)
 import           Control.Exception                        (Exception,
@@ -32,16 +37,14 @@ import           Data.IORef                               (IORef, newIORef,
                                                            writeIORef)
 import           Data.List                                (foldl')
 import qualified Data.Map                                 as Map
-import           Data.Maybe                               (fromJust, fromMaybe,
-                                                           isJust, isNothing)
+import           Data.Maybe                               (fromJust,
+                                                           fromMaybe, isJust,
+                                                           isNothing)
 import           Data.Monoid                              (mconcat, mempty,
                                                            (<>))
 import           Data.Time.Format                         (formatTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Version                             (showVersion)
-#if !MIN_VERSION_base(4,6,0)
-import           Prelude                                  hiding (catch)
-#endif
 import           System.IO.Streams                        (InputStream,
                                                            OutputStream)
 import qualified System.IO.Streams                        as Streams
@@ -49,14 +52,6 @@ import           System.Locale                            (defaultTimeLocale)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                        as V
 import           Snap.Core                                (EscapeSnap (..))
-import           Snap.Internal.Http.Server.Date           (getDateString)
-import           Snap.Internal.Http.Server.Parser         (IRequest (..),
-                                                           parseCookie,
-                                                           parseRequest,
-                                                           parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
-import           Snap.Internal.Http.Server.Types          (PerSessionData (..),
-                                                           ServerConfig (..),
-                                                           ServerHandler)
 import           Snap.Internal.Http.Types                 (Cookie (..),
                                                            Method (..),
                                                            Request (..),
@@ -71,6 +66,15 @@ import           Snap.Internal.Http.Types                 (Cookie (..),
 import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
+------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server.Date           (getDateString)
+import           Snap.Internal.Http.Server.Parser         (IRequest (..),
+                                                           parseCookie,
+                                                           parseRequest,
+                                                           parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
+import           Snap.Internal.Http.Server.Types          (PerSessionData (..),
+                                                           ServerConfig (..),
+                                                           ServerHandler)
 ------------------------------------------------------------------------------
 
 

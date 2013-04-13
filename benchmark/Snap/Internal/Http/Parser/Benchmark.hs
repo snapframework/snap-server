@@ -1,18 +1,18 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PackageImports #-}
 
 module Snap.Internal.Http.Parser.Benchmark
   ( benchmarks )
   where
 
 import           Control.Monad
-import           Criterion.Main hiding (run)
-import qualified Data.ByteString as S
-import           Snap.Internal.Http.Server.Parser
+import           Criterion.Main                   hiding (run)
+import qualified Data.ByteString                  as S
 import           Snap.Internal.Http.Parser.Data
-import qualified System.IO.Streams as Streams
+import           Snap.Internal.Http.Server.Parser
+import qualified System.IO.Streams                as Streams
 
 parseGet :: S.ByteString -> IO ()
 parseGet s = do

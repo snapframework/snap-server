@@ -6,7 +6,7 @@ module Snap.Internal.Http.Parser.Data
     )
     where
 
-import qualified Data.ByteString.Char8 as S
+import qualified Data.ByteString.Char8      as S
 import qualified Data.ByteString.Lazy.Char8 as L
 
 parseGetData :: S.ByteString

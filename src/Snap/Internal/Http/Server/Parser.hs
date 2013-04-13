@@ -34,7 +34,8 @@ import           Data.IORef                       (newIORef, readIORef,
                                                    writeIORef)
 import           Data.Typeable                    (Typeable)
 import           GHC.Exts                         (Int (..), Int#, (+#))
-import           Prelude                          hiding (head, take, takeWhile)
+import           Prelude                          hiding (head, take,
+                                                   takeWhile)
 import           System.IO.Streams                (InputStream, OutputStream)
 import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)
