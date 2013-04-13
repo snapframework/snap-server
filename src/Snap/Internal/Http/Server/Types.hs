@@ -17,13 +17,15 @@ module Snap.Internal.Http.Server.Types
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder (Builder)
-import           Control.Exception        (SomeException)
-import           Data.ByteString          (ByteString)
-import           Data.Int                 (Int64)
-import           Data.IORef               (IORef)
-import           Snap.Core                (Request, Response)
-import           System.IO.Streams        (InputStream, OutputStream)
+import           Blaze.ByteString.Builder                 (Builder)
+import           Blaze.ByteString.Builder.Internal.Buffer (Buffer)
+import           Control.Exception                        (SomeException)
+import           Data.ByteString                          (ByteString)
+import           Data.Int                                 (Int64)
+import           Data.IORef                               (IORef)
+import           Snap.Core                                (Request, Response)
+import           System.IO.Streams                        (InputStream,
+                                                           OutputStream)
 
                                   -----------
                                   -- hooks --
@@ -111,7 +113,10 @@ data ServerConfig hookState = ServerConfig
 data PerSessionData = PerSessionData
     { _forceConnectionClose :: {-# UNPACK #-} !(IORef Bool)
     , _twiddleTimeout       :: !((Int -> Int) -> IO ())
-    , _sendfileHandler      :: !(FilePath -> Int64 -> Int64 -> IO ())
+    , _sendfileHandler      :: !(Buffer -> Builder -> FilePath -> Int64
+                                        -> Int64 -> IO ())
+         -- ^ arguments are: builder buffer, status line and headers, path to
+         --   file, start offset, number of bytes
     , _localAddress         :: !ByteString
     , _remoteAddress        :: !ByteString
     , _remotePort           :: {-# UNPACK #-} !Int

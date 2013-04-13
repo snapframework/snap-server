@@ -30,6 +30,8 @@ import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take,
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (ByteString, w2c)
 import qualified Data.ByteString.Unsafe           as S
+import           Data.IORef                       (newIORef, readIORef,
+                                                   writeIORef)
 import           Data.Typeable                    (Typeable)
 import           GHC.Exts                         (Int (..), Int#, (+#))
 import           Prelude                          hiding (head, take, takeWhile)
@@ -298,12 +300,16 @@ readChunkedTransferEncoding input =
 ------------------------------------------------------------------------------
 writeChunkedTransferEncoding :: OutputStream Builder
                              -> IO (OutputStream Builder)
-writeChunkedTransferEncoding os = Streams.makeOutputStream f
+writeChunkedTransferEncoding os = do
+    -- make sure we only send the terminator once.
+    eof <- newIORef True
+    Streams.makeOutputStream $ f eof
   where
-    f Nothing = do
+    f eof Nothing = readIORef eof >>= flip when (do
+        writeIORef eof True
         Streams.write (Just chunkedTransferTerminator) os
-        Streams.write Nothing os
-    f x = Streams.write (chunkedTransferEncoding `fmap` x) os
+        Streams.write Nothing os)
+    f _ x = Streams.write (chunkedTransferEncoding `fmap` x) os
 
 
                              ---------------------

@@ -1,7 +1,8 @@
-{-# LANGUAGE BangPatterns       #-}
-{-# LANGUAGE CPP                #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 ------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.Session
@@ -13,7 +14,7 @@ import           Blaze.ByteString.Builder                 (Builder, flush,
                                                            fromByteString)
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
                                                            fromString)
-import           Blaze.ByteString.Builder.Internal.Buffer (Buffer, allocBuffer)
+import           Blaze.ByteString.Builder.Internal.Buffer (Buffer)
 import           Control.Applicative                      ((<$>), (<|>))
 import           Control.Arrow                            (first, second)
 import           Control.Exception                        (Exception,
@@ -21,17 +22,18 @@ import           Control.Exception                        (Exception,
                                                            SomeException (..),
                                                            catch, catches,
                                                            throwIO)
-import           Control.Monad                            (unless, when)
+import           Control.Monad                            (unless, void, when)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
 import           Data.Int                                 (Int64)
-import           Data.IORef                               (newIORef, readIORef,
+import           Data.IORef                               (IORef, newIORef,
+                                                           readIORef,
                                                            writeIORef)
 import           Data.List                                (foldl')
 import qualified Data.Map                                 as Map
-import           Data.Maybe                               (fromMaybe, isJust,
-                                                           isNothing)
+import           Data.Maybe                               (fromJust, fromMaybe,
+                                                           isJust, isNothing)
 import           Data.Monoid                              (mconcat, mempty,
                                                            (<>))
 import           Data.Time.Format                         (formatTime)
@@ -92,7 +94,8 @@ mAX_HEADERS_SIZE = 256 * 1024
 
 
 ------------------------------------------------------------------------------
-httpSession :: Buffer
+httpSession :: forall hookState .
+               Buffer
             -> ServerHandler hookState
             -> ServerConfig hookState
             -> PerSessionData
@@ -115,14 +118,15 @@ httpSession !buffer !serverHandler !config !sessionData = do
     escapeHook              = _onEscape config
 
     --------------------------------------------------------------------------
-    forceConnectionClose = _forceConnectionClose sessionData
-    isNewConnection      = _isNewConnection sessionData
-    localAddress         = _localAddress sessionData
-    readEnd              = _readEnd sessionData
-    remoteAddress        = _remoteAddress sessionData
-    remotePort           = _remotePort sessionData
-    tickle               = _twiddleTimeout sessionData
-    writeEnd             = _writeEnd sessionData
+    forceConnectionClose    = _forceConnectionClose sessionData
+    isNewConnection         = _isNewConnection sessionData
+    localAddress            = _localAddress sessionData
+    readEnd                 = _readEnd sessionData
+    remoteAddress           = _remoteAddress sessionData
+    remotePort              = _remotePort sessionData
+    tickle                  = _twiddleTimeout sessionData
+    writeEnd                = _writeEnd sessionData
+    sendfileHandler         = _sendfileHandler sessionData
 
     --------------------------------------------------------------------------
     newBuffer :: IO (OutputStream Builder)
@@ -341,8 +345,9 @@ httpSession !buffer !serverHandler !config !sessionData = do
         -- check for Expect: 100-continue
         checkExpect100Continue req
         runServerHandler hookState req
-            `catches` [ Handler escapeSnapHandler
-                      , Handler $ catchUserException "user handler" req
+            `catches` [ Handler $ escapeSnapHandler hookState
+                      , Handler $
+                        catchUserException hookState "user handler" req
                       ]
 
     --------------------------------------------------------------------------
@@ -368,7 +373,7 @@ httpSession !buffer !serverHandler !config !sessionData = do
                           else H.set "Server" sERVER_HEADER
         let !rsp = updateHeaders (insServer . H.set "Date" date) rsp2
         bytesSent <- sendResponse rsp `catch`
-                     catchUserException "sending-response" req
+                     catchUserException hookState "sending-response" req
         let rspFinal = maybe (setContentLength bytesSent rsp)
                              (const rsp)
                              (rspContentLength rsp)
@@ -379,20 +384,27 @@ httpSession !buffer !serverHandler !config !sessionData = do
           else writeIORef isNewConnection False >> begin
 
     --------------------------------------------------------------------------
-    escapeSnapHandler (EscapeHttp escapeHandler) = newBuffer >>=
-                                                   escapeHandler tickle readEnd
-    escapeSnapHandler (TerminateConnection e)    = terminateSession e
+    escapeSnapHandler hookState (EscapeHttp escapeHandler) = do
+        eatException $ escapeHook hookState
+        newBuffer >>= escapeHandler tickle readEnd
+    escapeSnapHandler _ (TerminateConnection e) = terminateSession e
 
     --------------------------------------------------------------------------
-    catchUserException :: ByteString -> Request -> SomeException -> IO a
-    catchUserException phase req e = do
+    catchUserException :: IORef hookState
+                       -> ByteString
+                       -> Request
+                       -> SomeException
+                       -> IO a
+    catchUserException hookState phase req e = do
         logError $ mconcat [
             fromByteString "Exception leaked to httpSession during phase '"
           , fromByteString phase
           , fromByteString "': \n"
           , requestErrorMessage req e
           ]
-        -- TODO: send 503?
+        -- Note: the handler passed to httpSession needs to catch its own
+        -- exceptions if it wants to avoid an ungracious exit here.
+        eatException $ exceptionHook hookState e
         terminateSession e
 
     --------------------------------------------------------------------------
@@ -410,11 +422,11 @@ httpSession !buffer !serverHandler !config !sessionData = do
                         Stream s ->
                             whenStream headerBuilder hlen rsp s
                         SendFile f Nothing ->
-                            whenSendFile headerBuilder hlen rsp f 0
+                            whenSendFile headerBuilder rsp f 0
                         -- ignore end length here because we know we had a
                         -- content-length, use that instead.
                         SendFile f (Just (st, _)) ->
-                            whenSendFile headerBuilder hlen rsp f st
+                            whenSendFile headerBuilder rsp f st
         return $! nBodyBytes - fromIntegral hlen
 
 
@@ -454,36 +466,43 @@ httpSession !buffer !serverHandler !config !sessionData = do
                -> Response      -- ^ response
                -> StreamProc    -- ^ output body
                -> IO Int64      -- ^ returns number of bytes written
-    whenStream headers hlen rsp body = do
+    whenStream headerString hlen rsp body = do
+        -- note:
+        --
+        --  * precondition here is that we have a content-length and that we're
+        --    not using chunked transfer encoding.
+        --
+        --  * "headerString" includes http status line.
+        --
         writeEnd0 <- Streams.ignoreEof writeEnd
-        (writeEnd1, getCount) <- Streams.countOutput writeEnd
+        (writeEnd1, getCount) <- Streams.countOutput writeEnd0
         writeEnd2 <- limitRspBody hlen rsp writeEnd1
         writeEndB <- Streams.unsafeBuilderStream (return buffer) writeEnd2
-        Streams.write (Just headers) writeEndB
+        Streams.write (Just headerString) writeEndB
         writeEnd' <- body writeEndB
         Streams.write Nothing writeEnd'
         -- Just in case the user handler didn't.
         Streams.write Nothing writeEnd1
         n <- getCount
         return $! n - fromIntegral hlen
-
+    {-# INLINE whenStream #-}
 
     --------------------------------------------------------------------------
     whenSendFile :: Builder     -- ^ headers
-                 -> Int         -- ^ header length
                  -> Response    -- ^ response
                  -> FilePath    -- ^ file to serve
                  -> Int64       -- ^ file start offset
                  -> IO Int64    -- ^ returns number of bytes written
-    whenSendFile headers hlen rsp filePath offset = do
-        writeEndB <- newBuffer
-        undefined
+    whenSendFile headerString rsp filePath offset = do
+        let !cl = fromJust $ rspContentLength rsp
+        sendfileHandler buffer headerString filePath offset cl
+        return cl
+    {-# INLINE whenSendFile #-}
 
 
 --------------------------------------------------------------------------
 mkHeaderBuilder :: Response -> (Builder, Int)
 mkHeaderBuilder r = (builder, outlen)
-
   where
     (major, minor) = rspHttpVersion r
     (hdrs, !hlen)  = buildHdrs $ headers r
@@ -592,3 +611,8 @@ renderCookies r = updateHeaders f r
             then h
             else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
+
+
+------------------------------------------------------------------------------
+eatException :: IO a -> IO ()
+eatException m = void m `catch` (\(_ :: SomeException) -> return $! ())
