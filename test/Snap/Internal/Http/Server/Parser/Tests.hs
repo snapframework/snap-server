@@ -5,11 +5,14 @@
 module Snap.Internal.Http.Server.Parser.Tests (tests) where
 
 ------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder
+import           Control.Monad                        (liftM)
 import           Control.Parallel.Strategies          (rdeepseq, using)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
 import           Data.Int                             (Int64)
 import qualified Data.Map                             as Map
+import           Data.Monoid                          (mconcat)
 import           Test.Framework
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
@@ -43,6 +46,7 @@ tests = [ testShow
         , testMethods
         , testSimpleParse
         , testSimpleParseErrors
+        , testWriteChunkedTransferEncoding
         ]
 
 
@@ -113,6 +117,17 @@ testChunked = testProperty "parser/chunkedTransferEncoding" $
 
 
 ------------------------------------------------------------------------------
+testWriteChunkedTransferEncoding :: Test
+testWriteChunkedTransferEncoding = testCase "parser/writeChunked" $ do
+    (os, getList) <- Streams.listOutputStream
+    os' <- writeChunkedTransferEncoding os
+    Streams.fromList [fromByteString "ok"] >>= Streams.connectTo os'
+    Streams.write Nothing os'
+    s <- liftM (toByteString . mconcat) getList
+    assertEqual "chunked" "02\r\nok\r\n0\r\n\r\n" s
+
+
+------------------------------------------------------------------------------
 -- | ensure that running the 'readChunkedTransferEncoding' iteratee against
 -- 'transferEncodingChunked' returns the original string
 testChunkDoS :: Test
@@ -172,7 +187,7 @@ testMethods = testCase "parser/methods" $ mapM_ testOne ms
     mToStr (Method m) = m
     mToStr m          = S.pack $ show m
 
-    restOfRequest = [ " / HTTP/1.1\r\nz: b\r\n", "foo: ", "bar"
+    restOfRequest = [ " / HTTP/1.1\r\nz:b\r\nq:\r\nw\r\n", "foo: ", "bar"
                     , "\r\n  baz\r\n\r\n" ]
 
     testOne m = let s = mToStr m
@@ -182,7 +197,11 @@ testMethods = testCase "parser/methods" $ mapM_ testOne ms
 
     checkMethod m i = do
         assertEqual "method" m $ iMethod i
-        assertEqual "hdrs" [("z", "b"), ("foo", "bar baz")] $ iRequestHeaders i
+        assertEqual "hdrs" [ ("z", "b")
+                           , ("q", "")
+                           , ("w", "")
+                           , ("foo", "bar baz")
+                           ] $ iRequestHeaders i
 
 
 ------------------------------------------------------------------------------
@@ -190,36 +209,41 @@ testSimpleParse :: Test
 testSimpleParse = testCase "parser/simpleParse" $ do
     Streams.fromList ["GET / HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (IRequest GET "/" (1, 1) Nothing [])
+        assertEqual "simple0" (IRequest GET "/" (1, 1) Nothing [])
 
     Streams.fromList ["GET http://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (IRequest GET "/" (1, 1)
+        assertEqual "simple1" (IRequest GET "/" (1, 1)
                                        (Just "foo.com") [])
+
+    Streams.fromList ["GET http://foo.com HTTP/1.1\r\n\r\n"] >>=
+        parseRequest >>=
+        assertEqual "simple2" (IRequest GET "/" (1, 1)
+                                           (Just "foo.com") [])
 
     Streams.fromList ["GET https://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple" (IRequest GET "/" (1, 1)
+        assertEqual "simple3" (IRequest GET "/" (1, 1)
                                        (Just "foo.com") [])
 
     Streams.fromList ["GET / HTTP/1.1\r\nz:b\r\n", "", "\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple2" (IRequest GET "/" (1, 1) Nothing
+        assertEqual "simple4" (IRequest GET "/" (1, 1) Nothing
                                         [("z", "b")])
 
     Streams.fromList [ "GET / HTTP/1.1\r\na:a\r", "\nz:b\r\n", ""
                      , "\r\n" ] >>=
         parseRequest >>=
-        assertEqual "simple3" (IRequest GET "/" (1, 1) Nothing
+        assertEqual "simple5" (IRequest GET "/" (1, 1) Nothing
                                         [("a", "a"), ("z", "b")])
 
     Streams.fromList ["GET /\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple4" (IRequest GET "/" (1, 0) Nothing [])
+        assertEqual "simple6" (IRequest GET "/" (1, 0) Nothing [])
 
     Streams.fromList ["G", "ET", " /\r", "\n\r", "", "\n"] >>=
         parseRequest >>=
-        assertEqual "simple5" (IRequest GET "/" (1, 0) Nothing [])
+        assertEqual "simple7" (IRequest GET "/" (1, 0) Nothing [])
 
 
 ------------------------------------------------------------------------------

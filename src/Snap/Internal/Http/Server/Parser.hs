@@ -87,9 +87,10 @@ parseRequest input = do
     let method          = methodFromString mStr
     let !version        = pVer vStr
     let (host, uri')    = getHost uri
+    let uri''           = if S.null uri' then "/" else uri'
 
     hdrs    <- pHeaders input
-    return $! IRequest method uri' version host hdrs
+    return $! IRequest method uri'' version host hdrs
 
   where
     getHost s | "http://" `S.isPrefixOf` s
