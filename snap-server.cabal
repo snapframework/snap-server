@@ -65,6 +65,7 @@ Library
     io-streams                >= 1.0.1.0  && < 1.1,
     lifted-base               >= 0.1      && < 0.3,
     monad-control             >= 0.3      && < 0.4,
+    mtl                       >= 2.0      && < 2.2,
     network                   >= 2.3      && < 2.5,
     old-locale,
     snap-core                 >= 1.0      && < 1.1,
@@ -137,6 +138,7 @@ Test-suite testsuite
     Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
+    Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Types,
     System.FastLogger,
 
@@ -155,6 +157,7 @@ Test-suite testsuite
     io-streams                 >= 1.0.1.0  && < 1.1,
     lifted-base                >= 0.1      && < 0.3,
     monad-control              >= 0.3      && < 0.4,
+    mtl                        >= 2.0      && < 2.2,
     network                    >= 2.3      && < 2.5,
     old-locale,
     snap-core                  >= 1.0      && < 1.1,

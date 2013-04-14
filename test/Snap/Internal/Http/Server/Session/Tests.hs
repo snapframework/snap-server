@@ -12,17 +12,18 @@ import           Control.Exception
 import           Control.Monad                            (forM_, forever,
                                                            liftM, void, when,
                                                            (>=>))
+import           Control.Monad.State.Class                (modify)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
 import           Data.IORef                               (newIORef)
 import qualified Data.Map                                 as Map
 import           Data.Maybe                               (isNothing)
-import           Data.Monoid                              (mempty)
 import qualified Network.Http.Client                      as Http
 import           System.Timeout                           (timeout)
 import           Test.Framework
 import           Test.Framework.Providers.HUnit
+import qualified Test.Framework.Runners.Console           as Console
 import           Test.HUnit                               hiding (Test, path)
 ------------------------------------------------------------------------------
 import           Snap.Core
@@ -51,6 +52,9 @@ tests = [ testPong
         , testNoHost
         , testNoHost1_0
         , testChunkedRequest
+        , testQueryParams
+        , testPostParams
+        , testCookie
         , testTrivials
         ]
 
@@ -58,15 +62,24 @@ tests = [ testPong
 ------------------------------------------------------------------------------
 testPong :: Test
 testPong = testCase "session/pong" $ do
-    [(resp, body)] <- runRequestPipeline [return ()] snap
-    assertEqual "code" 200 $ Http.getStatusCode resp
-    assertEqual "body" pong body
-    assertEqual "chunked" (Just $ CI.mk "chunked") $
-                          fmap CI.mk $
-                          Http.getHeader resp "Transfer-Encoding"
+    do
+      [(resp, body)] <- runRequestPipeline [return ()] snap1
+      assertEqual "code1" 200 $ Http.getStatusCode resp
+      assertEqual "body1" pong body
+      assertEqual "chunked1" Nothing $
+                            Http.getHeader resp "Transfer-Encoding"
+    do
+      [(resp, body)] <- runRequestPipeline [return ()] snap2
+      assertEqual "code2" 200 $ Http.getStatusCode resp
+      assertEqual "body2" pong body
+      assertEqual "chunked2" (Just $ CI.mk "chunked") $
+                             fmap CI.mk $
+                             Http.getHeader resp "Transfer-Encoding"
+
   where
     pong = "PONG"
-    snap = writeBS pong
+    snap1 = writeBS pong >> modifyResponse (setContentLength 4)
+    snap2 = writeBS pong
 
 
 ------------------------------------------------------------------------------
@@ -185,6 +198,96 @@ testChunkedRequest = testCase "session/chunkedRequest" $ do
         T.setHeader "Transfer-Encoding" "chunked"
 
 
+------------------------------------------------------------------------------
+testQueryParams :: Test
+testQueryParams = testCase "session/queryParams" $ do
+    [(_, body)] <- runRequestPipeline [queryGetParams] snap
+    assertEqual "queryParams" expected body
+
+  where
+    expected = S.unlines [
+                 "param1=abc,def"
+               , "param2=def"
+               , "param1=abc,def"
+               , "ok"
+               ]
+    snap = do
+        rq <- getRequest
+        let (Just l) = rqParam "param1" rq
+        writeBS $ S.concat [ "param1="
+                           , S.intercalate "," l
+                           , "\n" ]
+        let (Just m) = rqParam "param2" rq
+        writeBS $ S.concat [ "param2="
+                           , S.intercalate "," m
+                           , "\n"]
+        let (Just l') = rqQueryParam "param1" rq
+        writeBS $ S.concat [ "param1="
+                           , S.intercalate "," l'
+                           , "\n" ]
+        let z = if isNothing $ rqPostParam "param1" rq
+                  then "ok\n" else "bad\n"
+        writeBS z
+
+        return ()
+
+
+------------------------------------------------------------------------------
+testPostParams :: Test
+testPostParams = testCase "session/postParams" $ do
+    [(_, body)] <- runRequestPipeline [queryPostParams] snap
+    assertEqual "postParams" expected body
+
+  where
+    expected = S.unlines [
+                 "param1=abc,abc"
+               , "param2=def  ,zzz"
+               , "param1=abc,abc"
+               , "ok"
+               , "param2=zzz"
+               ]
+    snap = do
+        rq <- getRequest
+        let (Just l) = rqParam "param1" rq
+        writeBS $ S.concat [ "param1="
+                           , S.intercalate "," l
+                           , "\n" ]
+        let (Just m) = rqParam "param2" rq
+        writeBS $ S.concat [ "param2="
+                           , S.intercalate "," m
+                           , "\n"]
+        let (Just l') = rqQueryParam "param1" rq
+        writeBS $ S.concat [ "param1="
+                           , S.intercalate "," l'
+                           , "\n" ]
+        let z = if isNothing $ rqPostParam "param1" rq
+                  then "ok\n" else "bad\n"
+        writeBS z
+
+        let (Just p) = rqPostParam "param2" rq
+        writeBS $ S.concat [ "param2="
+                           , S.intercalate "," p
+                           , "\n" ]
+
+        return ()
+
+
+------------------------------------------------------------------------------
+testCookie :: Test
+testCookie = testCase "session/cookie" $ do
+    [(_, body)] <- runRequestPipeline [queryGetParams] snap
+    assertEqual "cookie" expected body
+  where
+    expected = S.unlines [ "foo"
+                         , "bar"
+                         ]
+    snap = do
+        cookies <- liftM rqCookies getRequest
+        forM_ cookies $ \cookie -> do
+            writeBS $ S.unlines [ cookieName cookie
+                                , cookieValue cookie
+                                ]
+
 
 ------------------------------------------------------------------------------
 testTrivials :: Test
@@ -210,18 +313,23 @@ queryGetParams = do
                                          ]
     T.addCookies [ Cookie "foo" "bar" Nothing (Just "localhost") (Just "/")
                           False False ]
+    modify $ \rq -> rq { rqContentLength = Just 0 }
 
 
 ------------------------------------------------------------------------------
-_queryRawGetParams :: RequestBuilder IO ()
-_queryRawGetParams = do
-    T.get "/foo/bar.html" mempty
+queryPostParams :: RequestBuilder IO ()
+queryPostParams = do
+    T.postUrlEncoded "/" $ Map.fromList [ ("param2", ["zzz"]) ]
     T.setQueryStringRaw "param1=abc&param2=def%20+&param1=abc"
 
 
                             -----------------------
                             -- utility functions --
                             -----------------------
+
+------------------------------------------------------------------------------
+_run :: [Test] -> IO ()
+_run l = Console.defaultMainWithArgs l ["--plain"]
 
 
 ------------------------------------------------------------------------------
