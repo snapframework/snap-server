@@ -24,7 +24,8 @@ extra-source-files:
   CONTRIBUTORS,
   LICENSE,
   README.md,
-  README.SNAP.md
+  README.SNAP.md,
+  test/dummy.txt
 
 
 Flag portable

@@ -392,13 +392,14 @@ httpSession !buffer !serverHandler !config !sessionData = do
                              (rspContentLength rsp)
         dataFinishedHook hookState req rspFinal
         logAccess req rspFinal
-        if cc
+        cc' <- readIORef forceConnectionClose
+        if cc'
           then return $! ()
           else writeIORef isNewConnection False >> begin
 
     --------------------------------------------------------------------------
     escapeSnapHandler hookState (EscapeHttp escapeHandler) = do
-        eatException $ escapeHook hookState
+        escapeHook hookState
         newBuffer >>= escapeHandler tickle readEnd
     escapeSnapHandler _ (TerminateConnection e) = terminateSession e
 
@@ -468,9 +469,7 @@ httpSession !buffer !serverHandler !config !sessionData = do
                  -> IO (OutputStream ByteString)
     limitRspBody hlen rsp os = maybe (return os) f $ rspContentLength rsp
       where
-        f cl = case rspBody rsp of
-                 (Stream _) -> Streams.giveExactly (fromIntegral hlen + cl) os
-                 _          -> return os
+        f cl = Streams.giveExactly (fromIntegral hlen + cl) os
     {-# INLINE limitRspBody #-}
 
     --------------------------------------------------------------------------

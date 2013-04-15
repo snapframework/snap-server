@@ -28,7 +28,8 @@ import           Control.Monad.State.Class                (modify)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
-import           Data.IORef                               (newIORef)
+import           Data.IORef                               (newIORef,
+                                                           readIORef)
 import qualified Data.Map                                 as Map
 import           Data.Maybe                               (isNothing)
 import           Data.Monoid                              (mappend)
@@ -80,6 +81,7 @@ tests = [ testPong
         , testOnlyQueryString
         , testConnectionClose
         , testUserTerminate
+        , testSendFile
         , testTrivials
         ]
 
@@ -477,6 +479,17 @@ testUserTerminate = testCase "session/userTerminate" $ do
 
 
 ------------------------------------------------------------------------------
+testSendFile :: Test
+testSendFile = testCase "session/sendFile" $ do
+    [(_, out1)] <- runRequestPipeline [return ()] snap1
+    [(_, out2)] <- runRequestPipeline [return ()] snap2
+    assertEqual "sendfile1" "TESTING 1-2-3\n" out1
+    assertEqual "sendfile2" "EST" out2
+  where
+    snap1 = sendFile "test/dummy.txt"
+    snap2 = sendFilePartial "test/dummy.txt" (1,4)
+
+------------------------------------------------------------------------------
 testTrivials :: Test
 testTrivials = testCase "session/trivials" $ do
     coverShowInstance $ TerminateSessionException
@@ -526,6 +539,18 @@ makeRequest = (T.buildRequest . void) >=> T.requestToString
 
 
 ------------------------------------------------------------------------------
+mockSendFileHandler :: OutputStream ByteString -> SendFileHandler
+mockSendFileHandler os !_ hdrs fp start nbytes = do
+    let hstr = toByteString hdrs
+    Streams.write (Just hstr) os
+
+    Streams.withFileAsInputStartingAt start fp $
+        Streams.takeBytes nbytes >=> Streams.supplyTo os
+
+    Streams.write Nothing os
+
+
+------------------------------------------------------------------------------
 -- | Fill in a 'PerSessionData' with some dummy values.
 makePerSessionData :: InputStream ByteString
                    -> OutputStream ByteString
@@ -533,7 +558,6 @@ makePerSessionData :: InputStream ByteString
 makePerSessionData readEnd writeEnd = do
     forceConnectionClose <- newIORef False
     let twiddleTimeout f = let z = f 0 in z `seq` return $! ()
-    let sendfileHandler _ _ _ _ _ = error "not implemented"
     let localAddress = "127.0.0.1"
     let remoteAddress = "127.0.0.1"
     let remotePort = 43321
@@ -541,7 +565,7 @@ makePerSessionData readEnd writeEnd = do
 
     let psd = PerSessionData forceConnectionClose
                              twiddleTimeout
-                             sendfileHandler
+                             (mockSendFileHandler writeEnd)
                              localAddress
                              remoteAddress
                              remotePort
@@ -709,19 +733,22 @@ makeServerConfig hs = ServerConfig logAccess
                                    10
                                    False
   where
+    onStart !psd = do
+        void $ readIORef (_isNewConnection psd) >>= evaluate
+        return hs
+
     logAccess !_ !_                = return $! ()
     logErr !e                      = void $ evaluate $ toByteString e
-    onStart !_                     = return hs
     onParse !_ !_                  = return $! ()
     onUserHandlerFinished !_ !_ !_ = return $! ()
     onDataFinished !_ !_ !_        = return $! ()
-    onEx !_ !_                     = return $! ()
+    onEx !_ !e                     = throwIO e
     onEscape !_                    = return $! ()
 
 
 ------------------------------------------------------------------------------
 snapToServerHandler :: Snap a -> ServerHandler hookState
-snapToServerHandler snap serverConfig perSessionData req =
+snapToServerHandler !snap !serverConfig !perSessionData !req =
     runSnap snap logErr tickle req
   where
     logErr = _logError serverConfig . fromByteString

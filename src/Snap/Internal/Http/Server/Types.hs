@@ -12,6 +12,7 @@ module Snap.Internal.Http.Server.Types
   , UserHandlerFinishedHook
 
   -- * handlers
+  , SendFileHandler
   , ServerHandler
   , SessionHandler
   ) where
@@ -113,10 +114,7 @@ data ServerConfig hookState = ServerConfig
 data PerSessionData = PerSessionData
     { _forceConnectionClose :: {-# UNPACK #-} !(IORef Bool)
     , _twiddleTimeout       :: !((Int -> Int) -> IO ())
-    , _sendfileHandler      :: !(Buffer -> Builder -> FilePath -> Int64
-                                        -> Int64 -> IO ())
-         -- ^ arguments are: builder buffer, status line and headers, path to
-         --   file, start offset, number of bytes
+    , _sendfileHandler      :: !SendFileHandler
     , _localAddress         :: !ByteString
     , _remoteAddress        :: !ByteString
     , _remotePort           :: {-# UNPACK #-} !Int
@@ -149,3 +147,13 @@ type ServerHandler hookState =
 type SessionHandler hookState = ServerConfig hookState
                              -> PerSessionData
                              -> IO ()
+
+
+------------------------------------------------------------------------------
+type SendFileHandler =
+       Buffer                   -- ^ builder buffer
+    -> Builder                  -- ^ status line and headers
+    -> FilePath                 -- ^ file to send
+    -> Int64                    -- ^ start offset
+    -> Int64                    -- ^ number of bytes
+    -> IO ()
