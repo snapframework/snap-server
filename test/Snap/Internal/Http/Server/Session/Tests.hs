@@ -1,16 +1,28 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server.Session.Tests (tests) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder                 (fromByteString)
+#if !MIN_VERSION_base(4,6,0)
+import           Prelude                                  hiding (catch)
+#endif
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder                 (flush,
+                                                           fromByteString,
+                                                           toByteString)
+import           Blaze.ByteString.Builder.Char8           (fromChar)
 import           Blaze.ByteString.Builder.Internal.Buffer (allocBuffer)
 import           Control.Concurrent
-import           Control.Exception
-import           Control.Monad                            (forM_, forever,
-                                                           liftM, void, when,
+import           Control.Exception.Lifted                 (Exception,
+                                                           SomeException (..),
+                                                           bracket, catch,
+                                                           evaluate, mask,
+                                                           throwIO, try)
+import           Control.Monad                            (forM_, liftM, void,
                                                            (>=>))
 import           Control.Monad.State.Class                (modify)
 import           Data.ByteString.Char8                    (ByteString)
@@ -19,6 +31,9 @@ import qualified Data.CaseInsensitive                     as CI
 import           Data.IORef                               (newIORef)
 import qualified Data.Map                                 as Map
 import           Data.Maybe                               (isNothing)
+import           Data.Monoid                              (mappend)
+import           Data.Time.Clock.POSIX
+import           Data.Typeable                            (Typeable)
 import qualified Network.Http.Client                      as Http
 import           System.Timeout                           (timeout)
 import           Test.Framework
@@ -32,7 +47,6 @@ import           Snap.Internal.Http.Server.Types
 import           Snap.Test                                (RequestBuilder)
 import qualified Snap.Test                                as T
 import           Snap.Test.Common                         (coverShowInstance, coverTypeableInstance,
-                                                           eatException,
                                                            expectException)
 import           System.IO.Streams                        (InputStream,
                                                            OutputStream)
@@ -46,6 +60,7 @@ import qualified System.IO.Streams.Debug                  as Streams
 tests :: [Test]
 tests = [ testPong
         , testPong1_0
+        , testServerHeader
         , testBadParses
         , testEof
         , testHttp100
@@ -54,7 +69,17 @@ tests = [ testPong
         , testChunkedRequest
         , testQueryParams
         , testPostParams
+        , testPostParamsReplacementBody
         , testCookie
+        , testSetCookie
+        , testUserException
+        , testUserBodyException
+        , testEscape
+        , testPostWithoutLength
+        , testWeirdMissingSlash
+        , testOnlyQueryString
+        , testConnectionClose
+        , testUserTerminate
         , testTrivials
         ]
 
@@ -75,41 +100,42 @@ testPong = testCase "session/pong" $ do
       assertEqual "chunked2" (Just $ CI.mk "chunked") $
                              fmap CI.mk $
                              Http.getHeader resp "Transfer-Encoding"
+    -- test pipelining
+    do
+      [_, (resp, body)] <- runRequestPipeline [return (), return ()] snap2
+      assertEqual "code3" 200 $ Http.getStatusCode resp
+      assertEqual "body3" pong body
+      assertEqual "chunked3" (Just $ CI.mk "chunked") $
+                             fmap CI.mk $
+                             Http.getHeader resp "Transfer-Encoding"
 
   where
     pong = "PONG"
     snap1 = writeBS pong >> modifyResponse (setContentLength 4)
-    snap2 = writeBS pong
+    snap2 = do
+        cookies <- getsRequest rqCookies
+        if null cookies
+          then writeBS pong
+          else writeBS "wat"
 
 
 ------------------------------------------------------------------------------
 testPong1_0 :: Test
 testPong1_0 = testCase "session/pong1_0" $ do
-    is <- makeRequest (T.setHttpVersion (1,0)) >>= Streams.fromList . (:[])
-    (os, getInput) <- listOutputStream
-    runSession is os (writeBS "PONG")
-    out <- liftM S.concat getInput
-
+    req <- makeRequest (T.setHttpVersion (1, 0))
+    out <- getSessionOutput [req] $ writeBS "PONG"
     assertBool "200 ok" $ S.isPrefixOf "HTTP/1.0 200 OK\r\n" out
     assertBool "PONG" $ S.isSuffixOf "\r\n\r\nPONG" out
 
 
-    -- this test would be good below, except http-streams has a bug parsing
-    -- http/1.1 responses.
-
-{-
-    [(resp, body)] <- runRequestPipelineDebug (_makeDebugPipe "pong/1.0")
-                                              [T.setHttpVersion (1,0)]
-                                              snap
-    assertEqual "code" 200 $ Http.getStatusCode resp
-    assertEqual "body" pong body
-    assertEqual "not chunked" Nothing $ Http.getHeader resp "Transfer-Encoding"
-    assertEqual "connection close" (Just "close") $
-                Http.getHeader resp "Connection"
+------------------------------------------------------------------------------
+testServerHeader :: Test
+testServerHeader = testCase "session/serverHeader" $ do
+    [(resp, _)] <- runRequestPipeline [return ()] snap
+    assertEqual "server" (Just "blah") $ Http.getHeader resp "Server"
   where
-    pong = "PONG"
-    snap = writeBS pong
--}
+    snap = modifyResponse $ setHeader "Server" "blah"
+
 
 ------------------------------------------------------------------------------
 testBadParses :: Test
@@ -123,10 +149,8 @@ testBadParses = testGroup "session/badParses" [
 
   where
     check :: Int -> ByteString -> Test
-    check n txt = testCase ("session/badParses/" ++ show n) $ do
-        is <- Streams.fromList [txt]
-        (os, _) <- listOutputStream
-        expectException $ runSession is os (return ())
+    check n txt = testCase ("session/badParses/" ++ show n) $
+                  expectException $ getSessionOutput [txt] (return ())
 
 
 ------------------------------------------------------------------------------
@@ -135,22 +159,17 @@ testEof = testCase "session/eof" $ do
     l <- runRequestPipeline [] snap
     assertBool "eof1" $ null l
 
-    is <- Streams.fromList [""]
-    (os, getList) <- listOutputStream
-    runSession is os snap
-    out <- getList
-    assertEqual "eof2" [] out
+    out <- getSessionOutput [""] snap
+    assertEqual "eof2" "" out
   where
     snap = writeBS "OK"
 
 
 ------------------------------------------------------------------------------
 testHttp100 :: Test
-testHttp100 = testCase "server/expect100" $ do
-    is <- makeRequest expect100 >>= Streams.fromList . (:[])
-    (os, getList) <- listOutputStream
-    runSession is os (writeBS "OK")
-    out <- liftM S.concat getList
+testHttp100 = testCase "session/expect100" $ do
+    req <- makeRequest expect100
+    out <- getSessionOutput [req] (writeBS "OK")
 
     assertBool "100-continue" $
                S.isPrefixOf "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK" out
@@ -163,19 +182,15 @@ testHttp100 = testCase "server/expect100" $ do
 
 ------------------------------------------------------------------------------
 testNoHost :: Test
-testNoHost = testCase "session/noHost" $ do
-    is <- Streams.fromList ["GET / HTTP/1.1\r\n\r\n"]
-    (os, _) <- listOutputStream
-    expectException $ runSession is os (writeBS "OK")
+testNoHost = testCase "session/noHost" $
+             expectException $
+             getSessionOutput ["GET / HTTP/1.1\r\n\r\n"] (writeBS "OK")
 
 
 ------------------------------------------------------------------------------
 testNoHost1_0 :: Test
 testNoHost1_0 = testCase "session/noHost1_0" $ do
-    is <- Streams.fromList ["GET / HTTP/1.0\r\n\r\n"]
-    (os, getList) <- listOutputStream
-    runSession is os snap
-    out <- liftM S.concat getList
+    out <- getSessionOutput ["GET / HTTP/1.0\r\n\r\n"] snap
     assertBool "no host 1.0" $ S.isSuffixOf "\r\nbackup-localhost" out
   where
     snap = getRequest >>= writeBS . rqHostName
@@ -273,6 +288,18 @@ testPostParams = testCase "session/postParams" $ do
 
 
 ------------------------------------------------------------------------------
+testPostParamsReplacementBody :: Test
+testPostParamsReplacementBody =
+  testCase "session/postParamsReplacementBody" $ do
+    [(_, body)] <- runRequestPipeline [queryPostParams] snap
+    assertEqual "postParams" expected body
+
+  where
+    expected = "param2=zzz"
+    snap = readRequestBody 2048 >>= writeLBS
+
+
+------------------------------------------------------------------------------
 testCookie :: Test
 testCookie = testCase "session/cookie" $ do
     [(_, body)] <- runRequestPipeline [queryGetParams] snap
@@ -287,6 +314,166 @@ testCookie = testCase "session/cookie" $ do
             writeBS $ S.unlines [ cookieName cookie
                                 , cookieValue cookie
                                 ]
+
+
+------------------------------------------------------------------------------
+testSetCookie :: Test
+testSetCookie = testCase "session/setCookie" $ do
+    mapM_ runTest $ zip3 [1..] expecteds cookies
+  where
+    runTest (n, expected, cookie) = do
+        [(resp, _)] <- runRequestPipeline [queryGetParams] $ snap cookie
+        assertEqual ("cookie" ++ show (n :: Int))
+                    (Just expected)
+                    (Http.getHeader resp "Set-Cookie")
+
+    expecteds = [ S.intercalate "; "
+                    [ "foo=bar"
+                    , "path=/"
+                    , "expires=Thu, 01-Jan-1970 00:16:40 GMT"
+                    , "domain=localhost"
+                    ]
+                , "foo=bar"
+                , "foo=bar; Secure; HttpOnly"
+                ]
+
+    cookies = [ Cookie "foo" "bar" (Just $ posixSecondsToUTCTime 1000)
+                       (Just "localhost") (Just "/") False False
+              , Cookie "foo" "bar" Nothing Nothing Nothing False False
+              , Cookie "foo" "bar" Nothing Nothing Nothing True True
+              ]
+
+    snap cookie = do
+        modifyResponse $ addResponseCookie cookie
+
+
+------------------------------------------------------------------------------
+testUserException :: Test
+testUserException = testCase "session/userException" $ do
+    expectException $ runRequestPipeline [queryGetParams] snap
+  where
+    snap = throwIO TestException
+
+
+------------------------------------------------------------------------------
+testUserBodyException :: Test
+testUserBodyException = testCase "session/userBodyException" $ do
+    expectException $ runRequestPipeline [queryGetParams] snap
+  where
+    snap = modifyResponse $ setResponseBody $ \os -> do
+        Streams.write (Just (fromByteString "hi" `mappend` flush)) os
+        throwIO TestException
+
+
+------------------------------------------------------------------------------
+testEscape :: Test
+testEscape = testCase "session/testEscape" $ do
+    req <- makeRequest (return ())
+    out <- getSessionOutput [req, "OK?"] snap
+    assertEqual "escape" "OK" out
+  where
+    snap = escapeHttp $ \tickle readEnd writeEnd -> do
+         l <- Streams.toList readEnd
+         tickle (max 20)
+         let s = if l == ["OK?"]
+                   then "OK"
+                   else S.append "BAD: " $ S.pack $ show l
+         Streams.write (Just $ fromByteString s) writeEnd
+         Streams.write Nothing writeEnd
+
+
+------------------------------------------------------------------------------
+testPostWithoutLength :: Test
+testPostWithoutLength = testCase "session/postWithoutLength" $ do
+    let req = S.concat [ "POST / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                       , "Blah blah blah blah blah"
+                       ]
+
+    is <- Streams.fromList [req]
+    (os, getInput) <- listOutputStream
+    expectException $ runSession is os (return ())
+    out <- liftM S.concat getInput
+    assertBool "post without length" $
+        S.isPrefixOf "HTTP/1.1 411 Length Required" out
+
+
+------------------------------------------------------------------------------
+testWeirdMissingSlash :: Test
+testWeirdMissingSlash = testCase "session/weirdMissingSlash" $ do
+  do
+    let req = "GET foo/bar?z HTTP/1.0\r\n\r\n"
+    out <- getSessionOutput [req] snap
+    assertBool "missing slash" $ expected1 `S.isSuffixOf` out
+  do
+    let req = "GET /foo/bar?z HTTP/1.0\r\n\r\n"
+    out <- getSessionOutput [req] snap
+    assertBool "with slash" $ expected2 `S.isSuffixOf` out
+
+  where
+    expected1 = S.concat [ "\r\n\r\n"
+                         , "foo/bar?z\n"
+                         , "foo/bar\n"
+                         , "z\n"
+                         ]
+    expected2 = S.concat [ "\r\n\r\n"
+                         , "/foo/bar?z\n"
+                         , "foo/bar\n"
+                         , "z\n"
+                         ]
+    p s = writeBuilder $ fromByteString s `mappend` fromChar '\n'
+    snap = do
+        rq <- getRequest
+        p $ rqURI rq
+        p $ rqPathInfo rq
+        p $ rqQueryString rq
+
+
+------------------------------------------------------------------------------
+testOnlyQueryString :: Test
+testOnlyQueryString = testCase "session/onlyQueryString" $ do
+  do
+    let req = "GET ?z HTTP/1.0\r\n\r\n"
+    out <- getSessionOutput [req] snap
+    assertBool "missing slash" $ expected `S.isSuffixOf` out
+  where
+    expected = S.concat [ "\r\n\r\n"
+                         , "?z\n"
+                         , "\n"
+                         , "z\n"
+                         ]
+    p s = writeBuilder $ fromByteString s `mappend` fromChar '\n'
+    snap = do
+        rq <- getRequest
+        p $ rqURI rq
+        p $ rqPathInfo rq
+        p $ rqQueryString rq
+
+
+------------------------------------------------------------------------------
+testConnectionClose :: Test
+testConnectionClose = testCase "session/connectionClose" $ do
+    do
+      [(resp, _)] <- runRequestPipeline [return (), return ()] snap
+      assertEqual "close1" (Just $ CI.mk "close") $
+                           fmap CI.mk $
+                           Http.getHeader resp "Connection"
+    do
+      [(resp, _)] <- runRequestPipeline [http1_0, http1_0] snap
+      assertEqual "close2" (Just $ CI.mk "close") $
+                           fmap CI.mk $
+                           Http.getHeader resp "Connection"
+
+  where
+    http1_0 = T.setHttpVersion (1, 0)
+    snap  = modifyResponse $ setHeader "Connection" "close"
+
+
+------------------------------------------------------------------------------
+testUserTerminate :: Test
+testUserTerminate = testCase "session/userTerminate" $ do
+    expectException $ runRequestPipeline [return ()] snap
+  where
+    snap = terminateConnection TestException
 
 
 ------------------------------------------------------------------------------
@@ -431,7 +618,7 @@ runRequestPipelineDebug :: PipeFunc
                         -> [T.RequestBuilder IO ()]
                         -> Snap b
                         -> IO [(Http.Response, ByteString)]
-runRequestPipelineDebug pipeFunc rbs handler = do
+runRequestPipelineDebug pipeFunc rbs handler = tout $ do
     ((clientRead, clientWrite), (serverRead, serverWrite)) <- pipeFunc
 
     sigClient <- newEmptyMVar
@@ -440,29 +627,57 @@ runRequestPipelineDebug pipeFunc rbs handler = do
     forM_ rbs $ makeRequest >=> flip Streams.write clientWrite . Just
     Streams.write Nothing clientWrite
 
+    myTid <- myThreadId
     conn <- Http.makeConnection "localhost"
-                                (throwIO ThreadKilled)
+                                (return ())
                                 clientWrite
                                 clientRead
-    m <- mask $ \restore -> do
-        ctid <- forkIO $ clientThread restore conn results sigClient
-        stid <- forkIO $ restore (runSession serverRead serverWrite handler)
-        timeout 10000000 $ restore (takeMVar sigClient) `finally` do
-                                        killThread ctid
-                                        killThread stid
 
-    when (isNothing m) $ error "timeout"
+    bracket (do ctid <- mask $ \restore ->
+                        forkIO $ clientThread restore myTid clientRead conn
+                                              results sigClient
+                stid <- forkIO $ serverThread myTid serverRead serverWrite
+                return (ctid, stid))
+            (\(ctid, stid) -> mapM_ killThread [ctid, stid])
+            (\_ -> await sigClient)
     readMVar results
 
   where
-    clientThread restore conn results sig =
-        eatException (restore loop `finally` putMVar sig ())
+    await sig = takeMVar sig >>= either throwIO (const $ return ())
+
+    tout m = timeout 10000000 m >>= maybe (error "timeout") return
+
+    serverThread myTid serverRead serverWrite = do
+        runSession serverRead serverWrite handler
+          `catch` \(e :: SomeException) -> throwTo myTid e
+
+    clientThread restore myTid clientRead conn results sig =
+        (try (restore loop) >>= putMVar (sig :: MVar (Either SomeException ())))
+          `catch` \(e :: SomeException) -> throwTo myTid e
+
       where
-        loop = forever $ do
-            (resp, body) <- Http.receiveResponse conn $ \rsp istr -> do
-                !out <- liftM S.concat $ Streams.toList istr
-                return (rsp, out)
-            modifyMVar_ results (return . (++ [(resp, body)]))
+        loop = do
+            eof <- Streams.atEOF clientRead
+            if eof
+              then return ()
+              else do
+                (resp, body) <- Http.receiveResponse conn $ \rsp istr -> do
+                    !out <- liftM S.concat $ Streams.toList istr
+                    return (rsp, out)
+                modifyMVar_ results (return . (++ [(resp, body)]))
+                loop
+
+
+------------------------------------------------------------------------------
+getSessionOutput :: [ByteString]
+                 -> Snap a
+                 -> IO ByteString
+getSessionOutput input snap = do
+    is <- Streams.fromList input >>= Streams.mapM (evaluate . S.copy)
+    (os0, getList) <- Streams.listOutputStream
+    os <- Streams.contramapM (evaluate . S.copy) os0
+    runSession is os snap
+    liftM S.concat getList
 
 
 ------------------------------------------------------------------------------
@@ -495,7 +710,7 @@ makeServerConfig hs = ServerConfig logAccess
                                    False
   where
     logAccess !_ !_                = return $! ()
-    logErr !_                      = return $! ()
+    logErr !e                      = void $ evaluate $ toByteString e
     onStart !_                     = return hs
     onParse !_ !_                  = return $! ()
     onUserHandlerFinished !_ !_ !_ = return $! ()
@@ -519,3 +734,9 @@ listOutputStream = do
     (os, out) <- Streams.listOutputStream
     os' <- Streams.contramapM (evaluate . S.copy) os
     return (os', out)
+
+
+------------------------------------------------------------------------------
+data TestException = TestException
+  deriving (Typeable, Show)
+instance Exception TestException

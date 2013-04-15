@@ -52,16 +52,11 @@ fetchTime = do
 updateState :: DateState -> IO ()
 updateState (DateState dateString logString time) = do
     (!s1,!s2,!now) <- fetchTime
-    atomicModifyIORef dateString $ const (s1,())
-    atomicModifyIORef logString  $ const (s2,())
-    atomicModifyIORef time       $ const (now,())
+    writeIORef dateString s1
+    writeIORef logString  s2
+    writeIORef time       now
 
-    -- force values in the iorefs to prevent thunk buildup
-    !_ <- readIORef dateString
-    !_ <- readIORef logString
-    !_ <- readIORef time
-
-    return ()
+    return $! ()
 
 
 ------------------------------------------------------------------------------

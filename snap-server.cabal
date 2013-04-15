@@ -221,7 +221,7 @@ Test-suite testsuite
   ghc-prof-options: -prof -auto-all
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
-               -fno-warn-unused-do-bind -fhpc
+               -fno-warn-unused-do-bind -fhpc -threaded
 
 
 Benchmark benchmark
