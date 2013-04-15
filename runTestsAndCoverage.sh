@@ -18,6 +18,7 @@ EXCLUDES='Main
 Snap.Internal.Http.Server.Parser.Tests
 Snap.Internal.Http.Server.Session.Tests
 Snap.Test.Common
+Paths_snap_server
 '
 
 EXCL=""
