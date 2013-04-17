@@ -17,3 +17,5 @@ cabal-dev
 test/*.log
 test/log/*
 docs/templates/out
+TAGS
+**/TAGS
