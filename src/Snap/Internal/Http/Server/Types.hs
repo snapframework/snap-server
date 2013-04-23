@@ -34,7 +34,7 @@ import           System.IO.Streams                        (InputStream,
 ------------------------------------------------------------------------------
 type StartHook hookState = PerSessionData -> IO hookState
 
-type ParseHook hookState = IORef hookState  -> Request -> IO ()
+type ParseHook hookState = IORef hookState -> Request -> IO ()
 
 type UserHandlerFinishedHook hookState =
     IORef hookState -> Request -> Response -> IO ()

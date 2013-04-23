@@ -107,8 +107,7 @@ httpSession :: forall hookState .
             -> ServerConfig hookState
             -> PerSessionData
             -> IO ()
-httpSession !buffer !serverHandler !config !sessionData = do
-    begin
+httpSession !buffer !serverHandler !config !sessionData = begin
   where
     --------------------------------------------------------------------------
     defaultTimeout          = _defaultTimeout config
