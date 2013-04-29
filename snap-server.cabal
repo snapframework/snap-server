@@ -53,6 +53,7 @@ Library
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
+    Snap.Internal.Http.Server.TimeoutManager,
     Snap.Internal.Http.Server.Types
 
   build-depends:
@@ -145,6 +146,7 @@ Test-suite testsuite
 
     Snap.Internal.Http.Server.Parser.Tests,
     Snap.Internal.Http.Server.Session.Tests,
+    Snap.Internal.Http.Server.TimeoutManager.Tests,
     Snap.Test.Common
 
   build-depends:

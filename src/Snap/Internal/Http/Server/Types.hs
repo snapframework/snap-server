@@ -140,16 +140,6 @@ type ServerHandler hookState =
 
 
 ------------------------------------------------------------------------------
--- | Each backend will accept and set up (e.g. with SSL) a new incoming
--- connection, populate a 'PerSessionData' object, and call the provided
--- 'SessionHandler'.
---
-type SessionHandler hookState = ServerConfig hookState
-                             -> PerSessionData
-                             -> IO ()
-
-
-------------------------------------------------------------------------------
 type SendFileHandler =
        Buffer                   -- ^ builder buffer
     -> Builder                  -- ^ status line and headers
@@ -157,3 +147,16 @@ type SendFileHandler =
     -> Int64                    -- ^ start offset
     -> Int64                    -- ^ number of bytes
     -> IO ()
+
+
+
+                        ------------------------------
+                        -- types for server backend --
+                        ------------------------------
+
+------------------------------------------------------------------------------
+-- | Initializing a server \"backend\" (i.e. listening on a socket, SSL, etc)
+-- will produce a function of the following type.
+type SessionHandler hookState = ServerConfig hookState
+                             -> ServerHandler hookState
+                             -> IO ()
