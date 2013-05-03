@@ -16,7 +16,7 @@ import qualified System.IO.Streams                as Streams
 
 parseGet :: S.ByteString -> IO ()
 parseGet s = do
-    (Just !_) <- Streams.fromList [s] >>= parseRequest
+    !_ <- Streams.fromList [s] >>= parseRequest
     return $! ()
 
 
