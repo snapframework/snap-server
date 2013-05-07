@@ -1,9 +1,14 @@
 ------------------------------------------------------------------------------
+-- | Types internal to the implementation of the Snap HTTP server.
 module Snap.Internal.Http.Server.Types
   ( ServerConfig(..)
   , PerSessionData(..)
 
-  -- * hooks
+  -- * HTTP lifecycle
+  -- $lifecycle
+
+  -- * Hooks
+  -- $hooks
   , DataFinishedHook
   , EscapeSnapHook
   , ExceptionHook
@@ -11,7 +16,7 @@ module Snap.Internal.Http.Server.Types
   , StartHook
   , UserHandlerFinishedHook
 
-  -- * handlers
+  -- * Handlers
   , SendFileHandler
   , ServerHandler
   , SessionHandler
@@ -28,28 +33,11 @@ import           Snap.Core                                (Request, Response)
 import           System.IO.Streams                        (InputStream,
                                                            OutputStream)
 
-                                  -----------
-                                  -- hooks --
-                                  -----------
-------------------------------------------------------------------------------
-type StartHook hookState = PerSessionData -> IO hookState
-
-type ParseHook hookState = IORef hookState -> Request -> IO ()
-
-type UserHandlerFinishedHook hookState =
-    IORef hookState -> Request -> Response -> IO ()
-
-type DataFinishedHook hookState =
-    IORef hookState -> Request -> Response -> IO ()
-
-type ExceptionHook hookState = IORef hookState -> SomeException -> IO ()
-
-type EscapeSnapHook hookState = IORef hookState -> IO ()
-
                           ---------------------------
                           -- snap server lifecycle --
                           ---------------------------
 
+------------------------------------------------------------------------------
 -- $lifecycle
 --
 -- 'Request' \/ 'Response' lifecycle for \"normal\" requests (i.e. without
@@ -61,7 +49,7 @@ type EscapeSnapHook hookState = IORef hookState -> IO ()
 --
 -- 3. Enter the 'SessionHandler', which:
 --
--- 4. calls the 'StartHook', making a new hookData object.
+-- 4. calls the 'StartHook', making a new hookState object.
 --
 -- 5. parses the HTTP request. If the session is over, we stop here.
 --
@@ -79,10 +67,58 @@ type EscapeSnapHook hookState = IORef hookState -> IO ()
 -- 11. the 'DataFinishedHook' is called.
 --
 -- 12. we go to #3.
+
+
+                                  -----------
+                                  -- hooks --
+                                  -----------
+
+------------------------------------------------------------------------------
+-- $hooks
+-- #hooks#
 --
---    (NOTE(greg): to get the semantics we want here, we need to call
---    Streams.peek before we call the StartHook so that we ensure there's a
---    request coming and our stats don't get distorted by keepalive.
+-- At various critical points in the HTTP lifecycle, the Snap server will call
+-- user-defined \"hooks\" that can be used for instrumentation or tracing of
+-- the process of building the HTTP response. The first hook called, the
+-- 'StartHook', will generate a \"hookState\" object (having some user-defined
+-- abstract type), and this object will be passed to the rest of the hooks as
+-- the server handles the process of responding to the HTTP request.
+--
+-- For example, you could pass a set of hooks to the Snap server that measured
+-- timings for each URI handled by the server to produce online statistics and
+-- metrics using something like @statsd@ (<https://github.com/etsy/statsd>).
+
+
+------------------------------------------------------------------------------
+-- | The 'StartHook' is called once processing for an HTTP request begins, i.e.
+-- after the connection has been accepted and we know that there's data
+-- available to read from the socket. It produces a custom \"hookState\" that
+-- will be passed to the rest of the hooks.
+type StartHook hookState = PerSessionData -> IO hookState
+
+-- | The 'ParseHook' is called after the HTTP Request has been parsed by the
+-- server, but before the user handler starts running.
+type ParseHook hookState = IORef hookState -> Request -> IO ()
+
+-- | The 'UserHandlerFinishedHook' is called once the user handler has finished
+-- running, but before the data for the HTTP response starts being sent to the
+-- client.
+type UserHandlerFinishedHook hookState =
+    IORef hookState -> Request -> Response -> IO ()
+
+-- | The 'DataFinishedHook' is called once the server has finished sending the
+-- HTTP response to the client.
+type DataFinishedHook hookState =
+    IORef hookState -> Request -> Response -> IO ()
+
+-- | The 'ExceptionHook' is called if an exception reaches the toplevel of the
+-- server, i.e. if an exception leaks out of the user handler or if an
+-- exception is raised during the sending of the HTTP response data.
+type ExceptionHook hookState = IORef hookState -> SomeException -> IO ()
+
+-- | The 'EscapeSnapHook' is called if the user handler escapes the HTTP
+-- session, e.g. for websockets.
+type EscapeSnapHook hookState = IORef hookState -> IO ()
 
 
                              ---------------------
@@ -140,6 +176,9 @@ type ServerHandler hookState =
 
 
 ------------------------------------------------------------------------------
+-- | A 'SendFileHandler' is called if the user handler requests that a file be
+-- sent using @sendfile()@ on systems that support it (Linux, Mac OSX, and
+-- FreeBSD).
 type SendFileHandler =
        Buffer                   -- ^ builder buffer
     -> Builder                  -- ^ status line and headers

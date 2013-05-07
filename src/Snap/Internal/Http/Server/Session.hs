@@ -154,7 +154,6 @@ httpSession !buffer !serverHandler !config !sessionData = begin
             processRequest hookState req)
     {-# INLINE begin #-}
 
-
     ------------------------------------------------------------------------------
     readEndAtEof = Streams.read readEnd >>=
                    maybe (return True)
@@ -441,7 +440,6 @@ httpSession !buffer !serverHandler !config !sessionData = begin
                         SendFile f (Just (st, _)) ->
                             whenSendFile headerBuilder rsp f st
         return $! nBodyBytes - fromIntegral hlen
-
 
     --------------------------------------------------------------------------
     noCL :: Response -> (Response, Bool)
