@@ -19,7 +19,10 @@ module Snap.Internal.Http.Server.Types
   -- * Handlers
   , SendFileHandler
   , ServerHandler
-  , SessionHandler
+  , AcceptFunc
+
+  -- * Socket types
+  , SocketConfig(..)
   ) where
 
 ------------------------------------------------------------------------------
@@ -29,6 +32,7 @@ import           Control.Exception                        (SomeException)
 import           Data.ByteString                          (ByteString)
 import           Data.Int                                 (Int64)
 import           Data.IORef                               (IORef)
+import           Network.Socket                           (Socket)
 import           Snap.Core                                (Request, Response)
 import           System.IO.Streams                        (InputStream,
                                                            OutputStream)
@@ -160,6 +164,15 @@ data PerSessionData = PerSessionData
     }
 
 
+------------------------------------------------------------------------------
+type AcceptFunc = IO ( SendFileHandler
+                     , ByteString
+                     , ByteString
+                     , Int
+                     , InputStream ByteString
+                     , OutputStream ByteString )
+
+
                              --------------------
                              -- function types --
                              --------------------
@@ -189,13 +202,13 @@ type SendFileHandler =
 
 
 
-                        ------------------------------
-                        -- types for server backend --
-                        ------------------------------
+                        -------------------------------
+                        -- types for server backends --
+                        -------------------------------
 
 ------------------------------------------------------------------------------
--- | Initializing a server \"backend\" (i.e. listening on a socket, SSL, etc)
--- will produce a function of the following type.
-type SessionHandler hookState = ServerConfig hookState
-                             -> ServerHandler hookState
-                             -> IO ()
+-- | Either the server should start listening on the given interface \/ port
+-- combination, or the server should start up with a 'Socket' that has already
+-- had @bind()@ and @listen()@ called on it.
+data SocketConfig = StartListening ByteString Int
+                  | PreBound Socket

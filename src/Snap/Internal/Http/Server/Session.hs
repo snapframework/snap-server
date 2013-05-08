@@ -2,11 +2,13 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 ------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.Session
-  ( httpSession
+  ( httpAcceptLoop
+  , httpSession
   , BadRequestException(..)
   , LengthRequiredException(..)
   , TerminateSessionException(..)
@@ -21,15 +23,25 @@ import           Blaze.ByteString.Builder                 (Builder, flush,
                                                            fromByteString)
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
                                                            fromString)
-import           Blaze.ByteString.Builder.Internal.Buffer (Buffer)
+import           Blaze.ByteString.Builder.Internal        (defaultBufferSize)
+import           Blaze.ByteString.Builder.Internal.Buffer (Buffer,
+                                                           allocBuffer)
 ------------------------------------------------------------------------------
 import           Control.Applicative                      ((<$>), (<|>))
 import           Control.Arrow                            (first, second)
+import           Control.Concurrent                       (MVar, ThreadId,
+                                                           forkIO, forkOn,
+                                                           killThread,
+                                                           newEmptyMVar,
+                                                           putMVar, readMVar,
+                                                           takeMVar)
 import           Control.Exception                        (Exception,
                                                            Handler (..),
                                                            SomeException (..),
-                                                           catch, catches,
-                                                           throwIO)
+                                                           bracket, catch,
+                                                           catches, finally,
+                                                           mask, mask_,
+                                                           throwIO, try)
 import           Control.Monad                            (unless, void, when)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
@@ -70,12 +82,15 @@ import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Date           (getDateString)
+import           Snap.Internal.Http.Server.Date           (getCurrentDateTime,
+                                                           getDateString)
 import           Snap.Internal.Http.Server.Parser         (IRequest (..),
                                                            parseCookie,
                                                            parseRequest,
                                                            parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
-import           Snap.Internal.Http.Server.Types          (PerSessionData (..),
+import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
+import qualified Snap.Internal.Http.Server.TimeoutManager as TM
+import           Snap.Internal.Http.Server.Types          (AcceptFunc, PerSessionData (..),
                                                            ServerConfig (..),
                                                            ServerHandler)
 ------------------------------------------------------------------------------
@@ -98,6 +113,80 @@ instance Exception LengthRequiredException
 ------------------------------------------------------------------------------
 mAX_HEADERS_SIZE :: Int64
 mAX_HEADERS_SIZE = 256 * 1024
+
+
+------------------------------------------------------------------------------
+-- | For each cpu, we store:
+--    * An accept thread
+--    * A TimeoutManager
+--    * An mvar to signal when the timeout thread is shutdown
+data EventLoopCpu = EventLoopCpu
+    { _boundCpu       :: Int
+    , _acceptThread   :: ThreadId
+    , _timeoutManager :: TimeoutManager
+    , _exitMVar       :: !(MVar ())
+    }
+
+
+------------------------------------------------------------------------------
+httpAcceptLoop :: forall hookState .
+                  Int                      -- ^ number of accept loops to start
+               -> ServerHandler hookState  -- ^ server handler
+               -> ServerConfig hookState   -- ^ server config
+               -> AcceptFunc               -- ^ accept function
+               -> IO ()
+httpAcceptLoop nLoops serverHandler serverConfig acceptFunc =
+    bracket (mapM newLoop [0 .. (nLoops - 1)])
+            (mapM_ killLoop)
+            (mapM_ waitLoop)
+  where
+    loop :: (forall a. IO a -> IO a)
+         -> MVar ()
+         -> TimeoutManager
+         -> IO ()
+    loop restore mv tm = go `finally` putMVar mv ()
+      where
+        go = do
+            (sendFileHandler, localAddress, remoteAddress, remotePort,
+             readEnd, writeEnd) <- restore acceptFunc
+
+            connClose <- newIORef False
+            newConn   <- newIORef True
+            psdMVar   <- newEmptyMVar
+            tid       <- forkIO $ restore $ session psdMVar
+            tmHandle  <- TM.register (killThread tid) tm
+            let twiddleTimeout = TM.modify tmHandle
+
+            let psd = PerSessionData connClose
+                                     twiddleTimeout
+                                     sendFileHandler
+                                     localAddress
+                                     remoteAddress
+                                     remotePort
+                                     readEnd
+                                     writeEnd
+                                     newConn
+            putMVar psdMVar psd
+            go
+
+    session psdMVar = takeMVar psdMVar >>= \psd -> do
+        buffer <- allocBuffer defaultBufferSize
+        httpSession buffer serverHandler serverConfig psd
+
+    defaultTimeout = _defaultTimeout serverConfig
+
+    newLoop cpu = mask $ \restore -> do
+        mv  <- newEmptyMVar
+        tm  <- TM.initialize defaultTimeout getCurrentDateTime
+        tid <- forkOn cpu $ loop restore mv tm
+        return $! EventLoopCpu cpu tid tm mv
+
+    waitLoop (EventLoopCpu _ _ _ mv) = readMVar mv
+
+    killLoop (EventLoopCpu _ tid tm mv) = mask_ $ do
+        killThread tid
+        TM.stop tm
+        takeMVar mv
 
 
 ------------------------------------------------------------------------------

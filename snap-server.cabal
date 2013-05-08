@@ -1,5 +1,5 @@
 name:           snap-server
-version:        1.0.0
+version:        1.0.0.0
 synopsis:       A web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -49,10 +49,12 @@ Library
 
   other-modules:
     Paths_snap_server,
+    Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
+    Snap.Internal.Http.Server.Socket,
     Snap.Internal.Http.Server.TimeoutManager,
     Snap.Internal.Http.Server.Types
 
@@ -137,10 +139,12 @@ Test-suite testsuite
     Paths_snap_server,
     Snap.Http.Server,
     Snap.Http.Server.Config,
+    Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
+    Snap.Internal.Http.Server.Socket,
     Snap.Internal.Http.Server.TimeoutManager,
     Snap.Internal.Http.Server.Types,
     System.FastLogger,
