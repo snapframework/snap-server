@@ -39,9 +39,8 @@ import           Control.Exception                        (Exception,
                                                            Handler (..),
                                                            SomeException (..),
                                                            bracket, catch,
-                                                           catches, finally,
-                                                           mask, mask_,
-                                                           throwIO, try)
+                                                           catches, mask,
+                                                           mask_, throwIO)
 import           Control.Monad                            (unless, void, when)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
@@ -121,8 +120,7 @@ mAX_HEADERS_SIZE = 256 * 1024
 --    * A TimeoutManager
 --    * An mvar to signal when the timeout thread is shutdown
 data EventLoopCpu = EventLoopCpu
-    { _boundCpu       :: Int
-    , _acceptThread   :: ThreadId
+    { _acceptThread   :: ThreadId
     , _timeoutManager :: TimeoutManager
     , _exitMVar       :: !(MVar ())
     }
@@ -140,11 +138,16 @@ httpAcceptLoop nLoops serverHandler serverConfig acceptFunc =
             (mapM_ killLoop)
             (mapM_ waitLoop)
   where
+    eat m = m `catch` f
+      where
+        f :: SomeException -> IO ()
+        f !_ = return $! ()
+
     loop :: (forall a. IO a -> IO a)
          -> MVar ()
          -> TimeoutManager
          -> IO ()
-    loop restore mv tm = go `finally` putMVar mv ()
+    loop restore mv tm = eat go >> putMVar mv ()
       where
         go = do
             (sendFileHandler, localAddress, remoteAddress, remotePort,
@@ -153,7 +156,7 @@ httpAcceptLoop nLoops serverHandler serverConfig acceptFunc =
             connClose <- newIORef False
             newConn   <- newIORef True
             psdMVar   <- newEmptyMVar
-            tid       <- forkIO $ restore $ session psdMVar
+            tid       <- forkIO $ eat $ restore $ session psdMVar
             tmHandle  <- TM.register (killThread tid) tm
             let twiddleTimeout = TM.modify tmHandle
 
@@ -179,14 +182,15 @@ httpAcceptLoop nLoops serverHandler serverConfig acceptFunc =
         mv  <- newEmptyMVar
         tm  <- TM.initialize defaultTimeout getCurrentDateTime
         tid <- forkOn cpu $ loop restore mv tm
-        return $! EventLoopCpu cpu tid tm mv
+        return $! EventLoopCpu tid tm mv
 
-    waitLoop (EventLoopCpu _ _ _ mv) = readMVar mv
+    waitLoop (EventLoopCpu _ _ mv) = readMVar mv
 
-    killLoop (EventLoopCpu _ tid tm mv) = mask_ $ do
+    killLoop (EventLoopCpu tid tm mv) = mask_ $ do
         killThread tid
         TM.stop tm
-        takeMVar mv
+        !_ <- takeMVar mv
+        return $! ()
 
 
 ------------------------------------------------------------------------------

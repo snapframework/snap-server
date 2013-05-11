@@ -23,11 +23,12 @@ import           Control.Exception.Lifted                 (Exception,
                                                            evaluate, mask,
                                                            throwIO, try)
 import           Control.Monad                            (forM_, liftM, void,
-                                                           (>=>))
+                                                           when, (>=>))
 import           Control.Monad.State.Class                (modify)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
+import           Data.Int                                 (Int64)
 import           Data.IORef                               (newIORef,
                                                            readIORef)
 import qualified Data.Map                                 as Map
@@ -82,6 +83,7 @@ tests = [ testPong
         , testConnectionClose
         , testUserTerminate
         , testSendFile
+        , testBasicAcceptLoop
         , testTrivials
         ]
 
@@ -490,6 +492,13 @@ testSendFile = testCase "session/sendFile" $ do
     snap2 = sendFilePartial "test/dummy.txt" (1,4)
 
 ------------------------------------------------------------------------------
+testBasicAcceptLoop :: Test
+testBasicAcceptLoop = testCase "session/basicAcceptLoop" $ do
+    outputs <- runAcceptLoop [return ()] (return ())
+    let [Output out] = outputs
+    assertBool "basic accept" $ S.isPrefixOf "HTTP/1.1 200 OK\r\n" out
+
+------------------------------------------------------------------------------
 testTrivials :: Test
 testTrivials = testCase "session/trivials" $ do
     coverShowInstance $ TerminateSessionException
@@ -642,7 +651,7 @@ runRequestPipelineDebug :: PipeFunc
                         -> [T.RequestBuilder IO ()]
                         -> Snap b
                         -> IO [(Http.Response, ByteString)]
-runRequestPipelineDebug pipeFunc rbs handler = tout $ do
+runRequestPipelineDebug pipeFunc rbs handler = dieIfTimeout $ do
     ((clientRead, clientWrite), (serverRead, serverWrite)) <- pipeFunc
 
     sigClient <- newEmptyMVar
@@ -668,8 +677,6 @@ runRequestPipelineDebug pipeFunc rbs handler = tout $ do
 
   where
     await sig = takeMVar sig >>= either throwIO (const $ return ())
-
-    tout m = timeout 10000000 m >>= maybe (error "timeout") return
 
     serverThread myTid serverRead serverWrite = do
         runSession serverRead serverWrite handler
@@ -767,3 +774,49 @@ listOutputStream = do
 data TestException = TestException
   deriving (Typeable, Show)
 instance Exception TestException
+
+
+------------------------------------------------------------------------------
+data Result = SendFile ByteString FilePath Int64 Int64
+            | Output ByteString
+  deriving (Eq, Ord, Show)
+
+
+------------------------------------------------------------------------------
+runAcceptLoop :: [T.RequestBuilder IO ()]
+              -> Snap a
+              -> IO [Result]
+runAcceptLoop requests snap = dieIfTimeout $ do
+    reqStreams <- Streams.fromList requests >>=
+                  Streams.mapM makeRequest >>=
+                  Streams.lockingInputStream
+    outputs <- newMVar []
+
+    httpAcceptLoop 1 (snapToServerHandler snap)
+                   config $ acceptFunc reqStreams outputs
+    takeMVar outputs
+
+  where
+    config = makeServerConfig ()
+
+    acceptFunc :: InputStream ByteString -> MVar [Result]
+               -> IO (SendFileHandler, ByteString, ByteString, Int,
+                      InputStream ByteString, OutputStream ByteString)
+    acceptFunc inputStream output = do
+        b <- Streams.atEOF inputStream
+        when b $ myThreadId >>= killThread
+        os  <- (Streams.makeOutputStream out) >>= Streams.contramap S.copy
+        return (sendFileFunc, "localhost", "localhost", 55555, inputStream, os)
+      where
+        out (Just s) | S.null s = return ()
+        out (Just s) = modifyMVar_ output $ return . (++ [Output s])
+        out Nothing  = return ()
+
+        sendFileFunc !_ !bldr !fp !st !end =
+          modifyMVar_ output $
+          return . (++ [(SendFile (toByteString bldr) fp st end)])
+
+
+------------------------------------------------------------------------------
+dieIfTimeout :: IO a -> IO a
+dieIfTimeout m = timeout 10000000 m >>= maybe (error "timeout") return
