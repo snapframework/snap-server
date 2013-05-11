@@ -248,7 +248,7 @@ Benchmark benchmark
     base          >= 4       && <5,
     blaze-builder >= 0.3.1.1 && <0.4,
     bytestring    >= 0.9     && <0.11,
-    criterion     >= 0.6     && <0.7,
+    criterion     >= 0.6     && <0.9,
     io-streams    >= 1.1     && <1.2,
     snap-core     >= 1.0     && <1.1
 
