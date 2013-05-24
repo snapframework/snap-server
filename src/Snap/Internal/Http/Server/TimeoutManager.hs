@@ -1,4 +1,6 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server.TimeoutManager
   ( TimeoutManager
@@ -18,6 +20,15 @@ import           Control.Exception
 import           Control.Monad
 import           Data.IORef
 import           Foreign.C.Types
+import           Prelude                          (Bool, IO, Int, const,
+                                                   fromEnum, fromIntegral, id,
+                                                   max, null, otherwise,
+                                                   toEnum, ($), ($!), (+),
+                                                   (++), (-), (.), (<=), (==))
+------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server.Common (eatException)
+------------------------------------------------------------------------------
+
 
 ------------------------------------------------------------------------------
 type State = CTime
@@ -72,7 +83,7 @@ initialize defaultTimeout getTime = do
 
     let tm = TimeoutManager defaultTimeout getTime conns mp mthr
 
-    thr <- forkIO $ managerThread tm
+    thr <- mask $ \restore -> forkIO $ managerThread tm restore
     putMVar mthr thr
     return tm
 
@@ -152,8 +163,11 @@ cancel h = _killAction h >> writeIORef (_state h) canceled
 
 
 ------------------------------------------------------------------------------
-managerThread :: TimeoutManager -> IO ()
-managerThread tm = loop `finally` (readIORef connections >>= destroyAll)
+managerThread :: TimeoutManager
+              -> (forall a. IO a -> IO a)
+              -> IO ()
+managerThread tm restore =
+    loop `finally` (readIORef connections >>= destroyAll)
   where
     --------------------------------------------------------------------------
     connections = _connections tm
@@ -163,31 +177,34 @@ managerThread tm = loop `finally` (readIORef connections >>= destroyAll)
 
     --------------------------------------------------------------------------
     loop = do
-        waitABit
-        handles <- atomicModifyIORef connections (\x -> ([],x))
-
+        restore waitABit
+        handles <- atomicModifyIORef connections (\x -> ([], x))
         if null handles
-          then takeMVar morePlease
+          then restore $ takeMVar morePlease
           else do
-            now   <- getTime
-            dlist <- processHandles now handles id
-            atomicModifyIORef connections (\x -> (dlist x, ())) >>= evaluate
-
+            (keeps, discards) <- process handles
+            atomicModifyIORef connections (\x -> (keeps x, ())) >>= evaluate
+            mapM_ (eatException . _killAction) $ discards []
         loop
 
     --------------------------------------------------------------------------
-    processHandles !now handles initDlist = go handles initDlist
-      where
-        go [] !dlist = return dlist
+    process handles = do
+        now   <- getTime
+        processHandles now handles
 
-        go (x:xs) !dlist = do
+    --------------------------------------------------------------------------
+    processHandles now handles = go handles id id
+      where
+        go [] !keeps !discards = return (keeps, discards)
+
+        go (x:xs) !keeps !discards = do
             state   <- readIORef $ _state x
-            !dlist' <- if isCanceled state
-                         then return dlist
-                         else if state <= now
-                                then _killAction x >> return dlist
-                                else return (dlist . (x:))
-            go xs dlist'
+            (!k',!d') <- if isCanceled state
+                           then return (keeps, discards)
+                           else if state <= now
+                                  then return (keeps, discards . (x:))
+                                  else return (keeps . (x:), discards)
+            go xs k' d'
 
     --------------------------------------------------------------------------
     destroyAll = mapM_ diediedie

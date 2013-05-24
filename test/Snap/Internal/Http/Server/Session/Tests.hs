@@ -22,7 +22,8 @@ import           Control.Exception.Lifted                 (Exception,
                                                            bracket, catch,
                                                            evaluate, mask,
                                                            throwIO, try)
-import           Control.Monad                            (forM_, liftM, void,
+import           Control.Monad                            (forM_, liftM,
+                                                           replicateM_, void,
                                                            when, (>=>))
 import           Control.Monad.State.Class                (modify)
 import           Data.ByteString.Char8                    (ByteString)
@@ -493,9 +494,13 @@ testSendFile = testCase "session/sendFile" $ do
 
 ------------------------------------------------------------------------------
 testBasicAcceptLoop :: Test
-testBasicAcceptLoop = testCase "session/basicAcceptLoop" $ do
+testBasicAcceptLoop = testCase "session/basicAcceptLoop" $
+                      replicateM_ 1000 $ do
     outputs <- runAcceptLoop [return ()] (return ())
     let [Output out] = outputs
+    void (evaluate out) `catch` \(e::SomeException) -> do
+        putStrLn $ "error: " ++ show outputs
+        throwIO e
     assertBool "basic accept" $ S.isPrefixOf "HTTP/1.1 200 OK\r\n" out
 
 ------------------------------------------------------------------------------
@@ -790,27 +795,40 @@ runAcceptLoop requests snap = dieIfTimeout $ do
     reqStreams <- Streams.fromList requests >>=
                   Streams.mapM makeRequest >>=
                   Streams.lockingInputStream
-    outputs <- newMVar []
+    outputs  <- newMVar []
+    lock     <- newMVar ()
 
-    httpAcceptLoop 1 (snapToServerHandler snap)
-                   config $ acceptFunc reqStreams outputs
+    httpAcceptLoop 1 (snapToServerHandler snap) config $
+        acceptFunc reqStreams outputs lock
+
     takeMVar outputs
 
   where
     config = makeServerConfig ()
 
-    acceptFunc :: InputStream ByteString -> MVar [Result]
-               -> IO (SendFileHandler, ByteString, ByteString, Int,
-                      InputStream ByteString, OutputStream ByteString)
-    acceptFunc inputStream output = do
-        b <- Streams.atEOF inputStream
+    acceptFunc :: InputStream ByteString
+               -> MVar [Result]
+               -> MVar ()
+               -> AcceptFunc
+    acceptFunc inputStream output lock = do
+        void $ takeMVar lock
+        b <- atEOF
         when b $ myThreadId >>= killThread
-        os  <- (Streams.makeOutputStream out) >>= Streams.contramap S.copy
+        os <- Streams.makeOutputStream out >>=
+              Streams.contramap S.copy >>=
+              Streams.atEndOfOutput (putMVar lock ())
         return (sendFileFunc, "localhost", "localhost", 55555, inputStream, os)
+
       where
+        atEOF = Streams.peek inputStream >>= maybe (return True) f
+          where
+            f x | S.null x  = do void $ Streams.read inputStream
+                                 atEOF
+                | otherwise = return False
+
         out (Just s) | S.null s = return ()
-        out (Just s) = modifyMVar_ output $ return . (++ [Output s])
-        out Nothing  = return ()
+        out (Just s)            = modifyMVar_ output $ return . (++ [Output s])
+        out Nothing             = return ()
 
         sendFileFunc !_ !bldr !fp !st !end =
           modifyMVar_ output $
@@ -819,4 +837,9 @@ runAcceptLoop requests snap = dieIfTimeout $ do
 
 ------------------------------------------------------------------------------
 dieIfTimeout :: IO a -> IO a
-dieIfTimeout m = timeout 10000000 m >>= maybe (error "timeout") return
+dieIfTimeout m = timeout (10 * seconds) m >>= maybe (error "timeout") return
+
+
+------------------------------------------------------------------------------
+seconds :: Int
+seconds = (10::Int) ^ (6::Int)

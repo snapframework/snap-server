@@ -165,12 +165,13 @@ data PerSessionData = PerSessionData
 
 
 ------------------------------------------------------------------------------
-type AcceptFunc = IO ( SendFileHandler
-                     , ByteString
-                     , ByteString
-                     , Int
-                     , InputStream ByteString
-                     , OutputStream ByteString )
+type AcceptFunc = IO ( SendFileHandler          -- ^ what to do on sendfile
+                     , ByteString               -- ^ local address
+                     , ByteString               -- ^ remote address
+                     , Int                      -- ^ remote port
+                     , InputStream ByteString   -- ^ socket read end
+                     , OutputStream ByteString  -- ^ socket write end
+                     )
 
 
                              --------------------

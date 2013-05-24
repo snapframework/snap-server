@@ -50,6 +50,7 @@ Library
   other-modules:
     Paths_snap_server,
     Snap.Internal.Http.Server.Address,
+    Snap.Internal.Http.Server.Common,
     Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
@@ -140,6 +141,7 @@ Test-suite testsuite
     Snap.Http.Server,
     Snap.Http.Server.Config,
     Snap.Internal.Http.Server.Address,
+    Snap.Internal.Http.Server.Common,
     Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
@@ -171,6 +173,7 @@ Test-suite testsuite
     snap-core                  >= 1.0      && < 1.1,
     template-haskell           >= 2.2      && < 2.9,
     text                       >= 0.11     && < 0.12,
+    threads                    >= 0.5      && < 0.6,
     time                       >= 1.0      && < 1.5,
     transformers               >= 0.3      && < 0.4,
     transformers-base          >= 0.4      && < 0.5,

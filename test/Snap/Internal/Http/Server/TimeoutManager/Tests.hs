@@ -1,7 +1,9 @@
 module Snap.Internal.Http.Server.TimeoutManager.Tests
   ( tests ) where
 
-import           Control.Concurrent
+import           Control.Concurrent                       hiding (forkIO)
+import           Control.Concurrent.Thread                (forkIO, result)
+import           Control.Monad                            (replicateM)
 import           Data.IORef
 import           Data.Maybe
 import           System.PosixCompat.Time
@@ -20,17 +22,23 @@ tests = [ testOneTimeout
 
 
 testOneTimeout :: Test
-testOneTimeout = testCase "timeout/oneTimeout" $ do
+testOneTimeout = testCase "timeout/oneTimeout" $ repeatedly $ do
     mgr <- TM.initialize 1 epochTime
     oneTimeout mgr
 
 
 testOneTimeoutAfterInactivity :: Test
 testOneTimeoutAfterInactivity =
-    testCase "timeout/oneTimeoutAfterInactivity" $ do
+    testCase "timeout/oneTimeoutAfterInactivity" $ repeatedly $ do
         mgr <- TM.initialize 1 epochTime
         threadDelay $ 3 * seconds
         oneTimeout mgr
+
+repeatedly :: IO () -> IO ()
+repeatedly m = dieIfTimeout $ do
+    results <- replicateM 40 (forkIO m) >>= sequence . map snd
+    mapM_ result results
+
 
 oneTimeout :: TM.TimeoutManager -> IO ()
 oneTimeout mgr = do
@@ -42,7 +50,7 @@ oneTimeout mgr = do
 
 
 testTickle :: Test
-testTickle = testCase "timeout/tickle" $ do
+testTickle = testCase "timeout/tickle" $ repeatedly $ do
     mgr <- TM.initialize 5 epochTime
     ref <- newIORef (0 :: Int)
     h <- TM.register (writeIORef ref 1) mgr
@@ -60,7 +68,7 @@ testTickle = testCase "timeout/tickle" $ do
 
 
 testCancel :: Test
-testCancel = testCase "timeout/cancel" $ do
+testCancel = testCase "timeout/cancel" $ repeatedly $ do
     mgr <- TM.initialize 3 epochTime
     ref <- newIORef (0 :: Int)
     h <- TM.register (writeIORef ref 1) mgr
@@ -84,6 +92,11 @@ testCancel = testCase "timeout/cancel" $ do
     readIORef ref >>= assertEqual "b3" 3
 
 
-
+------------------------------------------------------------------------------
 seconds :: Int
 seconds = (10::Int) ^ (6::Int)
+
+
+------------------------------------------------------------------------------
+dieIfTimeout :: IO a -> IO a
+dieIfTimeout m = timeout (30 * seconds) m >>= maybe (error "timeout") return

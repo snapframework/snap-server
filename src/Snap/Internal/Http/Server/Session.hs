@@ -39,9 +39,10 @@ import           Control.Exception                        (Exception,
                                                            Handler (..),
                                                            SomeException (..),
                                                            bracket, catch,
-                                                           catches, mask,
-                                                           mask_, throwIO)
-import           Control.Monad                            (unless, void, when)
+                                                           catches, finally,
+                                                           mask, mask_,
+                                                           throwIO)
+import           Control.Monad                            (unless, when)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
@@ -81,6 +82,7 @@ import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
 ------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server.Common         (eatException)
 import           Snap.Internal.Http.Server.Date           (getCurrentDateTime,
                                                            getDateString)
 import           Snap.Internal.Http.Server.Parser         (IRequest (..),
@@ -138,16 +140,11 @@ httpAcceptLoop nLoops serverHandler serverConfig acceptFunc =
             (mapM_ killLoop)
             (mapM_ waitLoop)
   where
-    eat m = m `catch` f
-      where
-        f :: SomeException -> IO ()
-        f !_ = return $! ()
-
     loop :: (forall a. IO a -> IO a)
          -> MVar ()
          -> TimeoutManager
          -> IO ()
-    loop restore mv tm = eat go >> putMVar mv ()
+    loop restore mv tm = eatException go >> putMVar mv ()
       where
         go = do
             (sendFileHandler, localAddress, remoteAddress, remotePort,
@@ -156,7 +153,7 @@ httpAcceptLoop nLoops serverHandler serverConfig acceptFunc =
             connClose <- newIORef False
             newConn   <- newIORef True
             psdMVar   <- newEmptyMVar
-            tid       <- forkIO $ eat $ restore $ session psdMVar
+            tid       <- forkIO $ eatException $ restore $ session psdMVar
             tmHandle  <- TM.register (killThread tid) tm
             let twiddleTimeout = TM.modify tmHandle
 
@@ -200,7 +197,9 @@ httpSession :: forall hookState .
             -> ServerConfig hookState
             -> PerSessionData
             -> IO ()
-httpSession !buffer !serverHandler !config !sessionData = begin
+httpSession !buffer !serverHandler !config !sessionData =
+    begin `finally` cleanup
+
   where
     --------------------------------------------------------------------------
     defaultTimeout          = _defaultTimeout config
@@ -246,6 +245,10 @@ httpSession !buffer !serverHandler !config !sessionData = begin
             parseHook hookState req
             processRequest hookState req)
     {-# INLINE begin #-}
+
+    ------------------------------------------------------------------------------
+    cleanup :: IO ()
+    cleanup = Streams.write Nothing writeEnd
 
     ------------------------------------------------------------------------------
     readEndAtEof = Streams.read readEnd >>=
@@ -713,8 +716,3 @@ renderCookies r = updateHeaders f r
             then h
             else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
-
-
-------------------------------------------------------------------------------
-eatException :: IO a -> IO ()
-eatException m = void m `catch` (\(_ :: SomeException) -> return $! ())
