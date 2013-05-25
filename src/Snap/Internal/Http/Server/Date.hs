@@ -51,10 +51,10 @@ fetchTime = do
 ------------------------------------------------------------------------------
 updateState :: DateState -> IO ()
 updateState (DateState dateString logString time) = do
-    (!s1,!s2,!now) <- fetchTime
-    writeIORef dateString s1
-    writeIORef logString  s2
-    writeIORef time       now
+    (s1, s2, now) <- fetchTime
+    writeIORef dateString $! s1
+    writeIORef logString  $! s2
+    writeIORef time       $! now
 
     return $! ()
 
@@ -64,7 +64,7 @@ ensureFreshDate :: IO ()
 ensureFreshDate = mask_ $ do
     now <- epochTime
     old <- readIORef $ _lastFetchTime dateState
-    when (now > old) $ updateState dateState
+    when (now > old) $! updateState dateState
 
 
 ------------------------------------------------------------------------------

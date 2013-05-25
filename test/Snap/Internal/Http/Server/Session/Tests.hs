@@ -45,6 +45,7 @@ import qualified Test.Framework.Runners.Console           as Console
 import           Test.HUnit                               hiding (Test, path)
 ------------------------------------------------------------------------------
 import           Snap.Core
+import           Snap.Internal.Http.Server.Date           (getLogDateString)
 import           Snap.Internal.Http.Server.Session
 import           Snap.Internal.Http.Server.Types
 import           Snap.Test                                (RequestBuilder)
@@ -513,6 +514,11 @@ testTrivials = testCase "session/trivials" $ do
     coverTypeableInstance (undefined :: TerminateSessionException)
     coverTypeableInstance (undefined :: BadRequestException)
     coverTypeableInstance (undefined :: LengthRequiredException)
+
+    !x <- getLogDateString
+    threadDelay $ 2 * seconds
+    !y <- getLogDateString
+    assertBool (concat ["log dates: ", show x, ", ", show y]) $ x /= y
 
 
                              ---------------------
