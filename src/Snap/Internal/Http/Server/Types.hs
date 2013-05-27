@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 ------------------------------------------------------------------------------
 -- | Types internal to the implementation of the Snap HTTP server.
 module Snap.Internal.Http.Server.Types
@@ -168,13 +169,17 @@ data PerSessionData = PerSessionData
 
 
 ------------------------------------------------------------------------------
-type AcceptFunc = IO ( SendFileHandler          -- ^ what to do on sendfile
-                     , ByteString               -- ^ local address
-                     , ByteString               -- ^ remote address
-                     , Int                      -- ^ remote port
-                     , InputStream ByteString   -- ^ socket read end
-                     , OutputStream ByteString  -- ^ socket write end
-                     )
+type AcceptFunc hookState =
+           ServerConfig hookState        -- ^ server config
+        -> (forall a . IO a -> IO a)     -- ^ exception restore function
+        -> IO ( SendFileHandler          -- ^ what to do on sendfile
+              , ByteString               -- ^ local address
+              , ByteString               -- ^ remote address
+              , Int                      -- ^ remote port
+              , InputStream ByteString   -- ^ socket read end
+              , OutputStream ByteString  -- ^ socket write end
+              , IO ()                    -- ^ cleanup action
+              )
 
 
                              --------------------

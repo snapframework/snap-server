@@ -30,8 +30,10 @@ import           Blaze.ByteString.Builder.Internal.Buffer (Buffer,
 import           Control.Applicative                      ((<$>), (<|>))
 import           Control.Arrow                            (first, second)
 import           Control.Concurrent                       (MVar, ThreadId,
-                                                           forkIO, forkOn,
+                                                           forkIOWithUnmask,
+                                                           forkOnWithUnmask,
                                                            killThread,
+                                                           myThreadId,
                                                            newEmptyMVar,
                                                            putMVar, readMVar,
                                                            takeMVar)
@@ -39,10 +41,11 @@ import           Control.Exception                        (Exception,
                                                            Handler (..),
                                                            SomeException (..),
                                                            bracket, catch,
-                                                           catches, finally,
-                                                           mask, mask_,
+                                                           catches, evaluate,
+                                                           finally, mask_,
                                                            throwIO)
-import           Control.Monad                            (unless, when)
+import           Control.Monad                            (forever, unless,
+                                                           when)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
@@ -92,6 +95,7 @@ import           Snap.Internal.Http.Server.Parser         (IRequest (..),
 import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
 import qualified Snap.Internal.Http.Server.TimeoutManager as TM
 import           Snap.Internal.Http.Server.Types          (AcceptFunc, PerSessionData (..),
+                                                           SendFileHandler,
                                                            ServerConfig (..),
                                                            ServerHandler)
 ------------------------------------------------------------------------------
@@ -132,29 +136,50 @@ data EventLoopCpu = EventLoopCpu
 httpAcceptLoop :: forall hookState .
                   ServerHandler hookState  -- ^ server handler
                -> ServerConfig hookState   -- ^ server config
-               -> AcceptFunc               -- ^ accept function
+               -> AcceptFunc hookState     -- ^ accept function
                -> IO ()
-httpAcceptLoop serverHandler serverConfig acceptFunc =
-    bracket (mapM newLoop [0 .. (nLoops - 1)])
-            (mapM_ killLoop)
-            (mapM_ waitLoop)
+httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
   where
-    nLoops = _numAcceptLoops serverConfig
+    --------------------------------------------------------------------------
+    nLoops         = _numAcceptLoops serverConfig
+    defaultTimeout = _defaultTimeout serverConfig
 
-    loop :: (forall a. IO a -> IO a)
-         -> MVar ()
+    --------------------------------------------------------------------------
+    runLoops = bracket (mapM newLoop [0 .. (nLoops - 1)])
+                       (mapM_ killLoop)
+                       (mapM_ waitLoop)
+
+    --------------------------------------------------------------------------
+    loop :: MVar ()
          -> TimeoutManager
+         -> (forall a. IO a -> IO a)
          -> IO ()
-    loop restore mv tm = eatException go >> putMVar mv ()
+    loop mv tm loopRestore = eatException go `finally` putMVar mv ()
       where
-        go = do
+        go = forever $ do
             (sendFileHandler, localAddress, remoteAddress, remotePort,
-             readEnd, writeEnd) <- restore acceptFunc
+             readEnd, writeEnd, cleanup) <- acceptFunc serverConfig loopRestore
 
+            forkIOWithUnmask
+                $ eatException
+                . prep sendFileHandler localAddress remoteAddress
+                       remotePort readEnd writeEnd cleanup
+
+        prep :: SendFileHandler
+             -> ByteString
+             -> ByteString
+             -> Int
+             -> InputStream ByteString
+             -> OutputStream ByteString
+             -> IO ()
+             -> (forall a . IO a -> IO a)
+             -> IO ()
+        prep sendFileHandler localAddress remoteAddress remotePort readEnd
+             writeEnd cleanup restore =
+          do
             connClose <- newIORef False
             newConn   <- newIORef True
-            psdMVar   <- newEmptyMVar
-            tid       <- forkIO $ eatException $ restore $ session psdMVar
+            tid       <- myThreadId
             tmHandle  <- TM.register (killThread tid) tm
             let twiddleTimeout = TM.modify tmHandle
 
@@ -167,28 +192,28 @@ httpAcceptLoop serverHandler serverConfig acceptFunc =
                                      readEnd
                                      writeEnd
                                      newConn
-            putMVar psdMVar psd
-            go
+            restore (session psd) `finally` cleanup
 
-    session psdMVar = takeMVar psdMVar >>= \psd -> do
+    --------------------------------------------------------------------------
+    session psd = do
         buffer <- allocBuffer defaultBufferSize
         httpSession buffer serverHandler serverConfig psd
 
-    defaultTimeout = _defaultTimeout serverConfig
-
-    newLoop cpu = mask $ \restore -> do
+    --------------------------------------------------------------------------
+    newLoop cpu = mask_ $ do
         mv  <- newEmptyMVar
         tm  <- TM.initialize defaultTimeout getCurrentDateTime
-        tid <- forkOn cpu $ loop restore mv tm
+        tid <- forkOnWithUnmask cpu $ loop mv tm
         return $! EventLoopCpu tid tm mv
 
+    --------------------------------------------------------------------------
     waitLoop (EventLoopCpu _ _ mv) = readMVar mv
 
+    --------------------------------------------------------------------------
     killLoop (EventLoopCpu tid tm mv) = mask_ $ do
         killThread tid
         TM.stop tm
-        !_ <- takeMVar mv
-        return $! ()
+        takeMVar mv >>= evaluate
 
 
 ------------------------------------------------------------------------------

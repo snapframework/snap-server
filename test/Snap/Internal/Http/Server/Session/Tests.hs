@@ -816,15 +816,16 @@ runAcceptLoop requests snap = dieIfTimeout $ do
     acceptFunc :: InputStream ByteString
                -> MVar [Result]
                -> MVar ()
-               -> AcceptFunc
-    acceptFunc inputStream output lock = do
+               -> AcceptFunc ()
+    acceptFunc inputStream output lock _ restore = restore $ do
         void $ takeMVar lock
         b <- atEOF
         when b $ myThreadId >>= killThread
         os <- Streams.makeOutputStream out >>=
               Streams.contramap S.copy >>=
               Streams.atEndOfOutput (putMVar lock ())
-        return (sendFileFunc, "localhost", "localhost", 55555, inputStream, os)
+        return (sendFileFunc, "localhost", "localhost", 55555, inputStream,
+                os, return ())
 
       where
         atEOF = Streams.peek inputStream >>= maybe (return True) f

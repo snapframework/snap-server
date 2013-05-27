@@ -11,10 +11,8 @@ module Snap.Internal.Http.Server.Address
 ------------------------------------------------------------------------------
 import           Control.Exception
 import           Control.Monad
-import           Data.ByteString          (ByteString)
-import qualified Data.ByteString          as S
-import           Data.ByteString.Char8    ()
-import           Data.ByteString.Internal (c2w, w2c)
+import           Data.ByteString.Char8 (ByteString)
+import qualified Data.ByteString.Char8 as S
 import           Data.Maybe
 import           Data.Typeable
 import           Network.Socket
@@ -41,7 +39,7 @@ getAddress addr = do
               SockAddrInet6 p _ _ _ -> return p
               x -> throwIO $ AddressNotSupportedException $ show x
     host <- getHostAddr addr
-    return (fromIntegral port, S.pack $ map c2w host)
+    return (fromIntegral port, S.pack host)
 
 ------------------------------------------------------------------------------
 getSockAddr :: Int
@@ -57,7 +55,7 @@ getSockAddr p s | s == "::" =
                               )
 getSockAddr p s = do
     let hints = defaultHints { addrFlags = [AI_NUMERICSERV] }
-    ais <- getAddrInfo (Just hints) (Just $ map w2c $ S.unpack s)
+    ais <- getAddrInfo (Just hints) (Just $ S.unpack s)
                        (Just $ show p)
     if null ais
       then throwIO $ AddressNotSupportedException $ show s
