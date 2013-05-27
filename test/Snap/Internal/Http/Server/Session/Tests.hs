@@ -750,6 +750,7 @@ makeServerConfig hs = ServerConfig logAccess
                                    8080
                                    10
                                    False
+                                   1
   where
     onStart !psd = do
         void $ readIORef (_isNewConnection psd) >>= evaluate
@@ -804,8 +805,8 @@ runAcceptLoop requests snap = dieIfTimeout $ do
     outputs  <- newMVar []
     lock     <- newMVar ()
 
-    httpAcceptLoop 1 (snapToServerHandler snap) config $
-        acceptFunc reqStreams outputs lock
+    httpAcceptLoop (snapToServerHandler snap) config $
+                   acceptFunc reqStreams outputs lock
 
     takeMVar outputs
 

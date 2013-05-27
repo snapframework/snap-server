@@ -130,16 +130,17 @@ data EventLoopCpu = EventLoopCpu
 
 ------------------------------------------------------------------------------
 httpAcceptLoop :: forall hookState .
-                  Int                      -- ^ number of accept loops to start
-               -> ServerHandler hookState  -- ^ server handler
+                  ServerHandler hookState  -- ^ server handler
                -> ServerConfig hookState   -- ^ server config
                -> AcceptFunc               -- ^ accept function
                -> IO ()
-httpAcceptLoop nLoops serverHandler serverConfig acceptFunc =
+httpAcceptLoop serverHandler serverConfig acceptFunc =
     bracket (mapM newLoop [0 .. (nLoops - 1)])
             (mapM_ killLoop)
             (mapM_ waitLoop)
   where
+    nLoops = _numAcceptLoops serverConfig
+
     loop :: (forall a. IO a -> IO a)
          -> MVar ()
          -> TimeoutManager

@@ -146,6 +146,9 @@ data ServerConfig hookState = ServerConfig
     , _localPort             :: {-# UNPACK #-} !Int
     , _defaultTimeout        :: {-# UNPACK #-} !Int
     , _isSecure              :: !Bool
+
+      -- | Number of accept loops to spawn.
+    , _numAcceptLoops        :: {-# UNPACK #-} !Int
     }
 
 
