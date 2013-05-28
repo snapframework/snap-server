@@ -816,8 +816,8 @@ runAcceptLoop requests snap = dieIfTimeout $ do
     acceptFunc :: InputStream ByteString
                -> MVar [Result]
                -> MVar ()
-               -> AcceptFunc ()
-    acceptFunc inputStream output lock !_ restore = restore $ do
+               -> AcceptFunc
+    acceptFunc inputStream output lock restore = restore $ do
         void $ takeMVar lock
         b <- atEOF
         when b $ myThreadId >>= killThread

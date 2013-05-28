@@ -37,8 +37,10 @@ import           Control.Concurrent                       (MVar, ThreadId,
                                                            newEmptyMVar,
                                                            putMVar, readMVar,
                                                            takeMVar)
-import           Control.Exception                        (Exception,
+import           Control.Exception                        (AsyncException,
+                                                           Exception,
                                                            Handler (..),
+                                                           IOException,
                                                            SomeException (..),
                                                            bracket, catch,
                                                            catches, evaluate,
@@ -136,13 +138,22 @@ data EventLoopCpu = EventLoopCpu
 httpAcceptLoop :: forall hookState .
                   ServerHandler hookState  -- ^ server handler
                -> ServerConfig hookState   -- ^ server config
-               -> AcceptFunc hookState     -- ^ accept function
+               -> AcceptFunc               -- ^ accept function
                -> IO ()
 httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
   where
     --------------------------------------------------------------------------
+    logError = _logError serverConfig
     nLoops         = _numAcceptLoops serverConfig
     defaultTimeout = _defaultTimeout serverConfig
+
+    --------------------------------------------------------------------------
+    logException :: Exception e => e -> IO ()
+    logException e =
+        logError $
+        mconcat [ fromByteString "got exception in httpAcceptFunc: "
+                , fromShow e
+                ]
 
     --------------------------------------------------------------------------
     runLoops = bracket (mapM newLoop [0 .. (nLoops - 1)])
@@ -156,9 +167,17 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
          -> IO ()
     loop mv tm loopRestore = eatException go `finally` putMVar mv ()
       where
+        ----------------------------------------------------------------------
+        handlers = [ Handler $ \(e :: IOException)    -> logException e >> go
+                   , Handler $ \(e :: AsyncException) -> throwIO e
+                   , Handler $ \(e :: SomeException)  -> logException e >>
+                                                         throwIO e
+                   ]
+
         go = forever $ do
             (sendFileHandler, localAddress, remoteAddress, remotePort,
-             readEnd, writeEnd, cleanup) <- acceptFunc serverConfig loopRestore
+             readEnd, writeEnd, cleanup) <- acceptFunc loopRestore
+                                            `catches` handlers
 
             forkIOWithUnmask
                 $ eatException

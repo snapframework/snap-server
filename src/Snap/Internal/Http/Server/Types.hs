@@ -169,9 +169,8 @@ data PerSessionData = PerSessionData
 
 
 ------------------------------------------------------------------------------
-type AcceptFunc hookState =
-           ServerConfig hookState        -- ^ server config
-        -> (forall a . IO a -> IO a)     -- ^ exception restore function
+type AcceptFunc =
+           (forall a . IO a -> IO a)     -- ^ exception restore function
         -> IO ( SendFileHandler          -- ^ what to do on sendfile
               , ByteString               -- ^ local address
               , ByteString               -- ^ remote address
