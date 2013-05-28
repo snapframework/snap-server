@@ -2,51 +2,61 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
 -- | Linux system-dependent code for 'sendfile'.
-module System.SendFile.Linux (sendFile) where
+module System.SendFile.Linux
+  ( sendFile
+  , sendFileMode
+  ) where
 
-import Data.Int
-import Foreign.C.Error (eAGAIN, getErrno, throwErrno)
+import           Blaze.ByteString.Builder
+import           Control.Concurrent       (threadWaitWrite)
+import qualified Data.ByteString.Unsafe   as S
+import           Data.Int
+import           Foreign.C.Error          (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
-import Foreign.C.Types (CSize(..), CInt(..))
+import           Foreign.C.Types          (CInt (..), CSize (..))
 #else
-import Foreign.C.Types (CSize)
+import           Foreign.C.Types          (CSize)
 #endif
-import Foreign.Marshal (alloca)
-import Foreign.Ptr (Ptr, nullPtr)
-import Foreign.Storable (poke)
+import           Foreign.Marshal          (alloca)
+import           Foreign.Ptr              (Ptr, nullPtr)
+import           Foreign.Storable         (poke)
 #if __GLASGOW_HASKELL__ >= 703
-import System.Posix.Types (Fd(..), COff(..), CSsize(..))
+import           System.Posix.Types       (COff (..), CSsize (..), Fd (..))
 #else
-import System.Posix.Types (Fd, COff, CSsize)
+import           System.Posix.Types       (COff, CSsize, Fd)
 #endif
 
-sendFile :: IO () -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFile onBlock out_fd in_fd off count
-  | count == 0 = return 0
-  | off == 0   = do
-        sbytes <- sendfile onBlock out_fd in_fd nullPtr bytes
-        return $ fromIntegral sbytes
+
+------------------------------------------------------------------------------
+sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFile out_fd in_fd off count
+  | count <= 0 = return 0
+  | off   == 0 = do
+        nsent <- sendfile out_fd in_fd nullPtr bytes
+        return $! fromIntegral nsent
   | otherwise  = alloca $ \poff -> do
         poke poff (fromIntegral off)
-        sbytes <- sendfile onBlock out_fd in_fd poff bytes
-        return $ fromIntegral sbytes
+        nsent <- sendfile out_fd in_fd poff bytes
+        return $! fromIntegral nsent
     where
-      bytes = min (fromIntegral count) maxBytes
+      bytes = fromIntegral count
 
-sendfile :: IO () -> Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
-sendfile onBlock out_fd in_fd poff bytes = do
-    nsent <- c_sendfile out_fd in_fd poff bytes
-    if nsent <= -1
-      then do errno <- getErrno
-              if errno == eAGAIN
-                then onBlock >> sendfile onBlock out_fd in_fd poff bytes
-                else throwErrno "System.SendFile.Linux"
-      else return nsent
 
--- max num of bytes in one send
-maxBytes :: CSize
-maxBytes = maxBound :: CSize
+------------------------------------------------------------------------------
+sendfile :: Fd -> Fd -> Ptr COff -> CSize -> IO CSize
+sendfile out_fd in_fd poff bytes =
+    throwErrnoIfMinus1RetryMayBlock
+            "sendfile"
+            (c_sendfile out_fd in_fd poff bytes)
+            (threadWaitWrite out_fd)
 
+
+------------------------------------------------------------------------------
 -- sendfile64 gives LFS support
 foreign import ccall unsafe "sys/sendfile.h sendfile64" c_sendfile
-    :: Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
+    :: Fd -> Fd -> Ptr COff -> CSize -> IO CSize
+
+
+------------------------------------------------------------------------------
+sendFileMode :: String
+sendFileMode = "LINUX_SENDFILE"
