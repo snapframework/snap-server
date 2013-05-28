@@ -17,7 +17,8 @@ import           Blaze.ByteString.Builder                 (flush,
 import           Blaze.ByteString.Builder.Char8           (fromChar)
 import           Blaze.ByteString.Builder.Internal.Buffer (allocBuffer)
 import           Control.Concurrent
-import           Control.Exception.Lifted                 (Exception,
+import           Control.Exception.Lifted                 (AsyncException (ThreadKilled),
+                                                           Exception,
                                                            SomeException (..),
                                                            bracket, catch,
                                                            evaluate, mask,
@@ -30,8 +31,9 @@ import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
 import           Data.Int                                 (Int64)
-import           Data.IORef                               (newIORef,
-                                                           readIORef)
+import           Data.IORef                               (IORef, newIORef,
+                                                           readIORef,
+                                                           writeIORef)
 import qualified Data.Map                                 as Map
 import           Data.Maybe                               (isNothing)
 import           Data.Monoid                              (mappend)
@@ -799,20 +801,76 @@ runAcceptLoop :: [T.RequestBuilder IO ()]
               -> Snap a
               -> IO [Result]
 runAcceptLoop requests snap = dieIfTimeout $ do
-    reqStreams <- Streams.fromList requests >>=
-                  Streams.mapM makeRequest >>=
-                  Streams.lockingInputStream
-    outputs  <- newMVar []
-    lock     <- newMVar ()
+    (_, errs) <- run afuncError
+    assertBool ("errs: " ++ show errs) $ not $ null errs
 
-    httpAcceptLoop (snapToServerHandler snap) config $
-                   acceptFunc reqStreams outputs lock
+    -- make sure we don't log error on ThreadKilled.
+    (_, errs') <- run afuncSuicide
+    assertBool ("errs': " ++ show errs') $ null errs'
 
-    takeMVar outputs
+
+    -- make sure we gobble IOException.
+    count <- newIORef 0
+    (_, errs'') <- run $ afuncIOException count
+    assertBool ("errs'': " ++ show errs'') $ length errs'' == 2
+
+    liftM fst $ run acceptFunc
 
   where
-    config = makeServerConfig ()
+    --------------------------------------------------------------------------
+    run afunc = do
+        reqStreams <- Streams.fromList requests >>=
+                      Streams.mapM makeRequest >>=
+                      Streams.lockingInputStream
 
+        outputs  <- newMVar []
+        lock     <- newMVar ()
+        err      <- newMVar []
+        httpAcceptLoop (snapToServerHandler snap) (config err) $
+                       afunc reqStreams outputs lock
+
+        out <- takeMVar outputs
+        errs <- takeMVar err
+        return (out, errs)
+
+    --------------------------------------------------------------------------
+    config mvar = (makeServerConfig ()) {
+                    _logError = \b -> let !s = toByteString b
+                                      in modifyMVar_ mvar $ \xs -> do
+                                           void (evaluate s)
+                                           return (xs ++ [s])
+                  }
+
+    --------------------------------------------------------------------------
+    afuncError :: InputStream ByteString
+               -> MVar [Result]
+               -> MVar ()
+               -> AcceptFunc
+    afuncError _ _ lock restore = restore $ withMVar lock $ \_ ->
+        error "error"
+
+    --------------------------------------------------------------------------
+    afuncSuicide :: InputStream ByteString
+                 -> MVar [Result]
+                 -> MVar ()
+                 -> AcceptFunc
+    afuncSuicide _ _ lock restore =
+        restore $ withMVar lock (\_ -> throwIO ThreadKilled)
+
+    --------------------------------------------------------------------------
+    afuncIOException :: IORef Int
+                     -> InputStream ByteString
+                     -> MVar [Result]
+                     -> MVar ()
+                     -> AcceptFunc
+    afuncIOException ref _ _ lock restore = restore $ withMVar lock $ const $ do
+        x <- readIORef ref
+        writeIORef ref $! x + 1
+        if x >= 2
+          then throwIO ThreadKilled
+          else throwIO $ userError "hello"
+
+    --------------------------------------------------------------------------
     acceptFunc :: InputStream ByteString
                -> MVar [Result]
                -> MVar ()

@@ -143,7 +143,7 @@ httpAcceptLoop :: forall hookState .
 httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
   where
     --------------------------------------------------------------------------
-    logError = _logError serverConfig
+    logError       = _logError serverConfig
     nLoops         = _numAcceptLoops serverConfig
     defaultTimeout = _defaultTimeout serverConfig
 
@@ -169,7 +169,7 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
       where
         ----------------------------------------------------------------------
         handlers = [ Handler $ \(e :: IOException)    -> logException e >> go
-                   , Handler $ \(e :: AsyncException) -> throwIO e
+                   , Handler $ \(e :: AsyncException) -> throwIO $! e
                    , Handler $ \(e :: SomeException)  -> logException e >>
                                                          throwIO e
                    ]
