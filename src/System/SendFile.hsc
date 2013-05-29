@@ -11,6 +11,8 @@ module System.SendFile
   , sendHeaders
   ) where
 
+#include <sys/socket.h>
+
 import           Blaze.ByteString.Builder
 import           Control.Concurrent       (threadWaitWrite)
 import qualified Data.ByteString.Unsafe   as S

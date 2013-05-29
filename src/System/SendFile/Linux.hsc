@@ -7,23 +7,21 @@ module System.SendFile.Linux
   , sendFileMode
   ) where
 
-import           Blaze.ByteString.Builder
-import           Control.Concurrent       (threadWaitWrite)
-import qualified Data.ByteString.Unsafe   as S
+import           Control.Concurrent (threadWaitWrite)
 import           Data.Int
-import           Foreign.C.Error          (throwErrnoIfMinus1RetryMayBlock)
+import           Foreign.C.Error    (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
-import           Foreign.C.Types          (CInt (..), CSize (..))
+import           Foreign.C.Types    (CInt (..), CSize (..))
 #else
-import           Foreign.C.Types          (CSize)
+import           Foreign.C.Types    (CSize)
 #endif
-import           Foreign.Marshal          (alloca)
-import           Foreign.Ptr              (Ptr, nullPtr)
-import           Foreign.Storable         (poke)
+import           Foreign.Marshal    (alloca)
+import           Foreign.Ptr        (Ptr, nullPtr)
+import           Foreign.Storable   (poke)
 #if __GLASGOW_HASKELL__ >= 703
-import           System.Posix.Types       (COff (..), CSsize (..), Fd (..))
+import           System.Posix.Types (COff (..), CSsize (..), Fd (..))
 #else
-import           System.Posix.Types       (COff, CSsize, Fd)
+import           System.Posix.Types (COff, CSsize, Fd)
 #endif
 
 
@@ -43,7 +41,7 @@ sendFile out_fd in_fd off count
 
 
 ------------------------------------------------------------------------------
-sendfile :: Fd -> Fd -> Ptr COff -> CSize -> IO CSize
+sendfile :: Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
 sendfile out_fd in_fd poff bytes =
     throwErrnoIfMinus1RetryMayBlock
             "sendfile"
@@ -54,7 +52,7 @@ sendfile out_fd in_fd poff bytes =
 ------------------------------------------------------------------------------
 -- sendfile64 gives LFS support
 foreign import ccall unsafe "sys/sendfile.h sendfile64" c_sendfile
-    :: Fd -> Fd -> Ptr COff -> CSize -> IO CSize
+    :: Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
 
 
 ------------------------------------------------------------------------------
