@@ -1,8 +1,11 @@
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Snap.Internal.Http.Server.Socket
   ( bindHttp
   , httpAcceptFunc
+  , sendFileFunc
   ) where
 
 ------------------------------------------------------------------------------
@@ -17,6 +20,18 @@ import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Types   (AcceptFunc,
                                                     SendFileHandler)
 import qualified System.IO.Streams.Network         as Streams
+#ifndef PORTABLE
+import           Control.Exception                 (bracket)
+import           Network.Socket                    (fdSocket)
+import           System.Posix.IO                   (OpenMode (..), closeFd,
+                                                    defaultFileFlags, openFd)
+import           System.Posix.Types                (Fd (..))
+import           System.SendFile                   (sendFile, sendHeaders)
+#else
+import           Blaze.ByteString.Builder          (fromByteString)
+import           Network.Socket.ByteString         (sendAll)
+import qualified System.IO.Streams                 as Streams
+#endif
 ------------------------------------------------------------------------------
 
 
@@ -59,3 +74,31 @@ httpAcceptFunc boundSocket restore = do
               , writeEnd
               , close sock
               )
+
+
+------------------------------------------------------------------------------
+sendFileFunc :: Socket -> SendFileHandler
+#ifndef PORTABLE
+sendFileFunc sock !_ builder fPath offset nbytes = bracket acquire closeFd go
+  where
+    sockFd    = Fd (fdSocket sock)
+    acquire   = openFd fPath ReadOnly Nothing defaultFileFlags
+    go fileFd = do sendHeaders builder sockFd
+                   sendFile sockFd fileFd offset nbytes
+
+
+#else
+sendFileFunc sock buffer builder fPath offset nbytes =
+    Streams.unsafeWithFileAsInputStartingAt offset fPath $ \fileInput0 -> do
+        fileInput <- Streams.takeBytes nbytes fileInput0 >>=
+                     Streams.map fromByteString
+        input     <- Streams.fromList [builder] >>=
+                     Streams.appendInputStream fileInput
+        output    <- Streams.makeOutputStream sendChunk >>=
+                     Streams.unsafeBuilderStream (return buffer)
+        Streams.connect input output
+
+  where
+    sendChunk (Just s) = sendAll sock s
+    sendChunk Nothing  = return $! ()
+#endif
