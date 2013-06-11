@@ -9,6 +9,7 @@
 module Snap.Internal.Http.Server.Session
   ( httpAcceptLoop
   , httpSession
+  , snapToServerHandler
   , BadRequestException(..)
   , LengthRequiredException(..)
   , TerminateSessionException(..)
@@ -87,6 +88,7 @@ import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
 ------------------------------------------------------------------------------
+import           Snap.Core                                (Snap, runSnap)
 import           Snap.Internal.Http.Server.Common         (eatException)
 import           Snap.Internal.Http.Server.Date           (getCurrentDateTime,
                                                            getDateString)
@@ -115,6 +117,15 @@ instance Exception BadRequestException
 data LengthRequiredException = LengthRequiredException
   deriving (Typeable, Show)
 instance Exception LengthRequiredException
+
+
+------------------------------------------------------------------------------
+snapToServerHandler :: Snap a -> ServerHandler hookState
+snapToServerHandler !snap !serverConfig !perSessionData !req =
+    runSnap snap logErr tickle req
+  where
+    logErr = _logError serverConfig . fromByteString
+    tickle = _twiddleTimeout perSessionData
 
 
 ------------------------------------------------------------------------------

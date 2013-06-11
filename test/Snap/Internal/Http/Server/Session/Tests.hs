@@ -768,15 +768,6 @@ makeServerConfig hs = ServerConfig logAccess
 
 
 ------------------------------------------------------------------------------
-snapToServerHandler :: Snap a -> ServerHandler hookState
-snapToServerHandler !snap !serverConfig !perSessionData !req =
-    runSnap snap logErr tickle req
-  where
-    logErr = _logError serverConfig . fromByteString
-    tickle = _twiddleTimeout perSessionData
-
-
-------------------------------------------------------------------------------
 listOutputStream :: IO (OutputStream ByteString, IO [ByteString])
 listOutputStream = do
     (os, out) <- Streams.listOutputStream
