@@ -185,7 +185,7 @@ testHandler = withCompression $
 --          , ("echo"              , echoHandler                       )
 --          , ("rot13"             , rot13Handler                      )
           , ("echoUri"           , echoUriHandler                    )
-          , ("fileserve"         , serveDirectory "testserver/static")
+--          , ("fileserve"         , serveDirectory "testserver/static")
           , ("bigresponse"       , bigResponseHandler                )
           , ("respcode/:code"    , responseHandler                   )
           , ("upload/form"       , uploadForm                        )

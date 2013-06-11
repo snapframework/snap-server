@@ -12,7 +12,8 @@ module Test.Blackbox
 --------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder
 import           Control.Concurrent
-import           Control.Exception                    (SomeException, catch,
+import           Control.Exception                    (SomeException,
+                                                       bracketOnError, catch,
                                                        throwIO)
 import           Control.Monad
 import           Control.Monad.Trans
@@ -21,13 +22,11 @@ import           Data.ByteString.Char8                (ByteString)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
 import           Data.CaseInsensitive                 (CI)
---import           Data.Conduit                         (ResourceT)
 import           Data.Int
 import           Data.List
 import           Data.Monoid
--- import qualified Network.HTTP.Conduit                 as HTTP
+import qualified Network.Socket                       as N
 import qualified Network.Socket.ByteString            as N
--- import           Network.TLS                          (CertificateUsage (..))
 import           Prelude                              hiding (catch, take)
 import           System.Timeout
 import           Test.Framework
@@ -41,6 +40,10 @@ import qualified Test.QuickCheck.Monadic              as QC
 import qualified Test.QuickCheck.Property             as QC
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
+import           Snap.Internal.Http.Server.Session    (httpAcceptLoop,
+                                                       snapToServerHandler)
+import qualified Snap.Internal.Http.Server.Socket     as Sock
+import qualified Snap.Internal.Http.Server.Types      as Types
 import           Snap.Test.Common
 import           Test.Common.Rot13
 import           Test.Common.TestHandler
@@ -57,6 +60,48 @@ ssltests = maybe [] httpsTests
 
 testFunctions :: [Bool -> Int -> String -> Test]
 testFunctions = []
+
+
+------------------------------------------------------------------------------
+-- | Returns the thread the server is running in as well as the port it is
+-- listening on.
+startTestSocketServer :: IO (ThreadId, Int)
+startTestSocketServer = bracketOnError getSock cleanup forkServer
+  where
+    getSock = Sock.bindHttp "127.0.0.1" (fromIntegral N.aNY_PORT)
+
+    forkServer sock = do
+        port <- liftM fromIntegral $ N.socketPort sock
+        let scfg = emptyServerConfig { Types._localPort = port }
+        tid <- forkIO $ httpAcceptLoop (snapToServerHandler testHandler)
+                                       scfg
+                                       (Sock.httpAcceptFunc sock)
+        return (tid, port)
+
+    cleanup = N.close
+
+    logAccess !_ !_                = return ()
+    logError !_                    = return ()
+    onStart !_                     = return ()
+    onParse !_ !_                  = return ()
+    onUserHandlerFinished !_ !_ !_ = return ()
+    onDataFinished !_ !_ !_        = return ()
+    onExceptionHook !_ !_          = return ()
+    onEscape !_                    = return ()
+
+    emptyServerConfig = Types.ServerConfig logAccess
+                                           logError
+                                           onStart
+                                           onParse
+                                           onUserHandlerFinished
+                                           onDataFinished
+                                           onExceptionHook
+                                           onEscape
+                                           "localhost"
+                                           0
+                                           20
+                                           False
+                                           1
 
 #if 0
 
@@ -479,4 +524,3 @@ startTestServer port sslport = do
 
     return (tid,mvar)
 -}
-
