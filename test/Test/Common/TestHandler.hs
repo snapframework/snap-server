@@ -5,6 +5,7 @@ module Test.Common.TestHandler (testHandler) where
 
 import           Blaze.ByteString.Builder
 import           Control.Concurrent         (threadDelay)
+import           Control.Exception          (throwIO)
 import           Control.Monad
 import           Control.Monad.Trans
 import qualified Data.ByteString.Char8      as S
@@ -125,35 +126,29 @@ uploadForm = do
                     , "</form></body></html>" ]
 
 
-{-
 uploadHandler :: Snap ()
 uploadHandler = do
     liftIO $ createDirectoryIfMissing True tmpdir
-    handleFileUploads tmpdir defaultUploadPolicy partPolicy hndl
+    files <- handleFileUploads tmpdir defaultUploadPolicy partPolicy hndl
+    let m = sort files
+
+    params <- liftM (Prelude.map (\(a,b) -> (a,S.concat b)) .
+                     Map.toAscList .
+                     rqParams) getRequest
+
+    modifyResponse $ setContentType "text/plain"
+    writeBuilder $ buildRqParams params `mappend` buildFiles m
 
   where
     isRight (Left _) = False
     isRight (Right _) = True
 
-    f (_, Left _) = error "impossible"
-    f (p, Right x) = (fromMaybe "-" $ partFileName p, x)
+    f p = fromMaybe "-" $ partFileName p
 
-    hndl xs' = do
-        let xs = [ f x | x <- xs', isRight (snd x) ]
-
-        files <- mapM (\(x,fp) -> do
-                           c <- liftIO $ S.readFile fp
-                           return (x,c)) xs
-
-        let m = sort files
-
-        params <- liftM (Prelude.map (\(a,b) -> (a,S.concat b)) .
-                         Map.toAscList .
-                         rqParams) getRequest
-
-        modifyResponse $ setContentType "text/plain"
-        writeBuilder $ buildRqParams params `mappend` buildFiles m
-
+    hndl _ (Left e)          = throwIO e
+    hndl partInfo (Right fp) = do
+        !c <- liftIO $ S.readFile fp
+        return $! (f partInfo, c)
 
     builder _ [] = mempty
     builder ty ((k,v):xs) =
@@ -173,7 +168,6 @@ uploadHandler = do
     partPolicy partInfo = if partContentType partInfo == "text/plain"
                             then allowWithMaximumSize 200000
                             else disallow
--}
 
 serverHeaderHandler :: Snap ()
 serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
@@ -189,7 +183,7 @@ testHandler = withCompression $
           , ("bigresponse"       , bigResponseHandler                )
           , ("respcode/:code"    , responseHandler                   )
           , ("upload/form"       , uploadForm                        )
---          , ("upload/handle"     , uploadHandler                     )
+          , ("upload/handle"     , uploadHandler                     )
           , ("timeout/tickle"    , timeoutTickleHandler              )
           , ("timeout/badtickle" , badTimeoutTickleHandler           )
           , ("server-header"     , serverHeaderHandler               )
