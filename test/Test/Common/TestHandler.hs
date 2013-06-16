@@ -51,8 +51,8 @@ trickleOutput n os = do
     Streams.fromList dots >>= Streams.mapM f >>= Streams.supplyTo os
     return os
   where
-    dots = replicate n $ fromByteString ".\n"
-    f x  = threadDelay 1000000 >> return (x `mappend` flush)
+    dots = replicate n ".\n"
+    f x  = threadDelay 1000000 >> return (fromByteString x `mappend` flush)
 
 
 ------------------------------------------------------------------------------

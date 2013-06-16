@@ -3,9 +3,15 @@
 
 module Main where
 
+import           Control.Concurrent                             (killThread)
 import qualified Control.Exception                              as E
-import           Control.Monad                                  (forM, liftM)
+import           Control.Monad                                  (forM, liftM,
+                                                                 mapM_)
+import           Data.Maybe                                     (maybeToList)
 import           Network                                        (withSocketsDo)
+#ifdef OPENSSL
+import           OpenSSL                                        (withOpenSSL)
+#endif
 import           System.Environment
 import           Test.Framework                                 (defaultMain,
                                                                  testGroup)
@@ -18,13 +24,22 @@ import qualified Test.Blackbox
 
 ------------------------------------------------------------------------------
 main :: IO ()
-main = withSocketsDo $ do
+main = withSocketsDo $ setupOpenSSL $ do
     sp <- getStartPort
-    let bends = backends sp
-    tinfos <- forM bends $ \(port, sslport) ->
-              Test.Blackbox.startTestServer port sslport
-    defaultMain tests
+    let (port, sslport) = ports sp
+    E.bracket (Test.Blackbox.startTestServers port sslport)
+              cleanup
+              (\tinfos -> do
+                  let blackboxTests = bbox tinfos
+                  defaultMain $ tests ++ blackboxTests
+              )
   where
+    cleanup (x, m) = mapM_ (killThread . fst) $ [x] ++ maybeToList m
+
+    bbox ((_, port), m) = concat [ Test.Blackbox.tests port
+                                 , Test.Blackbox.ssltests $ fmap snd m
+                                 ]
+
     tests = [ testGroup "Parser" Parser.tests
             , testGroup "Server" Session.tests
             , testGroup "TimeoutManager" TimeoutManager.tests
@@ -32,20 +47,20 @@ main = withSocketsDo $ do
 
 
 ------------------------------------------------------------------------------
-ports :: Int -> [Int]
-ports sp = [sp]
+setupOpenSSL :: IO () -> IO ()
+sslPort :: Int -> Maybe Int
 
 #ifdef OPENSSL
-sslports :: Int -> [Maybe Int]
-sslports sp = map Just [(sp + 100)]
+setupOpenSSL = withOpenSSL
+sslPort sp = Just (sp + 100)
 #else
-sslports :: Int -> [Maybe Int]
-sslports _ = repeat Nothing
+setupOpenSSL = id
+sslPort _ = Nothing
 #endif
 
-backends :: Int -> [(Int,Maybe Int)]
-backends sp = zip (ports sp)
-                  (sslports sp)
+ports :: Int -> (Int, Maybe Int)
+ports sp = (sp, sslPort sp)
+
 
 getStartPort :: IO Int
 getStartPort = (liftM read (getEnv "STARTPORT") >>= E.evaluate)

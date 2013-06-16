@@ -7,7 +7,8 @@
 module Test.Blackbox
   ( tests
   , ssltests
-  , startTestServer ) where
+  , startTestServers
+  ) where
 
 --------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder
@@ -25,9 +26,14 @@ import           Data.CaseInsensitive                 (CI)
 import           Data.Int
 import           Data.List
 import           Data.Monoid
+import qualified Network.Http.Client                  as HTTP
 import qualified Network.Socket                       as N
 import qualified Network.Socket.ByteString            as N
+#ifdef OPENSSL
+import qualified OpenSSL.Session                      as SSL
+#endif
 import           Prelude                              hiding (catch, take)
+import qualified System.IO.Streams                    as Streams
 import           System.Timeout
 import           Test.Framework
 import           Test.Framework.Options
@@ -58,8 +64,19 @@ ssltests = maybe [] httpsTests
     where httpsTests port = map (\f -> f True port sslname) testFunctions
           sslname = "ssl/"
 
-testFunctions :: [Bool -> Int -> String -> Test]
-testFunctions = []
+testFunctions = [ testPong
+-- FIXME: waiting on http-enumerator patch for HEAD behaviour
+--                , testHeadPong
+                , testEcho
+                , testRot13
+                , testSlowLoris
+                , testBlockingRead
+                , testBigResponse
+                , testPartial
+                , testFileUpload
+                , testTimeoutTickle
+                , testServerHeader
+                ]
 
 
 ------------------------------------------------------------------------------
@@ -68,7 +85,13 @@ testFunctions = []
 startTestSocketServer :: IO (ThreadId, Int)
 startTestSocketServer = bracketOnError getSock cleanup forkServer
   where
-    getSock = Sock.bindHttp "127.0.0.1" (fromIntegral N.aNY_PORT)
+    getSock = do
+#ifdef OPENSSL
+        HTTP.modifyContextSSL $ \ctx -> do
+            SSL.contextSetVerificationMode ctx SSL.VerifyNone
+            return ctx
+#endif
+        Sock.bindHttp "127.0.0.1" (fromIntegral N.aNY_PORT)
 
     forkServer sock = do
         port <- liftM fromIntegral $ N.socketPort sock
@@ -103,22 +126,20 @@ startTestSocketServer = bracketOnError getSock cleanup forkServer
                                            False
                                            1
 
-#if 0
 
-testFunctions = [ testPong
--- FIXME: waiting on http-enumerator patch for HEAD behaviour
---                , testHeadPong
-                , testEcho
-                , testRot13
-                , testSlowLoris
-                , testBlockingRead
-                , testBigResponse
-                , testPartial
-                , testFileUpload
-                , testTimeoutTickle
-                , testTimeoutBadTickle
-                , testServerHeader
-                ]
+------------------------------------------------------------------------------
+waitabit :: IO ()
+waitabit = threadDelay $ 2*seconds
+
+
+------------------------------------------------------------------------------
+seconds :: Int
+seconds = (10::Int) ^ (6::Int)
+
+
+------------------------------------------------------------------------------
+fetch :: ByteString -> IO ByteString
+fetch url = HTTP.get url HTTP.concatHandler'
 
 
 ------------------------------------------------------------------------------
@@ -127,26 +148,6 @@ slowTestOptions ssl =
     if ssl
       then mempty { topt_maximum_generated_tests = Just 75 }
       else mempty { topt_maximum_generated_tests = Just 300 }
-
-
-------------------------------------------------------------------------------
-ssltests :: Maybe Int -> [Test]
-ssltests = maybe [] httpsTests
-    where httpsTests port = map (\f -> f True port sslname) testFunctions
-          sslname = "ssl/"
-
-------------------------------------------------------------------------------
-doPong :: Bool -> Int -> IO ByteString
-doPong ssl port = do
-    debug "getting URI"
-    let !uri = (if ssl then "https" else "http")
-               ++ "://127.0.0.1:" ++ show port ++ "/pong"
-    debug $ "URI is: '" ++ uri ++ "', calling simpleHttp"
-
-    rsp <- fetch uri
-
-    debug $ "response was " ++ show rsp
-    return $ S.concat $ L.toChunks rsp
 
 
 ------------------------------------------------------------------------------
@@ -162,12 +163,6 @@ doPong ssl port = do
 --     rsp <- HTTP.httpLbs req
 --     return $ S.concat $ L.toChunks $ HTTP.responseBody rsp
 
-------------------------------------------------------------------------------
-testPong :: Bool -> Int -> String -> Test
-testPong ssl port name = testCase (name ++ "blackbox/pong") $ do
-    doc <- doPong ssl port
-    assertEqual "pong response" "PONG" doc
-
 
 ------------------------------------------------------------------------------
 -- FIXME: waiting on http-enumerator patch for HEAD behaviour
@@ -178,105 +173,32 @@ testPong ssl port name = testCase (name ++ "blackbox/pong") $ do
 
 
 ------------------------------------------------------------------------------
-testEcho :: Bool -> Int -> String -> Test
-testEcho ssl port name =
-    plusTestOptions (slowTestOptions ssl) $
-    testProperty (name ++ "blackbox/echo") $
-    QC.mapSize (if ssl then min 100 else min 300) $
-    monadicIO $ forAllM arbitrary prop
+-- TODO: doesn't work w/ ssl
+testBlockingRead :: Bool -> Int -> String -> Test
+testBlockingRead ssl port name =
+    testCase (name ++ "blackbox/testBlockingRead") $
+             if ssl then return () else runIt
+
   where
-    prop txt = do
-        let uri = (if ssl then "https" else "http")
-                  ++ "://127.0.0.1:" ++ show port ++ "/echo"
+    runIt = withSock port $ \sock -> do
+        m <- timeout (60*seconds) $ go sock
+        maybe (assertFailure "timeout")
+              (const $ return ())
+              m
 
-        doc <- QC.run $ post uri txt []
-        QC.assert $ txt == doc
+    go sock = do
+        N.sendAll sock "GET /"
+        waitabit
+        N.sendAll sock "pong HTTP/1.1\r\n"
+        N.sendAll sock "Host: 127.0.0.1\r\n"
+        N.sendAll sock "Content-Length: 0\r\n"
+        N.sendAll sock "Connection: close\r\n\r\n"
 
+        resp <- recvAll sock
 
-------------------------------------------------------------------------------
-testFileUpload :: Bool -> Int -> String -> Test
-testFileUpload ssl port name =
-    plusTestOptions (slowTestOptions ssl) $
-    testProperty (name ++ "blackbox/upload") $
-    QC.mapSize (if ssl then min 100 else min 300) $
-    monadicIO $
-    forAllM arbitrary prop
-  where
-    boundary = "boundary-jdsklfjdsalkfjadlskfjldskjfldskjfdsfjdsklfldksajfl"
+        let s = head $ ditchHeaders $ S.lines resp
 
-    prefix = [ "--"
-             , boundary
-             , "\r\n"
-             , "content-disposition: form-data; name=\"submit\"\r\n"
-             , "\r\nSubmit\r\n" ]
-
-    body kvps = L.concat $ prefix ++ concatMap part kvps ++ suffix
-      where
-        part (k,v) = [ "--"
-                     , boundary
-                     , "\r\ncontent-disposition: attachment; filename=\""
-                     , k
-                     , "\"\r\nContent-Type: text/plain\r\n\r\n"
-                     , v
-                     , "\r\n" ]
-
-    suffix = [ "--", boundary, "--\r\n" ]
-
-    hdrs = [ ("Content-type", S.concat $ [ "multipart/form-data; boundary=" ]
-                                         ++ L.toChunks boundary) ]
-
-    b16 (k,v) = (ne $ e k, e v)
-      where
-        ne s = if L.null s then "file" else s
-        e s = L.fromChunks [ B16.encode $ S.concat $ L.toChunks s ]
-
-    response kvps = L.concat $ [ "Param:\n"
-                               , "submit\n"
-                               , "Value:\n"
-                               , "Submit\n\n" ] ++ concatMap responseKVP kvps
-
-    responseKVP (k,v) = [ "File:\n"
-                        , k
-                        , "\nValue:\n"
-                        , v
-                        , "\n\n" ]
-
-    prop kvps' = do
-        let kvps = sort $ map b16 kvps'
-
-        let uri = (if ssl then "https" else "http")
-                  ++ "://127.0.0.1:" ++ show port ++ "/upload/handle"
-
-        let txt = response kvps
-        doc <- QC.run $ post uri (body kvps) hdrs
-
-        when (txt /= doc) $ QC.run $ do
-                     L.putStrLn "expected:"
-                     L.putStrLn "----------------------------------------"
-                     L.putStrLn txt
-                     L.putStrLn "----------------------------------------"
-                     L.putStrLn "\ngot:"
-                     L.putStrLn "----------------------------------------"
-                     L.putStrLn doc
-                     L.putStrLn "----------------------------------------"
-
-        QC.assert $ txt == doc
-
-
-------------------------------------------------------------------------------
-testRot13 :: Bool -> Int -> String -> Test
-testRot13 ssl port name =
-    plusTestOptions (slowTestOptions ssl) $
-    testProperty (name ++ "blackbox/rot13") $
-    monadicIO $ forAllM arbitrary prop
-  where
-    prop txt = do
-        let uri = (if ssl then "https" else "http")
-                  ++ "://127.0.0.1:" ++ show port ++ "/rot13"
-
-        doc <- QC.run $ liftM (S.concat . L.toChunks)
-                      $ post uri (L.fromChunks [txt]) []
-        QC.assert $ txt == rot13 doc
+        assertEqual "pong response" "PONG" s
 
 
 ------------------------------------------------------------------------------
@@ -309,32 +231,41 @@ testSlowLoris ssl port name = testCase (name ++ "blackbox/slowloris") $
 
 
 ------------------------------------------------------------------------------
--- TODO: doesn't work w/ ssl
-testBlockingRead :: Bool -> Int -> String -> Test
-testBlockingRead ssl port name =
-    testCase (name ++ "blackbox/testBlockingRead") $
-             if ssl then return () else runIt
-
+testRot13 :: Bool -> Int -> String -> Test
+testRot13 ssl port name =
+    plusTestOptions (slowTestOptions ssl) $
+    testProperty (name ++ "blackbox/rot13") $
+    monadicIO $ forAllM arbitrary prop
   where
-    runIt = withSock port $ \sock -> do
-        m <- timeout (60*seconds) $ go sock
-        maybe (assertFailure "timeout")
-              (const $ return ())
-              m
+    prop txt = do
+        let uri = (if ssl then "https" else "http")
+                  ++ "://127.0.0.1:" ++ show port ++ "/rot13"
 
-    go sock = do
-        N.sendAll sock "GET /"
-        waitabit
-        N.sendAll sock "pong HTTP/1.1\r\n"
-        N.sendAll sock "Host: 127.0.0.1\r\n"
-        N.sendAll sock "Content-Length: 0\r\n"
-        N.sendAll sock "Connection: close\r\n\r\n"
+        doc <- QC.run $ HTTP.post (S.pack uri) "text/plain"
+                                  (Streams.write (Just $ fromByteString txt))
+                                  HTTP.concatHandler'
+        QC.assert $ txt == rot13 doc
 
-        resp <- recvAll sock
 
-        let s = head $ ditchHeaders $ S.lines resp
+------------------------------------------------------------------------------
+doPong :: Bool -> Int -> IO ByteString
+doPong ssl port = do
+    debug "getting URI"
+    let !uri = (if ssl then "https" else "http")
+               ++ "://127.0.0.1:" ++ show port ++ "/pong"
+    debug $ "URI is: '" ++ uri ++ "', calling simpleHttp"
 
-        assertEqual "pong response" "PONG" s
+    rsp <- fetch $ S.pack uri
+
+    debug $ "response was " ++ show rsp
+    return rsp
+
+
+------------------------------------------------------------------------------
+testPong :: Bool -> Int -> String -> Test
+testPong ssl port name = testCase (name ++ "blackbox/pong") $ do
+    doc <- doPong ssl port
+    assertEqual "pong response" "PONG" doc
 
 
 ------------------------------------------------------------------------------
@@ -388,67 +319,6 @@ testBigResponse ssl port name =
 
 
 ------------------------------------------------------------------------------
-waitabit :: IO ()
-waitabit = threadDelay $ 2*seconds
-
-
-------------------------------------------------------------------------------
-seconds :: Int
-seconds = (10::Int) ^ (6::Int)
-
-
-------------------------------------------------------------------------------
-fetchReq :: HTTP.Request (ResourceT IO) -> IO (L.ByteString)
-fetchReq req = go `catch` (\(e::SomeException) -> do
-                 debug $ "simpleHttp threw exception: " ++ show e
-                 throwIO e)
-  where
-    go = do
-        rsp <- HTTP.withManagerSettings settings $ HTTP.httpLbs req
-        return $ HTTP.responseBody rsp
-
-    settings = HTTP.def { HTTP.managerCheckCerts = \_ _ _ ->
-                          return CertificateUsageAccept }
-
-------------------------------------------------------------------------------
-fetchResponse :: String -> IO (HTTP.Response L.ByteString)
-fetchResponse url = do
-    req <- HTTP.parseUrl url `catch` (\(e::SomeException) -> do
-               debug $ "parseUrl threw exception: " ++ show e
-               throwIO e)
-    go req `catch` (\(e::SomeException) -> do
-                       debug $ "simpleHttp threw exception: " ++ show e
-                       throwIO e)
-  where
-    go req = HTTP.withManagerSettings settings $ HTTP.httpLbs req
-    settings = HTTP.def { HTTP.managerCheckCerts = \_ _ _ ->
-                          return CertificateUsageAccept }
-
-
-------------------------------------------------------------------------------
-fetch :: String -> IO (L.ByteString)
-fetch url = do
-    req <- HTTP.parseUrl url `catch` (\(e::SomeException) -> do
-                 debug $ "HTTP.parseUrl threw exception: " ++ show e
-                 throwIO e)
-    fetchReq req
-
-
-------------------------------------------------------------------------------
-post :: String
-     -> L.ByteString
-     -> [(CI ByteString, ByteString)]
-     -> IO (L.ByteString)
-post url body hdrs = do
-    req <- HTTP.parseUrl url `catch` (\(e::SomeException) -> do
-                 debug $ "HTTP.parseUrl threw exception: " ++ show e
-                 throwIO e)
-    fetchReq $ req { HTTP.requestBody    = HTTP.RequestBodyLBS body
-                   , HTTP.method         = "POST"
-                   , HTTP.requestHeaders = hdrs }
-
-
-------------------------------------------------------------------------------
 -- This test checks two things:
 --
 -- 1. that the timeout tickling logic works
@@ -458,18 +328,112 @@ testTimeoutTickle ssl port name =
     testCase (name ++ "blackbox/timeout/tickle") $ do
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/timeout/tickle"
-        doc <- liftM (S.concat . L.toChunks) $ fetch uri
+        doc <- fetch $ S.pack uri
         let expected = S.concat $ replicate 10 ".\n"
         assertEqual "response equal" expected doc
 
 
 ------------------------------------------------------------------------------
-testTimeoutBadTickle :: Bool -> Int -> String -> Test
-testTimeoutBadTickle ssl port name =
-    testCase (name ++ "blackbox/timeout/badtickle") $ do
+testFileUpload :: Bool -> Int -> String -> Test
+testFileUpload ssl port name =
+    plusTestOptions (slowTestOptions ssl) $
+    testProperty (name ++ "blackbox/upload") $
+    QC.mapSize (if ssl then min 100 else min 300) $
+    monadicIO $
+    forAllM arbitrary prop
+  where
+    boundary = "boundary-jdsklfjdsalkfjadlskfjldskjfldskjfdsfjdsklfldksajfl"
+
+    prefix = [ "--"
+             , boundary
+             , "\r\n"
+             , "content-disposition: form-data; name=\"submit\"\r\n"
+             , "\r\nSubmit\r\n" ]
+
+    body kvps = L.concat $ prefix ++ concatMap part kvps ++ suffix
+      where
+        part (k,v) = [ "--"
+                     , boundary
+                     , "\r\ncontent-disposition: attachment; filename=\""
+                     , k
+                     , "\"\r\nContent-Type: text/plain\r\n\r\n"
+                     , v
+                     , "\r\n" ]
+
+    suffix = [ "--", boundary, "--\r\n" ]
+
+    hdrs = [ ("Content-type", S.concat $ [ "multipart/form-data; boundary=" ]
+                                         ++ L.toChunks boundary) ]
+
+    b16 (k,v) = (ne $ e k, e v)
+      where
+        ne s = if L.null s then "file" else s
+        e s = L.fromChunks [ B16.encode $ S.concat $ L.toChunks s ]
+
+    response kvps = L.concat $ [ "Param:\n"
+                               , "submit\n"
+                               , "Value:\n"
+                               , "Submit\n\n" ] ++ concatMap responseKVP kvps
+
+    responseKVP (k,v) = [ "File:\n"
+                        , k
+                        , "\nValue:\n"
+                        , v
+                        , "\n\n" ]
+
+    prop kvps' = do
+        let kvps = sort $ map b16 kvps'
+
+        let uri = S.pack $ concat [ if ssl then "https" else "http"
+                                  , "://127.0.0.1:"
+                                  , show port
+                                  , "/upload/handle" ]
+
+        let txt = response kvps
+        doc0 <- QC.run
+                  $ HTTP.withConnection (HTTP.establishConnection uri)
+                  $ \conn -> do
+            req <- HTTP.buildRequest $ do
+                HTTP.http HTTP.POST uri
+                mapM_ (uncurry HTTP.setHeader) hdrs
+
+            HTTP.sendRequest conn req (Streams.write $ Just
+                                                     $ mconcat
+                                                     $ map fromByteString
+                                                     $ L.toChunks
+                                                     $ body kvps)
+            HTTP.receiveResponse conn HTTP.concatHandler'
+
+        let doc = L.fromChunks [doc0]
+        when (txt /= doc) $ QC.run $ do
+                     L.putStrLn "expected:"
+                     L.putStrLn "----------------------------------------"
+                     L.putStrLn txt
+                     L.putStrLn "----------------------------------------"
+                     L.putStrLn "\ngot:"
+                     L.putStrLn "----------------------------------------"
+                     L.putStrLn doc
+                     L.putStrLn "----------------------------------------"
+
+        QC.assert $ txt == doc
+
+
+------------------------------------------------------------------------------
+testEcho :: Bool -> Int -> String -> Test
+testEcho ssl port name =
+    plusTestOptions (slowTestOptions ssl) $
+    testProperty (name ++ "blackbox/echo") $
+    QC.mapSize (if ssl then min 100 else min 300) $
+    monadicIO $ forAllM arbitrary prop
+  where
+    prop txt = do
         let uri = (if ssl then "https" else "http")
-                  ++ "://127.0.0.1:" ++ show port ++ "/timeout/badtickle"
-        expectException $ fetch uri
+                  ++ "://127.0.0.1:" ++ show port ++ "/echo"
+
+        doc <- QC.run $ HTTP.post (S.pack uri) "text/plain"
+                                  (Streams.write (Just $ fromByteString txt))
+                                  HTTP.concatHandler'
+        QC.assert $ txt == doc
 
 
 ------------------------------------------------------------------------------
@@ -478,22 +442,18 @@ testServerHeader ssl port name =
     testCase (name ++ "/blackbox/server-header") $ do
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/server-header"
-        rsp <- fetchResponse uri
-        let serverHeader = lookup "server" $ HTTP.responseHeaders rsp
-        assertEqual "server header" (Just "foo") serverHeader
-
-#endif
+        HTTP.get (S.pack uri) $ \resp _ -> do
+            let serverHeader = HTTP.getHeader resp "server"
+            assertEqual "server header" (Just "foo") serverHeader
 
 
 ------------------------------------------------------------------------------
-startTestServer :: Int
-                -> Maybe Int
-                -> IO (ThreadId, MVar ())
-startTestServer port sslport = do
-    -- FIXME: start up test server here.
-    mvar <- newMVar ()
-    tid  <- forkIO $ putMVar mvar ()
-    return (tid, mvar)
+startTestServers :: Int
+                 -> Maybe Int
+                 -> IO ((ThreadId, Int), Maybe (ThreadId, Int))
+startTestServers port sslport = do
+    x <- startTestSocketServer
+    return (x, Nothing)
 
 {-
     let cfg = setAccessLog      (ConfigFileLog "ts-access.log") .

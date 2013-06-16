@@ -638,7 +638,11 @@ httpSession !buffer !serverHandler !config !sessionData =
         writeEnd0 <- Streams.ignoreEof writeEnd
         (writeEnd1, getCount) <- Streams.countOutput writeEnd0
         writeEnd2 <- limitRspBody hlen rsp writeEnd1
-        writeEndB <- Streams.unsafeBuilderStream (return buffer) writeEnd2
+        writeEndB <- Streams.unsafeBuilderStream (return buffer) writeEnd2 >>=
+                     Streams.contramapM (\x -> do
+                         tickle $ max defaultTimeout
+                         return x)
+
         Streams.write (Just headerString) writeEndB
         writeEnd' <- body writeEndB
         Streams.write Nothing writeEnd'
