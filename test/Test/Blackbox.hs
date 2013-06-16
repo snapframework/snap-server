@@ -64,6 +64,7 @@ ssltests = maybe [] httpsTests
     where httpsTests port = map (\f -> f True port sslname) testFunctions
           sslname = "ssl/"
 
+testFunctions :: [Bool -> Int -> String -> Test]
 testFunctions = [ testPong
 -- FIXME: waiting on http-enumerator patch for HEAD behaviour
 --                , testHeadPong
@@ -76,6 +77,7 @@ testFunctions = [ testPong
                 , testFileUpload
                 , testTimeoutTickle
                 , testServerHeader
+                , testFileServe
                 ]
 
 
@@ -122,7 +124,7 @@ startTestSocketServer = bracketOnError getSock cleanup forkServer
                                            onEscape
                                            "localhost"
                                            0
-                                           20
+                                           6
                                            False
                                            1
 
@@ -209,25 +211,18 @@ testSlowLoris ssl port name = testCase (name ++ "blackbox/slowloris") $
 
   where
     go sock = do
-        m <- timeout (120*seconds) $ go' sock
-        maybe (assertFailure "slowloris: timeout")
-              (const $ return ())
-              m
-
-    go' sock = do
         N.sendAll sock "POST /echo HTTP/1.1\r\n"
         N.sendAll sock "Host: 127.0.0.1\r\n"
         N.sendAll sock "Content-Length: 2500000\r\n"
         N.sendAll sock "Connection: close\r\n\r\n"
 
-        b <- expectExceptionBeforeTimeout (loris sock) 60
+        b <- expectExceptionBeforeTimeout (loris sock) 30
 
         assertBool "didn't catch slow loris attack" b
 
-    loris sock = do
+    loris sock = forever $ do
         N.sendAll sock "."
         waitabit
-        loris sock
 
 
 ------------------------------------------------------------------------------
@@ -330,6 +325,17 @@ testTimeoutTickle ssl port name =
                   ++ "://127.0.0.1:" ++ show port ++ "/timeout/tickle"
         doc <- fetch $ S.pack uri
         let expected = S.concat $ replicate 10 ".\n"
+        assertEqual "response equal" expected doc
+
+
+------------------------------------------------------------------------------
+testFileServe :: Bool -> Int -> String -> Test
+testFileServe ssl port name =
+    testCase (name ++ "blackbox/fileserve") $ do
+        let uri = (if ssl then "https" else "http")
+                  ++ "://127.0.0.1:" ++ show port ++ "/fileserve/hello.txt"
+        doc <- fetch $ S.pack uri
+        let expected = "hello world\n"
         assertEqual "response equal" expected doc
 
 
@@ -448,10 +454,8 @@ testServerHeader ssl port name =
 
 
 ------------------------------------------------------------------------------
-startTestServers :: Int
-                 -> Maybe Int
-                 -> IO ((ThreadId, Int), Maybe (ThreadId, Int))
-startTestServers port sslport = do
+startTestServers :: Bool -> IO ((ThreadId, Int), Maybe (ThreadId, Int))
+startTestServers _ = do
     x <- startTestSocketServer
     return (x, Nothing)
 

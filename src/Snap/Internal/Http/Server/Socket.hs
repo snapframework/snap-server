@@ -54,11 +54,6 @@ getLocalAddress sock = getSocketName sock >>= liftM snd . getAddress
 
 
 ------------------------------------------------------------------------------
-sendfileHandler :: Socket -> SendFileHandler
-sendfileHandler _ = error "not yet implemented"
-
-
-------------------------------------------------------------------------------
 httpAcceptFunc :: Socket                     -- ^ bound socket
                -> AcceptFunc
 httpAcceptFunc boundSocket restore = do
@@ -66,7 +61,7 @@ httpAcceptFunc boundSocket restore = do
     localAddr                <- getLocalAddress sock
     (remotePort, remoteHost) <- getAddress remoteAddr
     (readEnd, writeEnd)      <- Streams.socketToStreams sock
-    return $! ( sendfileHandler sock
+    return $! ( sendFileFunc sock
               , localAddr
               , remoteHost
               , remotePort

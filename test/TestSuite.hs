@@ -25,9 +25,8 @@ import qualified Test.Blackbox
 ------------------------------------------------------------------------------
 main :: IO ()
 main = withSocketsDo $ setupOpenSSL $ do
-    sp <- getStartPort
-    let (port, sslport) = ports sp
-    E.bracket (Test.Blackbox.startTestServers port sslport)
+    let doSSL = False
+    E.bracket (Test.Blackbox.startTestServers doSSL)
               cleanup
               (\tinfos -> do
                   let blackboxTests = bbox tinfos

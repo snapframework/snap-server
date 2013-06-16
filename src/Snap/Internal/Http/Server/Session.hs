@@ -278,7 +278,7 @@ httpSession !buffer !serverHandler !config !sessionData =
     readEnd                 = _readEnd sessionData
     remoteAddress           = _remoteAddress sessionData
     remotePort              = _remotePort sessionData
-    tickle                  = _twiddleTimeout sessionData
+    tickle f                = _twiddleTimeout sessionData f
     writeEnd                = _writeEnd sessionData
     sendfileHandler         = _sendfileHandler sessionData
 
@@ -635,13 +635,16 @@ httpSession !buffer !serverHandler !config !sessionData =
         --
         --  * "headerString" includes http status line.
         --
+        -- If you're transforming the request body, you have to manage your own
+        -- timeouts.
+        let t = if rspTransformingRqBody rsp
+                  then return $! ()
+                  else tickle $ max defaultTimeout
         writeEnd0 <- Streams.ignoreEof writeEnd
         (writeEnd1, getCount) <- Streams.countOutput writeEnd0
         writeEnd2 <- limitRspBody hlen rsp writeEnd1
         writeEndB <- Streams.unsafeBuilderStream (return buffer) writeEnd2 >>=
-                     Streams.contramapM (\x -> do
-                         tickle $ max defaultTimeout
-                         return x)
+                     Streams.contramapM (\x -> t >> return x)
 
         Streams.write (Just headerString) writeEndB
         writeEnd' <- body writeEndB

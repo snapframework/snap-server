@@ -70,27 +70,11 @@ echoUriHandler = do
     req <- getRequest
     writeBS $ rqURI req
 
-
-{-
 echoHandler :: Snap ()
-echoHandler = transformRequestBody returnI
-
+echoHandler = transformRequestBody return
 
 rot13Handler :: Snap ()
-rot13Handler = transformRequestBody f
-  where
-    f origStep = do
-        mbX  <- I.head
-        maybe (enumEOF origStep)
-              (feedStep origStep)
-              mbX
-
-    feedStep origStep b = do
-        let x = toByteString b
-        let e = enumBuilder $ fromByteString $ rot13 x
-        step <- lift $ runIteratee $ e origStep
-        f step
--}
+rot13Handler = transformRequestBody (Streams.map rot13)
 
 bigResponseHandler :: Snap ()
 bigResponseHandler = do
@@ -176,10 +160,11 @@ serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
 testHandler :: Snap ()
 testHandler = withCompression $
     route [ ("pong"              , pongHandler                       )
---          , ("echo"              , echoHandler                       )
---          , ("rot13"             , rot13Handler                      )
+          , ("echo"              , echoHandler                       )
+          , ("rot13"             , rot13Handler                      )
           , ("echoUri"           , echoUriHandler                    )
---          , ("fileserve"         , serveDirectory "testserver/static")
+          , ("fileserve"         , noCompression >>
+                                   serveDirectory "testserver/static")
           , ("bigresponse"       , bigResponseHandler                )
           , ("respcode/:code"    , responseHandler                   )
           , ("upload/form"       , uploadForm                        )
