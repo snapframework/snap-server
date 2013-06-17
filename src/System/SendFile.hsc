@@ -9,6 +9,7 @@ module System.SendFile
   ( sendFile
   , sendFileMode
   , sendHeaders
+  , sendHeadersImpl
   ) where
 
 #include <sys/socket.h>
@@ -59,8 +60,19 @@ sendFileMode = SF.sendFileMode
 
 
 ------------------------------------------------------------------------------
+{-# INLINE sendHeaders #-}
 sendHeaders :: Builder -> Fd -> IO ()
-sendHeaders headers fd =
+sendHeaders = sendHeadersImpl c_send threadWaitWrite
+
+
+------------------------------------------------------------------------------
+{-# INLINE sendHeadersImpl #-}
+sendHeadersImpl :: (Fd -> Ptr CChar -> CSize -> CInt -> IO CSize)
+                -> (Fd -> IO ())
+                -> Builder
+                -> Fd
+                -> IO ()
+sendHeadersImpl sendFunc waitFunc headers fd =
     S.unsafeUseAsCStringLen (toByteString headers) $
          \(cstr, clen) -> go cstr (fromIntegral clen)
   where
@@ -70,12 +82,12 @@ sendHeaders headers fd =
     flags = 0
 #endif
 
-    go !cstr !clen | clen <= 0 = return ()
+    go !cstr !clen | clen <= 0 = return $! ()
                    | otherwise = do
                          nsent <- throwErrnoIfMinus1RetryMayBlock
                                      "sendHeaders"
-                                     (c_send fd cstr clen flags)
-                                     (threadWaitWrite fd)
+                                     (sendFunc fd cstr clen flags)
+                                     (waitFunc fd)
                          let cstr' = plusPtr cstr (fromIntegral nsent)
                          go cstr' (clen - nsent)
 

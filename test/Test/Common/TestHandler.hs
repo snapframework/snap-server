@@ -5,6 +5,7 @@ module Test.Common.TestHandler (testHandler) where
 
 import           Blaze.ByteString.Builder
 import           Control.Concurrent         (threadDelay)
+import           Control.Exception          (throwIO)
 import           Control.Monad
 import           Control.Monad.Trans
 import qualified Data.ByteString.Char8      as S
@@ -50,8 +51,8 @@ trickleOutput n os = do
     Streams.fromList dots >>= Streams.mapM f >>= Streams.supplyTo os
     return os
   where
-    dots = replicate n $ fromByteString ".\n"
-    f x  = threadDelay 1000000 >> return (x `mappend` flush)
+    dots = replicate n ".\n"
+    f x  = threadDelay 1000000 >> return (fromByteString x `mappend` flush)
 
 
 ------------------------------------------------------------------------------
@@ -69,27 +70,11 @@ echoUriHandler = do
     req <- getRequest
     writeBS $ rqURI req
 
-
-{-
 echoHandler :: Snap ()
-echoHandler = transformRequestBody returnI
-
+echoHandler = transformRequestBody return
 
 rot13Handler :: Snap ()
-rot13Handler = transformRequestBody f
-  where
-    f origStep = do
-        mbX  <- I.head
-        maybe (enumEOF origStep)
-              (feedStep origStep)
-              mbX
-
-    feedStep origStep b = do
-        let x = toByteString b
-        let e = enumBuilder $ fromByteString $ rot13 x
-        step <- lift $ runIteratee $ e origStep
-        f step
--}
+rot13Handler = transformRequestBody (Streams.map rot13)
 
 bigResponseHandler :: Snap ()
 bigResponseHandler = do
@@ -125,35 +110,29 @@ uploadForm = do
                     , "</form></body></html>" ]
 
 
-{-
 uploadHandler :: Snap ()
 uploadHandler = do
     liftIO $ createDirectoryIfMissing True tmpdir
-    handleFileUploads tmpdir defaultUploadPolicy partPolicy hndl
+    files <- handleFileUploads tmpdir defaultUploadPolicy partPolicy hndl
+    let m = sort files
+
+    params <- liftM (Prelude.map (\(a,b) -> (a,S.concat b)) .
+                     Map.toAscList .
+                     rqParams) getRequest
+
+    modifyResponse $ setContentType "text/plain"
+    writeBuilder $ buildRqParams params `mappend` buildFiles m
 
   where
     isRight (Left _) = False
     isRight (Right _) = True
 
-    f (_, Left _) = error "impossible"
-    f (p, Right x) = (fromMaybe "-" $ partFileName p, x)
+    f p = fromMaybe "-" $ partFileName p
 
-    hndl xs' = do
-        let xs = [ f x | x <- xs', isRight (snd x) ]
-
-        files <- mapM (\(x,fp) -> do
-                           c <- liftIO $ S.readFile fp
-                           return (x,c)) xs
-
-        let m = sort files
-
-        params <- liftM (Prelude.map (\(a,b) -> (a,S.concat b)) .
-                         Map.toAscList .
-                         rqParams) getRequest
-
-        modifyResponse $ setContentType "text/plain"
-        writeBuilder $ buildRqParams params `mappend` buildFiles m
-
+    hndl _ (Left e)          = throwIO e
+    hndl partInfo (Right fp) = do
+        !c <- liftIO $ S.readFile fp
+        return $! (f partInfo, c)
 
     builder _ [] = mempty
     builder ty ((k,v):xs) =
@@ -173,7 +152,6 @@ uploadHandler = do
     partPolicy partInfo = if partContentType partInfo == "text/plain"
                             then allowWithMaximumSize 200000
                             else disallow
--}
 
 serverHeaderHandler :: Snap ()
 serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
@@ -182,14 +160,15 @@ serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
 testHandler :: Snap ()
 testHandler = withCompression $
     route [ ("pong"              , pongHandler                       )
---          , ("echo"              , echoHandler                       )
---          , ("rot13"             , rot13Handler                      )
+          , ("echo"              , echoHandler                       )
+          , ("rot13"             , rot13Handler                      )
           , ("echoUri"           , echoUriHandler                    )
---          , ("fileserve"         , serveDirectory "testserver/static")
+          , ("fileserve"         , noCompression >>
+                                   serveDirectory "testserver/static")
           , ("bigresponse"       , bigResponseHandler                )
           , ("respcode/:code"    , responseHandler                   )
           , ("upload/form"       , uploadForm                        )
---          , ("upload/handle"     , uploadHandler                     )
+          , ("upload/handle"     , uploadHandler                     )
           , ("timeout/tickle"    , timeoutTickleHandler              )
           , ("timeout/badtickle" , badTimeoutTickleHandler           )
           , ("server-header"     , serverHeaderHandler               )
