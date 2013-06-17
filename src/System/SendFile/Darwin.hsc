@@ -1,7 +1,11 @@
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 -- | Darwin system-dependent code for 'sendfile'.
-module System.SendFile.Darwin (sendFile, sendFileMode) where
+module System.SendFile.Darwin
+  ( sendFile
+  , sendFileImpl
+  , sendFileMode
+  ) where
 
 import           Control.Concurrent (threadWaitWrite)
 import           Data.Int
@@ -22,25 +26,34 @@ import           System.Posix.Types (COff, Fd)
 
 ------------------------------------------------------------------------------
 sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFile out_fd in_fd off count
-  | count == 0 = return 0
-  | otherwise  = alloca $ \pbytes -> do
-        poke pbytes $ fromIntegral count
-        sbytes <- sendfile out_fd in_fd (fromIntegral off) pbytes
-        return $ fromIntegral sbytes
+sendFile = sendFileImpl c_sendfile threadWaitWrite
+{-# INLINE sendFile #-}
 
 
 ------------------------------------------------------------------------------
-sendfile :: Fd -> Fd -> COff -> Ptr COff -> IO COff
-sendfile out_fd in_fd off pbytes = do
+sendFileImpl :: (Fd -> Fd -> COff -> Ptr COff -> IO CInt)
+             -> (Fd -> IO ())
+             -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFileImpl rawSendFile wait out_fd in_fd off count
+  | count == 0 = return 0
+  | otherwise  = alloca $ \pbytes -> do
+        poke pbytes $ fromIntegral count
+        sbytes <- sendfile rawSendFile wait out_fd in_fd (fromIntegral off)
+                           pbytes
+        return $ fromIntegral sbytes
+{-# INLINE sendFileImpl #-}
+
+
+------------------------------------------------------------------------------
+sendfile :: (Fd -> Fd -> COff -> Ptr COff -> IO CInt)
+         -> (Fd -> IO ())
+         -> Fd -> Fd -> COff -> Ptr COff -> IO COff
+sendfile rawSendFile wait out_fd in_fd off pbytes = do
     throwErrnoIfMinus1RetryMayBlock_ "sendfile"
-                                     (c_sendfile out_fd in_fd off pbytes)
-                                     onBlock
+                                     (rawSendFile out_fd in_fd off pbytes)
+                                     (wait out_fd)
     peek pbytes
-
-  where
-    onBlock = threadWaitWrite out_fd
-
+{-# INLINE sendfile #-}
 
 ------------------------------------------------------------------------------
 -- in Darwin sendfile gives LFS support (no sendfile64 routine)
@@ -52,6 +65,7 @@ foreign import ccall unsafe "sys/uio.h sendfile" c_sendfile_darwin
 c_sendfile :: Fd -> Fd -> COff -> Ptr COff -> IO CInt
 c_sendfile out_fd in_fd off pbytes =
     c_sendfile_darwin in_fd out_fd off pbytes nullPtr 0
+{-# INLINE c_sendfile #-}
 
 
 ------------------------------------------------------------------------------

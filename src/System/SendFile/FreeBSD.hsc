@@ -1,7 +1,11 @@
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 -- | FreeBSD system-dependent code for 'sendfile'.
-module System.SendFile.FreeBSD (sendFile, sendFileMode) where
+module System.SendFile.FreeBSD
+  ( sendFile
+  , sendFileImpl
+  , sendFileMode
+  ) where
 
 ------------------------------------------------------------------------------
 import           Control.Concurrent    (threadWaitWrite)
@@ -25,10 +29,17 @@ import           System.Posix.Types    (COff, Fd)
 
 ------------------------------------------------------------------------------
 sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFile out_fd in_fd off count
+
+
+------------------------------------------------------------------------------
+sendFileImpl :: (Fd -> Fd -> COff -> CSize -> Ptr () -> Ptr COff -> CInt
+                    -> IO CInt)
+             -> (Fd -> IO ())
+             -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFileImpl rawSendFile wait out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do
-        sbytes <- sendfile out_fd in_fd
+        sbytes <- sendfile rawSendFile wait out_fd in_fd
                            (fromIntegral off)
                            (fromIntegral count)
                            pbytes
@@ -36,16 +47,17 @@ sendFile out_fd in_fd off count
 
 
 ------------------------------------------------------------------------------
-sendfile :: Fd -> Fd -> COff -> CSize -> Ptr COff -> IO COff
-sendfile out_fd in_fd off count pbytes = do
+sendfile :: (Fd -> Fd -> COff -> CSize -> Ptr () -> Ptr COff -> CInt
+                -> IO CInt)
+         -> (Fd -> IO ())
+         -> Fd -> Fd -> COff -> CSize -> Ptr COff -> IO COff
+sendfile rawSendFile wait out_fd in_fd off count pbytes = do
     throwErrnoIfMinus1RetryMayBlock_
         "sendfile"
-        (c_sendfile_freebsd in_fd out_fd off count nullPtr pbytes 0)
-        onBlock
+        (rawSendFile in_fd out_fd off count nullPtr pbytes 0)
+        (wait out_fd)
     peek pbytes
 
-  where
-    onBlock = threadWaitWrite out_fd
 
 ------------------------------------------------------------------------------
 -- max num of bytes in one send

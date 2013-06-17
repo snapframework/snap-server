@@ -1,12 +1,15 @@
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# OPTIONS_GHC -F -pgmF hsc2hs       #-}
 
+------------------------------------------------------------------------------
 -- | Linux system-dependent code for 'sendfile'.
 module System.SendFile.Linux
   ( sendFile
+  , sendFileImpl
   , sendFileMode
   ) where
-
+------------------------------------------------------------------------------
 import           Control.Concurrent (threadWaitWrite)
 import           Data.Int
 import           Foreign.C.Error    (throwErrnoIfMinus1RetryMayBlock)
@@ -23,30 +26,43 @@ import           System.Posix.Types (COff (..), CSsize (..), Fd (..))
 #else
 import           System.Posix.Types (COff, CSsize, Fd)
 #endif
+------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------------------------
 sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFile out_fd in_fd off count
-  | count <= 0 = return 0
-  | off   == 0 = do
-        nsent <- sendfile out_fd in_fd nullPtr bytes
-        return $! fromIntegral nsent
-  | otherwise  = alloca $ \poff -> do
-        poke poff (fromIntegral off)
-        nsent <- sendfile out_fd in_fd poff bytes
-        return $! fromIntegral nsent
-    where
-      bytes = fromIntegral count
+sendFile = sendFileImpl c_sendfile threadWaitWrite
+{-# INLINE sendFile #-}
 
 
 ------------------------------------------------------------------------------
-sendfile :: Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
-sendfile out_fd in_fd poff bytes =
+sendFileImpl :: (Fd -> Fd -> Ptr COff -> CSize -> IO CSsize)
+             -> (Fd -> IO ())
+             -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFileImpl raw_sendfile wait out_fd in_fd off count
+  | count <= 0 = return 0
+  | off   == 0 = do
+        nsent <- sendfile raw_sendfile wait out_fd in_fd nullPtr bytes
+        return $! fromIntegral nsent
+  | otherwise  = alloca $ \poff -> do
+        poke poff (fromIntegral off)
+        nsent <- sendfile raw_sendfile wait out_fd in_fd poff bytes
+        return $! fromIntegral nsent
+    where
+      bytes = fromIntegral count
+{-# INLINE sendFileImpl #-}
+
+
+------------------------------------------------------------------------------
+sendfile :: (Fd -> Fd -> Ptr COff -> CSize -> IO CSsize)
+         -> (Fd -> IO ())
+         -> Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
+sendfile raw_sendfile wait out_fd in_fd poff bytes =
     throwErrnoIfMinus1RetryMayBlock
             "sendfile"
-            (c_sendfile out_fd in_fd poff bytes)
-            (threadWaitWrite out_fd)
+            (raw_sendfile out_fd in_fd poff bytes)
+            (wait out_fd)
+{-# INLINE sendfile #-}
 
 
 ------------------------------------------------------------------------------
