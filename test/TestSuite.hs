@@ -5,8 +5,7 @@ module Main where
 
 import           Control.Concurrent                             (killThread)
 import qualified Control.Exception                              as E
-import           Control.Monad                                  (forM, liftM,
-                                                                 mapM_)
+import           Control.Monad                                  (liftM)
 import           Data.Maybe                                     (maybeToList)
 import           Network                                        (withSocketsDo)
 #ifdef OPENSSL
@@ -19,6 +18,7 @@ import           Test.Framework                                 (defaultMain,
 import qualified Snap.Internal.Http.Server.Parser.Tests         as Parser
 import qualified Snap.Internal.Http.Server.Session.Tests        as Session
 import qualified Snap.Internal.Http.Server.TimeoutManager.Tests as TimeoutManager
+import qualified System.SendFile.Tests                          as SendFile
 import qualified Test.Blackbox
 
 
@@ -42,6 +42,7 @@ main = withSocketsDo $ setupOpenSSL $ do
     tests = [ testGroup "Parser" Parser.tests
             , testGroup "Server" Session.tests
             , testGroup "TimeoutManager" TimeoutManager.tests
+            , testGroup "SendFile" SendFile.tests
             ]
 
 

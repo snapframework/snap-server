@@ -220,19 +220,26 @@ Test-suite testsuite
     cpp-options: -DLINUX -DHAS_SENDFILE
     other-modules:
       System.SendFile,
-      System.SendFile.Linux
+      System.SendFile.Linux,
+      System.SendFile.Tests
+    c-sources: test/cbits/errno_util.c
+
 
   if os(darwin) && !flag(portable)
     cpp-options: -DOSX -DHAS_SENDFILE
     other-modules:
       System.SendFile,
-      System.SendFile.Darwin
+      System.SendFile.Darwin,
+      System.SendFile.Tests
+    c-sources: test/cbits/errno_util.c
 
   if os(freebsd) && !flag(portable)
     cpp-options: -DFREEBSD -DHAS_SENDFILE
     other-modules:
       System.SendFile,
-      System.SendFile.FreeBSD
+      System.SendFile.FreeBSD,
+      System.SendFile.Tests
+    c-sources: test/cbits/errno_util.c
 
   ghc-prof-options: -prof -auto-all
 
