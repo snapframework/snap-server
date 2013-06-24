@@ -707,7 +707,7 @@ receiveRequest writeEnd = do
 
         parseHost h = (a, unsafeFromInt (S.drop 1 b))
           where
-            (a,b) = S.break (== (c2w ':')) h
+            (a,b) = S.breakEnd (== (c2w ':')) h
 
         params          = parseUrlEncoded queryString
 
