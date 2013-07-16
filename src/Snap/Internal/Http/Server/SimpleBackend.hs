@@ -24,7 +24,11 @@ import           Data.ByteString.Internal (c2w)
 import           Data.Maybe
 import           Foreign hiding (new)
 import           Foreign.C
+#if MIN_VERSION_base(4,7,0)
+import           GHC.Conc (labelThread, forkOn)
+#else  
 import           GHC.Conc (labelThread, forkOnIO)
+#endif  
 import           Network.Socket
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
@@ -85,7 +89,11 @@ newLoop :: Int
 newLoop defaultTimeout sockets handler elog cpu = do
     tmgr       <- TM.initialize defaultTimeout getCurrentDateTime
     exit       <- newEmptyMVar
+#if MIN_VERSION_base(4,7,0)
+    accThreads <- forM sockets $ \p -> forkOn cpu $
+#else    
     accThreads <- forM sockets $ \p -> forkOnIO cpu $
+#endif                                       
                   acceptThread defaultTimeout handler tmgr elog cpu p exit
 
     return $! EventLoopCpu cpu accThreads tmgr exit
@@ -93,7 +101,7 @@ newLoop defaultTimeout sockets handler elog cpu = do
 
 ------------------------------------------------------------------------------
 stopLoop :: EventLoopCpu -> IO ()
-stopLoop loop = block $ do
+stopLoop loop = mask_ $ do
     TM.stop $ _timeoutManager loop
     Prelude.mapM_ killThread $ _acceptThreads loop
 
@@ -115,7 +123,11 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
         (s,addr) <- accept $ Listen.listenSocket sock
         setSocketOption s NoDelay 1
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
+#if MIN_VERSION_base(4,7,0)
+        _ <- forkOn cpu (go s addr `catches` cleanup)
+#else    
         _ <- forkOnIO cpu (go s addr `catches` cleanup)
+#endif
         return ()
 
     loop = do
@@ -169,7 +181,7 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
 
     bracket (Listen.createSession lsock 8192 fd
               (threadWaitRead $ fromIntegral fd))
-            (\session -> block $ do
+            (\session -> mask_ $ do
                  debug "thread killed, closing socket"
 
                  -- cancel thread timeout
