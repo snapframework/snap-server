@@ -97,6 +97,9 @@ data Config m a = Config
     , proxyType      :: Maybe ProxyType
     , startupHook    :: Maybe (StartupInfo m a -> IO ())
     }
+#if MIN_VERSION_base(4,7,0)    
+                deriving (Typeable)
+#endif
 
 instance Show (Config m a) where
     show c = unlines [ "Config:"
@@ -193,12 +196,17 @@ instance Monoid (Config m a) where
 -- | The 'Typeable1' instance is here so 'Config' values can be
 -- dynamically loaded with Hint.
 configTyCon :: TyCon
+#if MIN_VERSION_base(4,7,0)
+configTyCon = mkTyCon3 "snap-server" "Snap.Http.Server.Config" "Config"
+#else              
 configTyCon = mkTyCon "Snap.Http.Server.Config.Config"
+#endif              
 {-# NOINLINE configTyCon #-}
 
+#if !MIN_VERSION_base(4,7,0)              
 instance (Typeable1 m) => Typeable1 (Config m) where
     typeOf1 _ = mkTyConApp configTyCon [typeOf1 (undefined :: m ())]
-
+#endif
 
 ------------------------------------------------------------------------------
 -- | These are the default values for the options
