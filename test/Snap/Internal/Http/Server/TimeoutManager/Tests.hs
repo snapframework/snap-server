@@ -85,8 +85,8 @@ testCancel = testCase "timeout/cancel" $ repeatedly $ do
     threadDelay $ 2 * seconds
     readIORef ref >>= assertEqual "b2" 2
     _   <- TM.register (writeIORef ref 3) mgr
-    h'' <- TM.register (return ()) mgr
-    TM.cancel h''
+    hs <- replicateM 1000 $! TM.register (return ()) mgr
+    mapM TM.cancel hs
     TM.stop mgr
     threadDelay $ 1 * seconds
     readIORef ref >>= assertEqual "b3" 3

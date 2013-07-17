@@ -1,11 +1,15 @@
+{-# LANGUAGE BangPatterns       #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings  #-}
 
 module Snap.Internal.Http.Server.Address
   ( getHostAddr
+  , getHostAddrImpl
   , getSockAddr
+  , getSockAddrImpl
   , getAddress
-  , AddressNotSupportedException
+  , getAddressImpl
+  , AddressNotSupportedException(..)
   ) where
 
 ------------------------------------------------------------------------------
@@ -28,39 +32,63 @@ instance Exception AddressNotSupportedException
 
 ------------------------------------------------------------------------------
 getHostAddr :: SockAddr -> IO String
-getHostAddr addr =
-    (fromMaybe "" . fst) `liftM` getNameInfo [NI_NUMERICHOST] True False addr
+getHostAddr = getHostAddrImpl getNameInfo
+
+
+------------------------------------------------------------------------------
+getHostAddrImpl :: ([NameInfoFlag]
+                    -> Bool
+                    -> Bool
+                    -> SockAddr
+                    -> IO (Maybe HostName, Maybe ServiceName))
+                -> SockAddr
+                -> IO String
+getHostAddrImpl !_getNameInfo addr =
+    (fromMaybe "" . fst) `liftM` _getNameInfo [NI_NUMERICHOST] True False addr
+
 
 ------------------------------------------------------------------------------
 getAddress :: SockAddr -> IO (Int, ByteString)
-getAddress addr = do
+getAddress = getAddressImpl getHostAddr
+
+
+------------------------------------------------------------------------------
+getAddressImpl :: (SockAddr -> IO String) -> SockAddr -> IO (Int, ByteString)
+getAddressImpl !_getHostAddr addr = do
     port <- case addr of
               SockAddrInet p _ -> return p
               SockAddrInet6 p _ _ _ -> return p
               x -> throwIO $ AddressNotSupportedException $ show x
-    host <- getHostAddr addr
+    host <- _getHostAddr addr
     return (fromIntegral port, S.pack host)
 
 ------------------------------------------------------------------------------
 getSockAddr :: Int
             -> ByteString
             -> IO (Family, SockAddr)
-getSockAddr p s | s == "*"  =
-                    return $! ( AF_INET
-                              , SockAddrInet (fromIntegral p) iNADDR_ANY
-                              )
-getSockAddr p s | s == "::" =
-                    return $! ( AF_INET6
-                              , SockAddrInet6 (fromIntegral p) 0 iN6ADDR_ANY 0
-                              )
-getSockAddr p s = do
-    let hints = defaultHints { addrFlags = [AI_NUMERICSERV] }
-    ais <- getAddrInfo (Just hints) (Just $ S.unpack s)
-                       (Just $ show p)
-    if null ais
-      then throwIO $ AddressNotSupportedException $ show s
-      else do
-        let ai = head ais
-        let fm = addrFamily ai
-        let sa = addrAddress ai
-        return (fm, sa)
+getSockAddr = getSockAddrImpl getAddrInfo
+
+
+------------------------------------------------------------------------------
+getSockAddrImpl
+  :: (Maybe AddrInfo -> Maybe String -> Maybe String -> IO [AddrInfo])
+     -> Int -> ByteString -> IO (Family, SockAddr)
+getSockAddrImpl !_getAddrInfo p s =
+    case () of
+      !_ | s == "*" -> return $! ( AF_INET
+                                 , SockAddrInet (fromIntegral p) iNADDR_ANY
+                                 )
+         | s == "::" -> return $! ( AF_INET6
+                                  , SockAddrInet6 (fromIntegral p) 0 iN6ADDR_ANY 0
+                                  )
+         | otherwise -> do ais <- _getAddrInfo (Just hints) (Just $ S.unpack s)
+                                               (Just $ show p)
+                           if null ais
+                             then throwIO $ AddressNotSupportedException $ show s
+                             else do
+                               let ai = head ais
+                               let fm = addrFamily ai
+                               let sa = addrAddress ai
+                               return (fm, sa)
+  where
+    hints = defaultHints { addrFlags = [AI_NUMERICSERV] }

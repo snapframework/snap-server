@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# OPTIONS_GHC -F -pgmF hsc2hs       #-}
@@ -39,7 +40,7 @@ sendFile = sendFileImpl c_sendfile threadWaitWrite
 sendFileImpl :: (Fd -> Fd -> Ptr COff -> CSize -> IO CSsize)
              -> (Fd -> IO ())
              -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFileImpl raw_sendfile wait out_fd in_fd off count
+sendFileImpl !raw_sendfile !wait out_fd in_fd off count
   | count <= 0 = return 0
   | off   == 0 = do
         nsent <- sendfile raw_sendfile wait out_fd in_fd nullPtr bytes

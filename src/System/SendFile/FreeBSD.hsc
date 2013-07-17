@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 -- | FreeBSD system-dependent code for 'sendfile'.
@@ -36,7 +37,7 @@ sendFileImpl :: (Fd -> Fd -> COff -> CSize -> Ptr () -> Ptr COff -> CInt
                     -> IO CInt)
              -> (Fd -> IO ())
              -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFileImpl rawSendFile wait out_fd in_fd off count
+sendFileImpl !rawSendFile !wait out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do
         sbytes <- sendfile rawSendFile wait out_fd in_fd

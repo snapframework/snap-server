@@ -112,6 +112,7 @@ uploadForm = do
 
 uploadHandler :: Snap ()
 uploadHandler = do
+    logError "uploadHandler"
     liftIO $ createDirectoryIfMissing True tmpdir
     files <- handleFileUploads tmpdir defaultUploadPolicy partPolicy hndl
     let m = sort files
@@ -124,9 +125,6 @@ uploadHandler = do
     writeBuilder $ buildRqParams params `mappend` buildFiles m
 
   where
-    isRight (Left _) = False
-    isRight (Right _) = True
-
     f p = fromMaybe "-" $ partFileName p
 
     hndl _ (Left e)          = throwIO e

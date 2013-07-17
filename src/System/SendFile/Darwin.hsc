@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 -- | Darwin system-dependent code for 'sendfile'.
@@ -34,7 +35,7 @@ sendFile = sendFileImpl c_sendfile threadWaitWrite
 sendFileImpl :: (Fd -> Fd -> COff -> Ptr COff -> IO CInt)
              -> (Fd -> IO ())
              -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
-sendFileImpl rawSendFile wait out_fd in_fd off count
+sendFileImpl !rawSendFile !wait out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do
         poke pbytes $ fromIntegral count

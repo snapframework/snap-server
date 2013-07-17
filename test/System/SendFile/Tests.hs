@@ -36,6 +36,7 @@ tests = [ testSendHeaders
         , testSendHeaderCrash
         , testSendFile
         , testSendFileCrash
+        , testSendFileZero
         , testTrivials
         ]
 
@@ -198,6 +199,25 @@ testSendFile = testCase "sendfile/sendfile-impl" $ do
 
 
 ------------------------------------------------------------------------------
+testSendFileZero :: Test
+testSendFileZero = testCase "sendfile/sendfile-zero" $ do
+    callLog <- newMVar []
+    sampleData <- newMVar sampleActions
+    nWaits <- newMVar (0 :: Int)
+    let bumpWaits = \x -> x `seq` modifyMVar_ nWaits (return . (+1))
+    c <- SFI.sendFileImpl (sendFileMockSendFunc sampleData callLog) bumpWaits
+                           100 101 0 0
+    readMVar callLog >>= assertEqual "empty call log" []
+    readMVar nWaits >>= assertEqual "no waits" 0
+    assertEqual "no bytes read" 0 c
+
+  where
+    sampleActions = [ c_set_errno eAGAIN >> return (-1)
+                    , c_set_errno eOK >> return 2
+                    ]
+
+
+------------------------------------------------------------------------------
 testSendFileCrash :: Test
 testSendFileCrash = testCase "sendfile/sendFile/crash" $ do
     callLog <- newMVar []
@@ -209,4 +229,3 @@ testSendFileCrash = testCase "sendfile/sendFile/crash" $ do
                          100 101 0 10
   where
     sampleActions = [ c_set_errno eCONNRESET >> return (-1) ]
-
