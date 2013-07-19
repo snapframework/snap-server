@@ -128,7 +128,7 @@ sendFileMockSendFunc sampleData callLog !fd1 !fd2 !cstr !clen = do
     x <- modifyMVar sampleData $ \xs -> return $!
             if null xs then ([], return Nothing) else (tail xs, fmap Just $! head xs)
     x >>= maybe (c_set_errno eCONNRESET >> return (-1))
-                (return)
+                (return . fromIntegral)
 
 #elif defined(FREEBSD)
 data SendFileCallLog = SendFileCallLog {

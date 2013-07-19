@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# OPTIONS_GHC -F -pgmF hsc2hs       #-}
 
 ------------------------------------------------------------------------------
 -- | Linux system-dependent code for 'sendfile'.
