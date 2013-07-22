@@ -13,6 +13,7 @@ import           Blaze.ByteString.Builder.Char8
 import           Blaze.ByteString.Builder.Enumerator
 import           Blaze.ByteString.Builder.HTTP
 import           Control.Arrow                           (first, second)
+import qualified Control.Concurrent                      as Conc
 import           Control.Exception                       hiding (catch, throw)
 import           Control.Monad.CatchIO                   hiding (Handler,
                                                           bracket, catches,
@@ -443,11 +444,11 @@ httpSession defaultTimeout writeEnd' buffer onSendFile tickle handler = do
                 (rspContentLength rsp')
 
           if cc
-             then do
-                 debug $ "httpSession: Connection: Close, harikari"
-                 liftIO $ myThreadId >>= killThread
-             else httpSession defaultTimeout writeEnd' buffer onSendFile
-                              tickle handler
+             then do debug $ "httpSession: Connection: Close, harikari"
+                     liftIO $ myThreadId >>= killThread
+             else do liftIO Conc.yield
+                     httpSession defaultTimeout writeEnd' buffer onSendFile
+                                 tickle handler
 
       Nothing -> do
           debug $ "Server.httpSession: parser did not produce a " ++
