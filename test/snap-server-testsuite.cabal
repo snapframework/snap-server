@@ -48,8 +48,8 @@ Executable testsuite
     test-framework-quickcheck2 >= 0.2.12.1 && <0.3,
     text                       >= 0.11     && <0.12,
     time,
-    tls                        >= 1.0      && <1.1,
-    tls-extra                  >= 0.5      && <0.6,
+    tls                        >= 1.1      && <1.2,
+    tls-extra                  >= 0.6      && <0.7,
     transformers
 
   extensions:
