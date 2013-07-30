@@ -37,7 +37,7 @@ import           Control.Concurrent                       (MVar, ThreadId,
                                                            myThreadId,
                                                            newEmptyMVar,
                                                            putMVar, readMVar,
-                                                           takeMVar)
+                                                           takeMVar, yield)
 import           Control.Exception                        (AsyncException,
                                                            Exception,
                                                            Handler (..),
@@ -545,7 +545,7 @@ httpSession !buffer !serverHandler !config !sessionData =
         cc' <- readIORef forceConnectionClose
         if cc'
           then return $! ()
-          else writeIORef isNewConnection False >> begin
+          else yield >> writeIORef isNewConnection False >> begin
 
     --------------------------------------------------------------------------
     escapeSnapHandler hookState (EscapeHttp escapeHandler) = do
