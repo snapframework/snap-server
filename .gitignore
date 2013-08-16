@@ -11,3 +11,9 @@ cabal-dev
 TAGS
 *.prof
 *.tix
+*.pdf
+*.ps
+*.prof
+*.prof_*
+*.aux
+*.hp

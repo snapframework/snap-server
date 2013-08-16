@@ -48,14 +48,14 @@ startTestSocketServer portNum userHandler =
 
     cleanup = N.close
 
-    logAccess !_ !_                = return ()
-    _logError !e                   = S.putStrLn $ toByteString e
-    onStart !_                     = return ()
-    onParse !_ !_                  = return ()
-    onUserHandlerFinished !_ !_ !_ = return ()
-    onDataFinished !_ !_ !_        = return ()
-    onExceptionHook !_ !_          = return ()
-    onEscape !_                    = return ()
+    logAccess _ _               = return ()
+    _logError !e                = S.putStrLn $ toByteString e
+    onStart _                   = return ()
+    onParse _ _                 = return ()
+    onUserHandlerFinished _ _ _ = return ()
+    onDataFinished _ _ _        = return ()
+    onExceptionHook _ _         = return ()
+    onEscape _                  = return ()
 
     emptyServerConfig = Types.ServerConfig logAccess
                                            _logError

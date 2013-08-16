@@ -19,7 +19,7 @@ import           Network.Socket                    (Socket, SocketOption (NoDela
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Types   (AcceptFunc,
                                                     SendFileHandler)
-import qualified System.IO.Streams.Network         as Streams
+import qualified System.IO.Streams                 as Streams
 #ifndef PORTABLE
 import           Control.Exception                 (bracket)
 import           Network.Socket                    (fdSocket)
@@ -61,13 +61,14 @@ httpAcceptFunc boundSocket restore = do
     localAddr                <- getLocalAddress sock
     (remotePort, remoteHost) <- getAddress remoteAddr
     (readEnd, writeEnd)      <- Streams.socketToStreams sock
+    let cleanup              =  Streams.write Nothing writeEnd >> close sock
     return $! ( sendFileFunc sock
               , localAddr
               , remoteHost
               , remotePort
               , readEnd
               , writeEnd
-              , close sock
+              , cleanup
               )
 
 

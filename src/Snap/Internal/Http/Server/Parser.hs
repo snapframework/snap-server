@@ -30,6 +30,7 @@ import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take,
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (ByteString, w2c)
 import qualified Data.ByteString.Unsafe           as S
+import qualified Data.CaseInsensitive             as CI
 import           Data.IORef                       (newIORef, readIORef,
                                                    writeIORef)
 import           Data.Typeable                    (Typeable)
@@ -44,6 +45,8 @@ import           Snap.Internal.Http.Types         (Method (..))
 import           Snap.Internal.Parsing            (crlf, parseCookie,
                                                    parseUrlEncoded,
                                                    unsafeFromNat)
+import qualified Snap.Types.Headers               as H
+import           Snap.Types.Headers (Headers)
 
 
 ------------------------------------------------------------------------------
@@ -53,9 +56,8 @@ data IRequest = IRequest
     , iRequestUri     :: {-# UNPACK #-} !ByteString
     , iHttpVersion    :: {-# UNPACK #-} !(Int, Int)
     , iHost           :: !(Maybe ByteString)
-    , iRequestHeaders :: ![(ByteString, ByteString)]
+    , iRequestHeaders :: !Headers
     }
-  deriving (Eq)
 
 ------------------------------------------------------------------------------
 instance Show IRequest where
@@ -237,23 +239,20 @@ isLWS c = c == ' ' || c == '\t'
 
 
 ------------------------------------------------------------------------------
-pHeaders :: InputStream ByteString -> IO [(ByteString,ByteString)]
-pHeaders input = do
-    f <- go id
-    return $! f []
-
+pHeaders :: InputStream ByteString -> IO Headers
+pHeaders input = go H.empty
   where
-    go !dlistSoFar = do
+    go !hdrs = do
         line <- pLine input
         if S.null line
-          then return dlistSoFar
+          then return hdrs
           else do
             let (!k,!v) = splitHeader line
             vf <- pCont id
             let vs = vf []
             let !v' = if null vs then v else S.concat (v:vs)
-            let !t = (k,v')
-            go (dlistSoFar . (t:))
+            let !hdrs' = H.insert (CI.mk k) v' hdrs
+            go hdrs'
 
       where
         trimBegin = S.dropWhile isLWS

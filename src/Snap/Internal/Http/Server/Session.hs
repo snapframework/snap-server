@@ -16,10 +16,6 @@ module Snap.Internal.Http.Server.Session
   ) where
 
 ------------------------------------------------------------------------------
-#if !MIN_VERSION_base(4,6,0)
-import           Prelude                                  hiding (catch)
-#endif
-------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder                 (Builder, flush,
                                                            fromByteString)
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
@@ -38,17 +34,13 @@ import           Control.Concurrent                       (MVar, ThreadId,
                                                            newEmptyMVar,
                                                            putMVar, readMVar,
                                                            takeMVar, yield)
+import qualified Control.Exception as E
 import           Control.Exception                        (AsyncException,
                                                            Exception,
                                                            Handler (..),
                                                            IOException,
-                                                           SomeException (..),
-                                                           bracket, catch,
-                                                           catches, evaluate,
-                                                           finally, mask_,
-                                                           throwIO)
-import           Control.Monad                            (forever, unless,
-                                                           when)
+                                                           SomeException (..))
+import           Control.Monad                            (unless, when)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
@@ -167,33 +159,34 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
                 ]
 
     --------------------------------------------------------------------------
-    runLoops = bracket (mapM newLoop [0 .. (nLoops - 1)])
-                       (mapM_ killLoop)
-                       (mapM_ waitLoop)
+    runLoops = E.bracket (mapM newLoop [0 .. (nLoops - 1)])
+                         (mapM_ killLoop)
+                         (mapM_ waitLoop)
 
     --------------------------------------------------------------------------
     loop :: MVar ()
          -> TimeoutManager
          -> (forall a. IO a -> IO a)
          -> IO ()
-    loop mv tm loopRestore = eatException go `finally` putMVar mv ()
+    loop mv tm loopRestore = eatException go `E.finally` putMVar mv ()
       where
         ----------------------------------------------------------------------
         handlers = [ Handler $ \(e :: IOException)    -> logException e >> go
-                   , Handler $ \(e :: AsyncException) -> throwIO $! e
+                   , Handler $ \(e :: AsyncException) -> E.throwIO $! e
                    , Handler $ \(e :: SomeException)  -> logException e >>
-                                                         throwIO e
+                                                         E.throwIO e
                    ]
 
-        go = forever $ do
+        go = do
             (sendFileHandler, localAddress, remoteAddress, remotePort,
              readEnd, writeEnd, cleanup) <- acceptFunc loopRestore
-                                            `catches` handlers
+                                            `E.catches` handlers
 
             forkIOWithUnmask
                 $ eatException
                 . prep sendFileHandler localAddress remoteAddress
                        remotePort readEnd writeEnd cleanup
+            go
 
         prep :: SendFileHandler
              -> ByteString
@@ -222,7 +215,7 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
                                      readEnd
                                      writeEnd
                                      newConn
-            restore (session psd) `finally` cleanup
+            restore (session psd) `E.finally` cleanup
 
     --------------------------------------------------------------------------
     session psd = do
@@ -230,7 +223,7 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
         httpSession buffer serverHandler serverConfig psd
 
     --------------------------------------------------------------------------
-    newLoop cpu = mask_ $ do
+    newLoop cpu = E.mask_ $ do
         mv  <- newEmptyMVar
         tm  <- TM.initialize defaultTimeout getCurrentDateTime
         tid <- forkOnWithUnmask cpu $ loop mv tm
@@ -240,10 +233,10 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
     waitLoop (EventLoopCpu _ _ mv) = readMVar mv
 
     --------------------------------------------------------------------------
-    killLoop (EventLoopCpu tid tm mv) = mask_ $ do
+    killLoop (EventLoopCpu tid tm mv) = E.mask_ $ do
         killThread tid
         TM.stop tm
-        takeMVar mv >>= evaluate
+        takeMVar mv >>= E.evaluate
 
 
 ------------------------------------------------------------------------------
@@ -253,9 +246,7 @@ httpSession :: forall hookState .
             -> ServerConfig hookState
             -> PerSessionData
             -> IO ()
-httpSession !buffer !serverHandler !config !sessionData =
-    begin `finally` cleanup
-
+httpSession !buffer !serverHandler !config !sessionData = loop
   where
     --------------------------------------------------------------------------
     defaultTimeout          = _defaultTimeout config
@@ -288,8 +279,8 @@ httpSession !buffer !serverHandler !config !sessionData =
 
     --------------------------------------------------------------------------
     -- Begin HTTP session processing.
-    begin :: IO ()
-    begin = do
+    loop :: IO ()
+    loop = do
         -- the timer resets to its default value here.
         tickle $ const defaultTimeout
 
@@ -300,11 +291,6 @@ httpSession !buffer !serverHandler !config !sessionData =
             req <- receiveRequest
             parseHook hookState req
             processRequest hookState req)
-    {-# INLINE begin #-}
-
-    ------------------------------------------------------------------------------
-    cleanup :: IO ()
-    cleanup = Streams.write Nothing writeEnd
 
     ------------------------------------------------------------------------------
     readEndAtEof = Streams.read readEnd >>=
@@ -312,6 +298,7 @@ httpSession !buffer !serverHandler !config !sessionData =
                          (\c -> if S.null c
                                   then readEndAtEof
                                   else Streams.unRead c readEnd >> return False)
+    {-# INLINE readEndAtEof #-}
 
     --------------------------------------------------------------------------
     -- Read the HTTP request from the socket, parse it, and pre-process it.
@@ -381,7 +368,7 @@ httpSession !buffer !serverHandler !config !sessionData =
         isHttp11    = version >= (1, 1)
         mbHost      = H.lookup "host" hdrs <|> iHost ireq
         localHost   = fromMaybe localHostname $! iHost ireq
-        hdrs        = toHeaders $! iRequestHeaders ireq
+        hdrs        = iRequestHeaders ireq
         isChunked   = (CI.mk <$> H.lookup "transfer-encoding" hdrs)
                          == Just "chunked"
         mbCL        = unsafeFromNat <$> H.lookup "content-length" hdrs
@@ -507,11 +494,12 @@ httpSession !buffer !serverHandler !config !sessionData =
 
         -- check for Expect: 100-continue
         checkExpect100Continue req
-        runServerHandler hookState req
-            `catches` [ Handler $ escapeSnapHandler hookState
-                      , Handler $
-                        catchUserException hookState "user handler" req
-                      ]
+        b <- runServerHandler hookState req
+               `E.catches` [ Handler $ escapeSnapHandler hookState
+                           , Handler $
+                             catchUserException hookState "user handler" req
+                           ]
+        when b (yield >> writeIORef isNewConnection False >> loop)
 
     --------------------------------------------------------------------------
     {-# INLINE runServerHandler #-}
@@ -535,7 +523,7 @@ httpSession !buffer !serverHandler !config !sessionData =
                           then id
                           else H.set "Server" sERVER_HEADER
         let !rsp = updateHeaders (insServer . H.set "Date" date) rsp2
-        bytesSent <- sendResponse rsp `catch`
+        bytesSent <- sendResponse rsp `E.catch`
                      catchUserException hookState "sending-response" req
         let rspFinal = maybe (setContentLength bytesSent rsp)
                              (const rsp)
@@ -543,14 +531,13 @@ httpSession !buffer !serverHandler !config !sessionData =
         dataFinishedHook hookState req rspFinal
         logAccess req rspFinal
         cc' <- readIORef forceConnectionClose
-        if cc'
-          then return $! ()
-          else yield >> writeIORef isNewConnection False >> begin
+        return $! not cc'
 
     --------------------------------------------------------------------------
     escapeSnapHandler hookState (EscapeHttp escapeHandler) = do
         escapeHook hookState
         newBuffer >>= escapeHandler tickle readEnd
+        return False
     escapeSnapHandler _ (TerminateConnection e) = terminateSession e
 
     --------------------------------------------------------------------------
@@ -581,7 +568,7 @@ httpSession !buffer !serverHandler !config !sessionData =
                                    then noCL rsp1
                                    else (rsp1, False)
         when shouldClose $ writeIORef forceConnectionClose True
-        let (!headerBuilder, !hlen) = mkHeaderBuilder rsp
+        let (BIP headerBuilder hlen) = mkHeaderBuilder rsp
         nBodyBytes <- case rspBody rsp of
                         Stream s ->
                             whenStream headerBuilder hlen rsp s
@@ -669,41 +656,45 @@ httpSession !buffer !serverHandler !config !sessionData =
 
 
 --------------------------------------------------------------------------
-mkHeaderBuilder :: Response -> (Builder, Int)
-mkHeaderBuilder r = (builder, outlen)
-  where
-    (major, minor) = rspHttpVersion r
-    (hdrs, !hlen)  = buildHdrs $ headers r
-    majstr         = show major
-    minstr         = show minor
-    !majlen        = length majstr
-    !minlen        = length minstr
-    statstr        = show $ rspStatus r
-    !statlen       = length statstr
-    crlf           = fromByteString "\r\n"
-    space          = fromChar ' '
-    reason         = rspStatusReason r
-    builder        = mconcat [ fromByteString "HTTP/"
-                             , fromString majstr
-                             , fromChar '.'
-                             , fromString minstr
-                             , space
-                             , fromString $ statstr
-                             , space
-                             , fromByteString reason
-                             , crlf
-                             , hdrs
-                             , crlf
-                             ]
-    !outlen        = 12 + majlen + minlen + statlen + S.length reason + hlen
+data BuilderIntPair = BIP !Builder {-# UNPACK #-} !Int
 
 
 --------------------------------------------------------------------------
-buildHdrs :: Headers -> (Builder,Int)
-buildHdrs hdrs =
-    H.fold f (mempty, 0) hdrs
+mkHeaderBuilder :: Response -> BuilderIntPair
+mkHeaderBuilder r = BIP builder outlen
   where
-    f (!b, !len) !k !y =
+    (major, minor)  = rspHttpVersion r
+    (BIP hdrs hlen) = buildHdrs $ headers r
+    majstr          = show major
+    minstr          = show minor
+    !majlen         = length majstr
+    !minlen         = length minstr
+    statstr         = show $ rspStatus r
+    !statlen        = length statstr
+    crlf            = fromByteString "\r\n"
+    space           = fromChar ' '
+    reason          = rspStatusReason r
+    builder         = mconcat [ fromByteString "HTTP/"
+                              , fromString majstr
+                              , fromChar '.'
+                              , fromString minstr
+                              , space
+                              , fromString $ statstr
+                              , space
+                              , fromByteString reason
+                              , crlf
+                              , hdrs
+                              , crlf
+                              ]
+    !outlen         = 12 + majlen + minlen + statlen + S.length reason + hlen
+
+
+------------------------------------------------------------------------------
+buildHdrs :: Headers -> BuilderIntPair
+buildHdrs hdrs =
+    H.fold f (BIP mempty 0) hdrs
+  where
+    f (BIP b len) !k !y =
         let k'    = CI.original k
             kb    = fromByteString k' <> fromByteString ": "
             !len' = S.length k' + S.length y + 4
@@ -712,7 +703,7 @@ buildHdrs hdrs =
                             , fromByteString y
                             , crlf
                             ]
-        in (b', len + len')
+        in BIP b' (len + len')
 
     crlf = fromByteString "\r\n"
 
@@ -728,13 +719,8 @@ snapServerVersion = S.pack $ showVersion $ V.version
 
 
 ------------------------------------------------------------------------------
-toHeaders :: [(ByteString, ByteString)] -> H.Headers
-toHeaders = H.fromList . map (first CI.mk)
-
-
-------------------------------------------------------------------------------
 terminateSession :: Exception e => e -> IO a
-terminateSession = throwIO . TerminateSessionException . SomeException
+terminateSession = E.throwIO . TerminateSessionException . SomeException
 
 
 ------------------------------------------------------------------------------
