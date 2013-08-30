@@ -13,6 +13,7 @@ import qualified Data.ByteString.Char8          as S
 import           Foreign.C.Error
 import           Foreign.C.Types
 import           Foreign.Ptr
+import           Foreign.Storable               (peek)
 import           System.Posix.Types
 import           Test.Framework
 import           Test.Framework.Providers.HUnit
@@ -113,7 +114,7 @@ foreign import ccall unsafe "set_errno" c_set_errno :: Errno -> IO ()
 data SendFileCallLog = SendFileCallLog {
       _sf_fd1 :: Fd
     , _sf_fd2 :: Fd
-    , _sf_ptr :: Ptr COff
+    , _sf_off :: COff
     , _sf_sz  :: CSize
     }
   deriving (Eq, Show, Ord)
@@ -124,7 +125,9 @@ sendFileMockSendFunc :: MVar [IO CSize]          -- ^ sample outputs
                      -> MVar [SendFileCallLog]   -- ^ log of calls
                      -> Fd -> Fd -> Ptr COff -> CSize -> IO CSsize
 sendFileMockSendFunc sampleData callLog !fd1 !fd2 !cstr !clen = do
-    modifyMVar_ callLog (return . (++ [SendFileCallLog fd1 fd2 cstr clen]))
+    cp <- if cstr == nullPtr then return (-1) else peek cstr
+
+    modifyMVar_ callLog (return . (++ [SendFileCallLog fd1 fd2 cp clen]))
     x <- modifyMVar sampleData $ \xs -> return $!
             if null xs then ([], return Nothing) else (tail xs, fmap Just $! head xs)
     x >>= maybe (c_set_errno eCONNRESET >> return (-1))
@@ -192,11 +195,28 @@ testSendFile = testCase "sendfile/sendfile-impl" $ do
     assertEqual "sendFile2" 10 (_sf_sz c2)
     readMVar nWaits >>= assertEqual "sendFile3" 1
 
+    modifyMVar_ callLog $ const $ return []
+    modifyMVar_ nWaits $ const $ return 0
+    modifyMVar_ sampleData $ const $ return sampleActions2
+
+    SFI.sendFileImpl (sendFileMockSendFunc sampleData callLog) bumpWaits
+                       100 101 1 9
+
+    [_, c4] <- readMVar callLog
+
+    readMVar nWaits >>= assertEqual "nwaits-2" 1
+    assertEqual "sendFile3" 9 (_sf_sz c4)
+    assertEqual "sendFile3-off" 1 (_sf_off c4)
+
+
   where
     sampleActions = [ c_set_errno eAGAIN >> return (-1)
                     , c_set_errno eOK >> return 2
                     ]
 
+    sampleActions2 = [ c_set_errno eAGAIN >> return (-1)
+                     , c_set_errno eOK >> return 2
+                     ]
 
 ------------------------------------------------------------------------------
 testSendFileZero :: Test

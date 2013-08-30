@@ -45,8 +45,8 @@ import           Snap.Internal.Http.Types         (Method (..))
 import           Snap.Internal.Parsing            (crlf, parseCookie,
                                                    parseUrlEncoded,
                                                    unsafeFromNat)
+import           Snap.Types.Headers               (Headers)
 import qualified Snap.Types.Headers               as H
-import           Snap.Types.Headers (Headers)
 
 
 ------------------------------------------------------------------------------
@@ -107,11 +107,11 @@ parseRequest input = do
     getHost s | "http://" `S.isPrefixOf` s
                   = let s'            = S.unsafeDrop 7 s
                         (!host, !uri) = breakCh '/' s'
-                    in (Just host, uri)
+                    in (Just $! host, uri)
               | "https://" `S.isPrefixOf` s
                   = let s'            = S.unsafeDrop 8 s
                         (!host, !uri) = breakCh '/' s'
-                    in (Just host, uri)
+                    in (Just $! host, uri)
               | otherwise = (Nothing, s)
 
 
