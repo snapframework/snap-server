@@ -502,7 +502,6 @@ testBasicAcceptLoop = testCase "session/basicAcceptLoop" $
     outputs <- runAcceptLoop [return ()] (return ())
     let [Output out] = outputs
     void (evaluate out) `catch` \(e::SomeException) -> do
-        putStrLn $ "error: " ++ show outputs
         throwIO e
     assertBool "basic accept" $ S.isPrefixOf "HTTP/1.1 200 OK\r\n" out
 
@@ -799,7 +798,6 @@ runAcceptLoop requests snap = dieIfTimeout $ do
     (_, errs') <- run afuncSuicide
     assertBool ("errs': " ++ show errs') $ null errs'
 
-
     -- make sure we gobble IOException.
     count <- newIORef 0
     (_, errs'') <- run $ afuncIOException count
@@ -817,6 +815,7 @@ runAcceptLoop requests snap = dieIfTimeout $ do
         outputs  <- newMVar []
         lock     <- newMVar ()
         err      <- newMVar []
+
         httpAcceptLoop (snapToServerHandler snap) (config err) $
                        afunc reqStreams outputs lock
 
@@ -871,10 +870,9 @@ runAcceptLoop requests snap = dieIfTimeout $ do
         b <- atEOF
         when b $ myThreadId >>= killThread
         os <- Streams.makeOutputStream out >>=
-              Streams.contramap S.copy >>=
-              Streams.atEndOfOutput (putMVar lock ())
+              Streams.contramap S.copy
         return (sendFileFunc, "localhost", "localhost", 55555, inputStream,
-                os, return ())
+                os, putMVar lock ())
 
       where
         atEOF = Streams.peek inputStream >>= maybe (return True) f

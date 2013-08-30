@@ -11,6 +11,7 @@ import           Control.Parallel.Strategies          (rdeepseq, using)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
 import           Data.Int                             (Int64)
+import           Data.List                            (sort)
 import qualified Data.Map                             as Map
 import           Data.Monoid                          (mconcat)
 import           Test.Framework
@@ -29,6 +30,7 @@ import           Snap.Test.Common                     (coverEqInstance,
                                                        coverShowInstance,
                                                        coverTypeableInstance,
                                                        expectException)
+import qualified Snap.Types.Headers                   as H
 import qualified System.IO.Streams                    as Streams
 
 
@@ -53,7 +55,7 @@ tests = [ testShow
 ------------------------------------------------------------------------------
 testShow :: Test
 testShow = testCase "parser/show" $ do
-    let i = IRequest GET "/" (1, 1) Nothing []
+    let i = IRequest GET "/" (1, 1) Nothing $ H.empty
     let !b = show i `using` rdeepseq
     return $ b `seq` ()
 
@@ -174,7 +176,7 @@ testTrivials :: Test
 testTrivials = testCase "parser/trivials" $ do
     coverTypeableInstance (undefined :: HttpParseException)
     coverShowInstance (HttpParseException "ok")
-    coverEqInstance (IRequest GET "" (0, 0) Nothing [])
+    coverEqInstance (IRequest GET "" (0, 0) Nothing $ H.empty)
 
 
 ------------------------------------------------------------------------------
@@ -197,11 +199,12 @@ testMethods = testCase "parser/methods" $ mapM_ testOne ms
 
     checkMethod m i = do
         assertEqual "method" m $ iMethod i
-        assertEqual "hdrs" [ ("z", "b")
-                           , ("q", "")
-                           , ("w", "")
-                           , ("foo", "bar baz")
-                           ] $ iRequestHeaders i
+        let expected = sort [ ("z", "b")
+                            , ("q", "")
+                            , ("w", "")
+                            , ("foo", "bar baz")
+                            ]
+        assertEqual "hdrs" expected $ sort $ H.toList $ iRequestHeaders i
 
 
 ------------------------------------------------------------------------------
@@ -209,41 +212,41 @@ testSimpleParse :: Test
 testSimpleParse = testCase "parser/simpleParse" $ do
     Streams.fromList ["GET / HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple0" (IRequest GET "/" (1, 1) Nothing [])
+        assertEqual "simple0" (IRequest GET "/" (1, 1) Nothing H.empty)
 
     Streams.fromList ["GET http://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
         assertEqual "simple1" (IRequest GET "/" (1, 1)
-                                       (Just "foo.com") [])
+                                       (Just "foo.com") H.empty)
 
     Streams.fromList ["GET http://foo.com HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
         assertEqual "simple2" (IRequest GET "/" (1, 1)
-                                           (Just "foo.com") [])
+                                           (Just "foo.com") H.empty)
 
     Streams.fromList ["GET https://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
         assertEqual "simple3" (IRequest GET "/" (1, 1)
-                                       (Just "foo.com") [])
+                                       (Just "foo.com") H.empty)
 
     Streams.fromList ["GET / HTTP/1.1\r\nz:b\r\n", "", "\r\n"] >>=
         parseRequest >>=
         assertEqual "simple4" (IRequest GET "/" (1, 1) Nothing
-                                        [("z", "b")])
+                                        (H.fromList [("z", "b")]))
 
     Streams.fromList [ "GET / HTTP/1.1\r\na:a\r", "\nz:b\r\n", ""
                      , "\r\n" ] >>=
         parseRequest >>=
         assertEqual "simple5" (IRequest GET "/" (1, 1) Nothing
-                                        [("a", "a"), ("z", "b")])
+                               (H.fromList [("a", "a"), ("z", "b")]))
 
     Streams.fromList ["GET /\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple6" (IRequest GET "/" (1, 0) Nothing [])
+        assertEqual "simple6" (IRequest GET "/" (1, 0) Nothing H.empty)
 
     Streams.fromList ["G", "ET", " /\r", "\n\r", "", "\n"] >>=
         parseRequest >>=
-        assertEqual "simple7" (IRequest GET "/" (1, 0) Nothing [])
+        assertEqual "simple7" (IRequest GET "/" (1, 0) Nothing H.empty)
 
 
 ------------------------------------------------------------------------------

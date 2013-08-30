@@ -34,12 +34,12 @@ import           Control.Concurrent                       (MVar, ThreadId,
                                                            newEmptyMVar,
                                                            putMVar, readMVar,
                                                            takeMVar, yield)
-import qualified Control.Exception as E
 import           Control.Exception                        (AsyncException,
                                                            Exception,
                                                            Handler (..),
                                                            IOException,
                                                            SomeException (..))
+import qualified Control.Exception                        as E
 import           Control.Monad                            (unless, when)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
@@ -172,9 +172,9 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
       where
         ----------------------------------------------------------------------
         handlers = [ Handler $ \(e :: IOException)    -> logException e >> go
-                   , Handler $ \(e :: AsyncException) -> E.throwIO $! e
+                   , Handler $ \(e :: AsyncException) -> loopRestore (E.throwIO $! e)
                    , Handler $ \(e :: SomeException)  -> logException e >>
-                                                         E.throwIO e
+                                                         loopRestore (E.throwIO e)
                    ]
 
         go = do

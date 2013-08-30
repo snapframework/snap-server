@@ -60,6 +60,15 @@ data IRequest = IRequest
     }
 
 ------------------------------------------------------------------------------
+instance Eq IRequest where
+    a == b =
+        and [ iMethod a                    == iMethod b
+            , iRequestUri a                == iRequestUri b
+            , iHttpVersion a               == iHttpVersion b
+            , H.toList (iRequestHeaders a) == H.toList (iRequestHeaders b)
+            ]
+
+------------------------------------------------------------------------------
 instance Show IRequest where
     show (IRequest m u (major, minor) host r) =
         concat [ show m
