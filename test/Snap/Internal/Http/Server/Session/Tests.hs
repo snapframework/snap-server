@@ -759,7 +759,7 @@ makeServerConfig hs = ServerConfig logAccess
         void $ readIORef (_isNewConnection psd) >>= evaluate
         return hs
 
-    logAccess !_ !_                = return $! ()
+    logAccess !_ !_ !_             = return $! ()
     logErr !e                      = void $ evaluate $ toByteString e
     onParse !_ !_                  = return $! ()
     onUserHandlerFinished !_ !_ !_ = return $! ()

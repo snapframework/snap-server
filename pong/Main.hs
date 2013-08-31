@@ -48,7 +48,7 @@ startTestSocketServer portNum userHandler =
 
     cleanup = N.close
 
-    logAccess _ _               = return ()
+    logAccess _ _ _             = return ()
     _logError !e                = S.putStrLn $ toByteString e
     onStart _                   = return ()
     onParse _ _                 = return ()

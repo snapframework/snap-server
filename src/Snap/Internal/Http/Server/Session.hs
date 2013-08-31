@@ -68,6 +68,7 @@ import           System.Locale                            (defaultTimeLocale)
 import qualified Paths_snap_server                        as V
 import           Snap.Core                                (EscapeSnap (..))
 import           Snap.Internal.Http.Types                 (Cookie (..),
+                                                           HttpVersion,
                                                            Method (..),
                                                            Request (..),
                                                            Response (..),
@@ -306,14 +307,14 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     -- Read the HTTP request from the socket, parse it, and pre-process it.
     receiveRequest :: IO Request
-    receiveRequest = do
+    receiveRequest = {-# SCC "httpSession/receiveRequest" #-} do
         readEnd' <- Streams.throwIfProducesMoreThan mAX_HEADERS_SIZE readEnd
         parseRequest readEnd' >>= toRequest
     {-# INLINE receiveRequest #-}
 
     --------------------------------------------------------------------------
     toRequest :: IRequest -> IO Request
-    toRequest !ireq = do
+    toRequest !ireq = {-# SCC "httpSession/toRequest" #-} do
         -- HTTP spec section 14.23: "All Internet-based HTTP/1.1 servers MUST
         -- respond with a 400 (Bad Request) status code to any HTTP/1.1 request
         -- message which lacks a Host header field."
@@ -331,10 +332,10 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
         -- Call setupReadEnd, which handles transfer-encoding: chunked or
         -- content-length restrictions, etc
-        readEnd' <- setupReadEnd
+        !readEnd' <- setupReadEnd
 
         -- Parse an application/x-www-form-urlencoded form, if it was sent
-        (readEnd'', postParams) <- parseForm readEnd'
+        (!readEnd'', postParams) <- parseForm readEnd'
 
         let allParams = Map.unionWith (++) queryParams postParams
 
@@ -366,21 +367,21 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
       where
         ----------------------------------------------------------------------
-        method        = iMethod ireq
-        version       = iHttpVersion ireq
-        stdHdrs       = iStdHeaders ireq
-        hdrs          = iRequestHeaders ireq
+        !method       = iMethod ireq
+        !version      = iHttpVersion ireq
+        !stdHdrs      = iStdHeaders ireq
+        !hdrs         = iRequestHeaders ireq
 
-        isHttp11      = version >= (1, 1)
+        !isHttp11     = version >= (1, 1)
 
-        mbHost        = getStdHost stdHdrs
-        localHost     = fromMaybe localHostname mbHost
+        !mbHost       = getStdHost stdHdrs
+        !localHost    = fromMaybe localHostname mbHost
         mbCL          = unsafeFromNat <$> getStdContentLength stdHdrs
-        isChunked     = (CI.mk <$> getStdTransferEncoding stdHdrs)
+        !isChunked    = (CI.mk <$> getStdTransferEncoding stdHdrs)
                             == Just "chunked"
         cookies       = fromMaybe [] (getStdCookie stdHdrs >>= parseCookie)
         contextPath   = "/"
-        uri           = iRequestUri ireq
+        !uri          = iRequestUri ireq
         queryParams   = parseUrlEncoded queryString
         emptyParams   = Map.empty
 
@@ -411,7 +412,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         -- content-length, the request body is null string.
         noContentLength :: IO (InputStream ByteString)
         noContentLength = do
-            when (method `elem` [POST, PUT]) return411
+            when (method == POST || method == PUT) return411
             Streams.fromList []
 
         ----------------------------------------------------------------------
@@ -491,7 +492,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
     --------------------------------------------------------------------------
     {-# INLINE processRequest #-}
-    processRequest !hookState !req = do
+    processRequest !hookState !req = {-# SCC "httpSession/processRequest" #-} do
         -- successfully parsed a request, so restart the timer
         tickle $ max defaultTimeout
 
@@ -512,35 +513,55 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
     --------------------------------------------------------------------------
     {-# INLINE runServerHandler #-}
-    runServerHandler !hookState !req = do
+    runServerHandler !hookState !req = {-# SCC "httpSession/runServerHandler" #-} do
         (_, rsp0) <- serverHandler config sessionData req
         userHandlerFinishedHook hookState req rsp0
 
         -- check whether we should close the connection after sending the
         -- response
         let v    = rqVersion req
-        let rsp1 = rsp0 { rspHttpVersion = rqVersion req }
-        checkConnectionClose v (H.lookup "connection" $ rspHeaders rsp1)
         cc <- readIORef forceConnectionClose
-        let rsp2 = if cc then (setHeader "Connection" "close" rsp1) else rsp1
+
+        -- checkConnectionClose v (H.lookup "connection" $ rspHeaders rsp0)
+        -- let rsp2 = if cc then (setHeader "Connection" "close" rsp0) else rsp0
 
         -- skip unread portion of request body if rspTransformingRqBody is not
         -- true
-        unless (rspTransformingRqBody rsp2) $ Streams.skipToEof (rqBody req)
+        unless (rspTransformingRqBody rsp0) $ Streams.skipToEof (rqBody req)
+
         date <- getDateString
-        let insServer = if isJust (getHeader "Server" rsp2)
-                          then id
-                          else H.set "Server" sERVER_HEADER
-        let !rsp = updateHeaders (insServer . H.set "Date" date) rsp2
-        bytesSent <- sendResponse rsp `E.catch`
+        let (hdrs, cc') = addDateAndServerHeaders (v == (1,0)) date cc $
+                          headers rsp0
+        writeIORef forceConnectionClose cc'
+        let !rsp = updateHeaders (const hdrs) rsp0
+        bytesSent <- sendResponse v rsp `E.catch`
                      catchUserException hookState "sending-response" req
-        let rspFinal = maybe (setContentLength bytesSent rsp)
-                             (const rsp)
-                             (rspContentLength rsp)
-        dataFinishedHook hookState req rspFinal
-        logAccess req rspFinal
-        cc' <- readIORef forceConnectionClose
+        dataFinishedHook hookState req rsp
+        logAccess req rsp bytesSent
         return $! not cc'
+
+    --------------------------------------------------------------------------
+    addDateAndServerHeaders !is1_0 date !cc !hdrs =
+        let (!hdrs', !newcc) = go [("Date",date)] False cc $ H.toList hdrs
+        in (H.fromList hdrs', newcc)
+      where
+        go !l !seenServer !connClose [] =
+            let addsvr = if seenServer then id else (("Server", sERVER_HEADER):)
+            in ( addsvr $ if connClose then (("Connection", "close"):l) else l
+               , connClose
+               )
+        go l _ c (x@("Server",_):xs) = go (x:l) True c xs
+        go l seenServer c (("Date",_):xs) = go l seenServer c xs
+        go l seenServer c (x@("Connection", v):xs) =
+            let (l', cc') = if c
+                              then (l,c)
+                              else if (not is1_0 && v == "close")
+                                     then (l, True)
+                                     else if (is1_0 && v /= "keep-alive")
+                                            then (l, True)
+                                            else ((x:l), c)
+            in go l' seenServer cc' xs
+        go l seenServer c (x:xs) = go (x:l) seenServer c xs
 
     --------------------------------------------------------------------------
     escapeSnapHandler hookState (EscapeHttp escapeHandler) = do
@@ -568,16 +589,16 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         terminateSession e
 
     --------------------------------------------------------------------------
-    sendResponse :: Response -> IO Int64
-    sendResponse !rsp0 = {-# SCC "sendResponse" #-} do
+    sendResponse :: HttpVersion -> Response -> IO Int64
+    sendResponse !v !rsp0 = {-# SCC "sendResponse" #-} do
         let !rsp1 = renderCookies rsp0
         let !code = rspStatus rsp1
         let (rsp, shouldClose) = if isNothing (rspContentLength rsp1) &&
                                     code /= 204 && code /= 304
-                                   then noCL rsp1
+                                   then noCL v rsp1
                                    else (rsp1, False)
         when shouldClose $ writeIORef forceConnectionClose True
-        let (BIP headerBuilder hlen) = mkHeaderBuilder rsp
+        let (BIP headerBuilder hlen) = mkHeaderBuilder v rsp
         nBodyBytes <- case rspBody rsp of
                         Stream s ->
                             whenStream headerBuilder hlen rsp s
@@ -590,9 +611,9 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         return $! nBodyBytes - fromIntegral hlen
 
     --------------------------------------------------------------------------
-    noCL :: Response -> (Response, Bool)
-    noCL r =
-        if rspHttpVersion r >= (1,1)
+    noCL :: HttpVersion -> Response -> (Response, Bool)
+    noCL v r =
+        if v >= (1,1)
           then let r'       = setHeader "Transfer-Encoding" "chunked" r
                    origBody = rspBodyToEnum $ rspBody r
                    body     = \os -> do
@@ -669,8 +690,8 @@ data BuilderIntPair = BIP Builder {-# UNPACK #-} !Int
 
 
 --------------------------------------------------------------------------
-mkHeaderLine :: Response -> BuilderIntPair
-mkHeaderLine r =
+mkHeaderLine :: HttpVersion -> Response -> BuilderIntPair
+mkHeaderLine outVer r =
     case outCode of
         200 | outVer == (1, 1) ->
                   BIP (fromByteString "HTTP/1.1 200 OK\r\n") 17
@@ -679,7 +700,6 @@ mkHeaderLine r =
         _ -> BIP line len
   where
     outCode = rspStatus r
-    outVer  = rspHttpVersion r
     space   = fromChar ' '
 
     v = if outVer == (1,1) then "HTTP/1.1 " else "HTTP/1.0 "
@@ -694,10 +714,10 @@ mkHeaderLine r =
 
 
 --------------------------------------------------------------------------
-mkHeaderBuilder :: Response -> BuilderIntPair
-mkHeaderBuilder r = BIP builder outlen
+mkHeaderBuilder :: HttpVersion -> Response -> BuilderIntPair
+mkHeaderBuilder v r = BIP builder outlen
   where
-    (BIP hline hline_len) = mkHeaderLine r
+    (BIP hline hline_len) = mkHeaderLine v r
     (BIP hdrs hlen)       = buildHdrs $ headers r
     builder               = hline <> hdrs <> writeCRLF
     outlen                = hline_len + hlen + 2

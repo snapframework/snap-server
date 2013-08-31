@@ -133,7 +133,7 @@ type EscapeSnapHook hookState = IORef hookState -> IO ()
 -- | Data and services that all HTTP response handlers share.
 --
 data ServerConfig hookState = ServerConfig
-    { _logAccess             :: !(Request -> Response -> IO ())
+    { _logAccess             :: !(Request -> Response -> Int64 -> IO ())
     , _logError              :: !(Builder -> IO ())
     , _onStart               :: !(StartHook hookState)
     , _onParse               :: !(ParseHook hookState)

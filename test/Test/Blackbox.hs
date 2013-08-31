@@ -105,7 +105,7 @@ startTestSocketServer = bracketOnError getSock cleanup forkServer
 
     cleanup = N.close
 
-    logAccess !_ !_                = return ()
+    logAccess !_ !_ !_             = return ()
     logError !_                    = return ()
     onStart !_                     = return ()
     onParse !_ !_                  = return ()
