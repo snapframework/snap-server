@@ -281,9 +281,6 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     -- Begin HTTP session processing.
     loop :: IO ()
     loop = do
-        -- the timer resets to its default value here.
-        tickle $ const defaultTimeout
-
         -- peek first to ensure startHook gets generated at the right time.
         readEndAtEof >>= (flip unless $ do
             hookState <- startHook sessionData >>= newIORef
@@ -499,7 +496,13 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                            , Handler $
                              catchUserException hookState "user handler" req
                            ]
-        when b (yield >> writeIORef isNewConnection False >> loop)
+        if b
+          then do yield
+                  writeIORef isNewConnection False
+                  -- the timer resets to its default value here.
+                  tickle $ const defaultTimeout
+                  loop
+          else return $! ()
 
     --------------------------------------------------------------------------
     {-# INLINE runServerHandler #-}
@@ -560,7 +563,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
     --------------------------------------------------------------------------
     sendResponse :: Response -> IO Int64
-    sendResponse !rsp0 = do
+    sendResponse !rsp0 = {-# SCC "sendResponse" #-} do
         let !rsp1 = renderCookies rsp0
         let !code = rspStatus rsp1
         let (rsp, shouldClose) = if isNothing (rspContentLength rsp1) &&
@@ -692,9 +695,9 @@ mkHeaderBuilder r = BIP builder outlen
 ------------------------------------------------------------------------------
 buildHdrs :: Headers -> BuilderIntPair
 buildHdrs hdrs =
-    H.fold f (BIP mempty 0) hdrs
+    H.foldr f (BIP mempty 0) hdrs
   where
-    f (BIP b len) !k !y =
+    f !k !y (BIP b len) =
         let k'    = CI.original k
             kb    = fromByteString k' <> fromByteString ": "
             !len' = S.length k' + S.length y + 4

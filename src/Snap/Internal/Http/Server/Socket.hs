@@ -54,13 +54,20 @@ getLocalAddress sock = getSocketName sock >>= liftM snd . getAddress
 
 
 ------------------------------------------------------------------------------
+-- TODO(greg): move buffer size configuration into config
+bUFSIZ :: Int
+bUFSIZ = 4064
+
+
+------------------------------------------------------------------------------
 httpAcceptFunc :: Socket                     -- ^ bound socket
                -> AcceptFunc
 httpAcceptFunc boundSocket restore = do
     (sock, remoteAddr)       <- restore $ accept boundSocket
     localAddr                <- getLocalAddress sock
     (remotePort, remoteHost) <- getAddress remoteAddr
-    (readEnd, writeEnd)      <- Streams.socketToStreams sock
+    (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize bUFSIZ
+                                                                      sock
     let cleanup              =  Streams.write Nothing writeEnd >> close sock
     return $! ( sendFileFunc sock
               , localAddr
