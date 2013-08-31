@@ -538,11 +538,10 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         let (hdrs, cc') = addDateAndServerHeaders (v == (1,0)) date cc $
                           headers rsp0
         writeIORef forceConnectionClose cc'
-        let !rsp = updateHeaders (const hdrs) rsp0
-        bytesSent <- sendResponse v rsp `E.catch`
+        bytesSent <- sendResponse v rsp0 hdrs `E.catch`
                      catchUserException hookState "sending-response" req
-        dataFinishedHook hookState req rsp
-        logAccess req rsp bytesSent
+        dataFinishedHook hookState req rsp0
+        logAccess req rsp0 bytesSent
         return $! not cc'
 
     --------------------------------------------------------------------------
@@ -591,17 +590,21 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         terminateSession e
 
     --------------------------------------------------------------------------
-    sendResponse :: HttpVersion -> Response -> IO Int64
-    sendResponse !v !rsp0 = {-# SCC "sendResponse" #-} do
-        let !rsp1 = renderCookies rsp0
-        let !code = rspStatus rsp1
-        let (rsp, shouldClose) = if isNothing (rspContentLength rsp1) &&
-                                    code /= 204 && code /= 304
-                                   then noCL v rsp1
-                                   else (rsp1, False)
+    sendResponse :: HttpVersion -> Response -> Headers -> IO Int64
+    sendResponse !v !rsp !hdrs = {-# SCC "sendResponse" #-} do
+        let !hdrs'  = renderCookies rsp hdrs
+        let !code   = rspStatus rsp
+        let body    = rspBody rsp
+        let hasNoCL = isNothing (rspContentLength rsp) && code /= 204
+                                                       && code /= 304
+
+        let (hdrs'', body', shouldClose) = if hasNoCL
+                                             then noCL v hdrs' rsp body
+                                             else (hdrs', body, False)
+
         when shouldClose $ writeIORef forceConnectionClose True
-        let (BIP headerBuilder hlen) = mkHeaderBuilder v rsp
-        nBodyBytes <- case rspBody rsp of
+        let (BIP headerBuilder hlen) = mkHeaderBuilder v rsp hdrs''
+        nBodyBytes <- case body' of
                         Stream s ->
                             whenStream headerBuilder hlen rsp s
                         SendFile f Nothing ->
@@ -613,19 +616,24 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         return $! nBodyBytes - fromIntegral hlen
 
     --------------------------------------------------------------------------
-    noCL :: HttpVersion -> Response -> (Response, Bool)
-    noCL v r =
-        if v >= (1,1)
-          then let r'       = setHeader "Transfer-Encoding" "chunked" r
-                   origBody = rspBodyToEnum $ rspBody r
-                   body     = \os -> do
-                               os' <- writeChunkedTransferEncoding os
-                               origBody os'
-               in (r' { rspBody = Stream body }, False)
-        else
-           -- HTTP/1.0 and no content-length? We'll have to close the
-           -- socket.
-           (setHeader "Connection" "close" r, True)
+    noCL :: HttpVersion
+         -> Headers
+         -> Response
+         -> ResponseBody
+         -> (Headers, ResponseBody, Bool)
+    noCL v hdrs r body =
+        if v == (1,1)
+          then let origBody = rspBodyToEnum body
+                   body'    = \os -> do
+                                 os' <- writeChunkedTransferEncoding os
+                                 origBody os'
+               in ( H.insert "Transfer-Encoding" "chunked" hdrs
+                  , Stream body'
+                  , False)
+          else
+            -- HTTP/1.0 and no content-length? We'll have to close the
+            -- socket.
+            (H.insert "Connection" "close" hdrs, body, True)
     {-# INLINE noCL #-}
 
     --------------------------------------------------------------------------
@@ -718,11 +726,11 @@ mkHeaderLine outVer r =
 
 
 --------------------------------------------------------------------------
-mkHeaderBuilder :: HttpVersion -> Response -> BuilderIntPair
-mkHeaderBuilder v r = BIP builder outlen
+mkHeaderBuilder :: HttpVersion -> Response -> Headers -> BuilderIntPair
+mkHeaderBuilder v r hdrs = BIP builder outlen
   where
     hlineWrite = mkHeaderLine v r
-    hdrsWrite  = headersToWrite $ headers r
+    hdrsWrite  = headersToWrite hdrs
     hlen       = getBound hdrsWrite
     builder    = fromWrite (hlineWrite <> hdrsWrite)
     outlen     = getBound hlineWrite + hlen
@@ -813,10 +821,10 @@ cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
 
 
 ------------------------------------------------------------------------------
-renderCookies :: Response -> Response
-renderCookies r = updateHeaders f r
+renderCookies :: Response -> Headers -> Headers
+renderCookies r hdrs
+    | null cookies = hdrs
+    | otherwise = foldl' (\m v -> H.insert "Set-Cookie" v m) hdrs cookies
+
   where
-    f h = if null cookies
-            then h
-            else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
