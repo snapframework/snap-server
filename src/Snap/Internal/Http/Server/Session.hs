@@ -19,12 +19,14 @@ module Snap.Internal.Http.Server.Session
 import           Blaze.ByteString.Builder                 (Builder, flush,
                                                            fromByteString)
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
-                                                           fromString)
-import           Blaze.ByteString.Builder.Internal        (defaultBufferSize)
+                                                           fromString,
+                                                           writeChar)
+import           Blaze.ByteString.Builder.Internal        (defaultBufferSize,
+                                                           fromWrite)
 import           Blaze.ByteString.Builder.Internal.Buffer (Buffer,
                                                            allocBuffer)
 ------------------------------------------------------------------------------
-import           Control.Applicative                      ((<$>), (<|>))
+import           Control.Applicative                      ((<$>))
 import           Control.Arrow                            (first, second)
 import           Control.Concurrent                       (MVar, ThreadId,
                                                            forkIOWithUnmask,
@@ -85,6 +87,10 @@ import           Snap.Internal.Http.Server.Common         (eatException)
 import           Snap.Internal.Http.Server.Date           (getCurrentDateTime,
                                                            getDateString)
 import           Snap.Internal.Http.Server.Parser         (IRequest (..),
+                                                           getStdConnection, getStdContentLength,
+                                                           getStdContentType,
+                                                           getStdCookie,
+                                                           getStdHost, getStdTransferEncoding,
                                                            parseCookie,
                                                            parseRequest,
                                                            parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
@@ -334,7 +340,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
         -- Decide whether the connection should be closed after the response is
         -- sent (stored in the forceConnectionClose IORef).
-        checkConnectionClose version hdrs
+        checkConnectionClose version $ getStdConnection stdHdrs
 
         -- The request is now ready for processing.
         return $! Request host
@@ -360,20 +366,23 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
       where
         ----------------------------------------------------------------------
-        method      = iMethod ireq
-        version     = iHttpVersion ireq
-        isHttp11    = version >= (1, 1)
-        mbHost      = H.lookup "host" hdrs <|> iHost ireq
-        localHost   = fromMaybe localHostname $! iHost ireq
-        hdrs        = iRequestHeaders ireq
-        isChunked   = (CI.mk <$> H.lookup "transfer-encoding" hdrs)
-                         == Just "chunked"
-        mbCL        = unsafeFromNat <$> H.lookup "content-length" hdrs
-        cookies     = fromMaybe [] (H.lookup "cookie" hdrs >>= parseCookie)
-        contextPath = "/"
-        uri         = iRequestUri ireq
-        queryParams = parseUrlEncoded queryString
-        emptyParams = Map.empty
+        method        = iMethod ireq
+        version       = iHttpVersion ireq
+        stdHdrs       = iStdHeaders ireq
+        hdrs          = iRequestHeaders ireq
+
+        isHttp11      = version >= (1, 1)
+
+        mbHost        = getStdHost stdHdrs
+        localHost     = fromMaybe localHostname mbHost
+        mbCL          = unsafeFromNat <$> getStdContentLength stdHdrs
+        isChunked     = (CI.mk <$> getStdTransferEncoding stdHdrs)
+                            == Just "chunked"
+        cookies       = fromMaybe [] (getStdCookie stdHdrs >>= parseCookie)
+        contextPath   = "/"
+        uri           = iRequestUri ireq
+        queryParams   = parseUrlEncoded queryString
+        emptyParams   = Map.empty
 
         ----------------------------------------------------------------------
         (pathInfo, queryString) = first dropLeadingSlash . second (S.drop 1)
@@ -428,7 +437,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
           where
             trimIt  = fst . S.spanEnd (== ' ') . S.takeWhile (/= ';')
                           . S.dropWhile (== ' ')
-            mbCT    = trimIt <$> H.lookup "content-type" hdrs
+            mbCT    = trimIt <$> getStdContentType stdHdrs
             hasForm = mbCT == Just "application/x-www-form-urlencoded"
 
             mAX_POST_BODY_SIZE = 1024 * 1024
@@ -442,13 +451,13 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                 return (finalReadEnd, postParams)
 
     ----------------------------------------------------------------------
-    checkConnectionClose version hdrs = do
+    checkConnectionClose version connection = do
         -- For HTTP/1.1: if there is an explicit Connection: close, we'll close
         -- the socket later.
         --
         -- For HTTP/1.0: if there is no explicit Connection: Keep-Alive,
         -- close the socket later.
-        let v = CI.mk <$> H.lookup "Connection" hdrs
+        let v = CI.mk <$> connection
         when ((version == (1, 1) && v == Just "close") ||
               (version == (1, 0) && v /= Just "keep-alive")) $
               writeIORef forceConnectionClose True
@@ -472,14 +481,11 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     {-# INLINE checkExpect100Continue #-}
     checkExpect100Continue req =
         when (getHeader "Expect" req == Just "100-continue") $ do
-            let (major, minor) = rqVersion req
-            let hl = mconcat [ fromByteString "HTTP/"
-                             , fromShow major
-                             , fromChar '.'
-                             , fromShow minor
-                             , fromByteString " 100 Continue\r\n\r\n"
-                             , flush
-                             ]
+            let v = if rqVersion req == (1,1) then "HTTP/1.1" else "HTTP/1.0"
+
+            let hl = fromByteString v                       <>
+                     fromByteString " 100 Continue\r\n\r\n" <>
+                     flush
             os <- newBuffer
             Streams.write (Just hl) os
 
@@ -514,7 +520,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         -- response
         let v    = rqVersion req
         let rsp1 = rsp0 { rspHttpVersion = rqVersion req }
-        checkConnectionClose v (rspHeaders rsp1)
+        checkConnectionClose v (H.lookup "connection" $ rspHeaders rsp1)
         cc <- readIORef forceConnectionClose
         let rsp2 = if cc then (setHeader "Connection" "close" rsp1) else rsp1
 
@@ -659,56 +665,58 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
 
 --------------------------------------------------------------------------
-data BuilderIntPair = BIP !Builder {-# UNPACK #-} !Int
+data BuilderIntPair = BIP Builder {-# UNPACK #-} !Int
+
+
+--------------------------------------------------------------------------
+mkHeaderLine :: Response -> BuilderIntPair
+mkHeaderLine r =
+    case outCode of
+        200 | outVer == (1, 1) ->
+                  BIP (fromByteString "HTTP/1.1 200 OK\r\n") 17
+        200 | otherwise ->
+                  BIP (fromByteString "HTTP/1.0 200 OK\r\n") 17
+        _ -> BIP line len
+  where
+    outCode = rspStatus r
+    outVer  = rspHttpVersion r
+    space   = fromChar ' '
+
+    v = if outVer == (1,1) then "HTTP/1.1 " else "HTTP/1.0 "
+    outCodeStr = show outCode
+    reason = rspStatusReason r
+    line = fromByteString v        <>
+           fromString outCodeStr   <>
+           space                   <>
+           fromByteString reason   <>
+           writeCRLF
+    len = 12 + length outCodeStr + S.length reason
 
 
 --------------------------------------------------------------------------
 mkHeaderBuilder :: Response -> BuilderIntPair
 mkHeaderBuilder r = BIP builder outlen
   where
-    (major, minor)  = rspHttpVersion r
-    (BIP hdrs hlen) = buildHdrs $ headers r
-    majstr          = show major
-    minstr          = show minor
-    !majlen         = length majstr
-    !minlen         = length minstr
-    statstr         = show $ rspStatus r
-    !statlen        = length statstr
-    crlf            = fromByteString "\r\n"
-    space           = fromChar ' '
-    reason          = rspStatusReason r
-    builder         = mconcat [ fromByteString "HTTP/"
-                              , fromString majstr
-                              , fromChar '.'
-                              , fromString minstr
-                              , space
-                              , fromString $ statstr
-                              , space
-                              , fromByteString reason
-                              , crlf
-                              , hdrs
-                              , crlf
-                              ]
-    !outlen         = 12 + majlen + minlen + statlen + S.length reason + hlen
+    (BIP hline hline_len) = mkHeaderLine r
+    (BIP hdrs hlen)       = buildHdrs $ headers r
+    builder               = hline <> hdrs <> writeCRLF
+    outlen                = hline_len + hlen + 2
 
 
 ------------------------------------------------------------------------------
 buildHdrs :: Headers -> BuilderIntPair
 buildHdrs hdrs =
-    H.foldr f (BIP mempty 0) hdrs
+    H.foldl' f (BIP mempty 0) hdrs
   where
-    f !k !y (BIP b len) =
+    f (BIP b len) !k !y =
         let k'    = CI.original k
             kb    = fromByteString k' <> fromByteString ": "
             !len' = S.length k' + S.length y + 4
-            b'    = mconcat [ b
-                            , kb
-                            , fromByteString y
-                            , crlf
-                            ]
+            b'    = b                <>
+                    kb               <>
+                    fromByteString y <>
+                    writeCRLF
         in BIP b' (len + len')
-
-    crlf = fromByteString "\r\n"
 
 
 ------------------------------------------------------------------------------
@@ -768,3 +776,10 @@ renderCookies r = updateHeaders f r
             then h
             else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
+
+
+--------------------------------------------------------------------------
+-- | Write a CRLF sequence.
+writeCRLF :: Builder
+writeCRLF = fromWrite (writeChar '\r' <> writeChar '\n')
+{-# INLINE writeCRLF #-}

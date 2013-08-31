@@ -29,10 +29,10 @@ data DateState = DateState {
 ------------------------------------------------------------------------------
 dateState :: DateState
 dateState = unsafePerformIO $ do
-    (!s1,!s2,!date) <- fetchTime
-    bs1 <- newIORef s1
-    bs2 <- newIORef s2
-    dt  <- newIORef date
+    (s1, s2, date) <- fetchTime
+    bs1 <- newIORef $! s1
+    bs2 <- newIORef $! s2
+    dt  <- newIORef $! date
 
     return $! DateState bs1 bs2 dt
 {-# NOINLINE dateState #-}

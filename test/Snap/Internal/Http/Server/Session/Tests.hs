@@ -198,11 +198,13 @@ testNoHost = testCase "session/noHost" $
 ------------------------------------------------------------------------------
 testNoHost1_0 :: Test
 testNoHost1_0 = testCase "session/noHost1_0" $ do
-    out <- getSessionOutput ["GET / HTTP/1.0\r\n\r\n"] snap
+    out <- getSessionOutput ["GET / HTTP/1.0\r\n\r\n"] snap1
     assertBool "no host 1.0" $ S.isSuffixOf "\r\nbackup-localhost" out
+    out2 <- getSessionOutput ["GET / HTTP/1.0\r\n\r\n"] snap2
+    assertBool "no host 1.0-2" $ S.isSuffixOf "\r\nbackup-localhost" out2
   where
-    snap = getRequest >>= writeBS . rqHostName
-
+    snap1 = getRequest >>= writeBS . rqHostName
+    snap2 = getRequest >>= writeBS . rqLocalHostname
 
 ------------------------------------------------------------------------------
 testChunkedRequest :: Test

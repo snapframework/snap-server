@@ -83,7 +83,8 @@ Library
     time                      >= 1.0      && < 1.5,
     transformers              >= 0.3      && < 0.4,
     transformers-base         >= 0.4      && < 0.5,
-    unix-compat               >= 0.2      && < 0.5
+    unix-compat               >= 0.2      && < 0.5,
+    vector                    >= 0.7      && < 0.11
 
   other-extensions:
     BangPatterns,
@@ -188,6 +189,7 @@ Test-suite testsuite
     transformers               >= 0.3      && < 0.4,
     transformers-base          >= 0.4      && < 0.5,
     unix-compat                >= 0.2      && < 0.5,
+    vector                     >= 0.7      && < 0.11,
 
     HUnit                      >= 1.2      && < 2,
     QuickCheck                 >= 2.3.0.2  && < 3,
@@ -271,7 +273,8 @@ Benchmark benchmark
     case-insensitive,
     criterion     >= 0.6     && <0.9,
     io-streams    >= 1.1.0.4 && <1.2,
-    snap-core     >= 1.0     && <1.1
+    snap-core     >= 1.0     && <1.1,
+    vector        >= 0.7     && <0.11
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -rtsopts
@@ -355,7 +358,8 @@ Executable snap-test-pong-server
     time                      >= 1.0      && < 1.5,
     transformers              >= 0.3      && < 0.4,
     transformers-base         >= 0.4      && < 0.5,
-    unix-compat               >= 0.2      && < 0.5
+    unix-compat               >= 0.2      && < 0.5,
+    vector                    >= 0.7      && < 0.11
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -threaded -rtsopts

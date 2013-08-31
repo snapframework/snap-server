@@ -16,12 +16,19 @@ module Snap.Internal.Http.Server.Parser
   , parseFromStream
   , parseCookie
   , parseUrlEncoded
+  , getStdContentLength
+  , getStdHost
+  , getStdTransferEncoding
+  , getStdCookie
+  , getStdContentType
+  , getStdConnection
   ) where
 
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder         (Builder)
 import           Blaze.ByteString.Builder.HTTP    (chunkedTransferEncoding,
                                                    chunkedTransferTerminator)
+import           Control.Applicative              ((<$>))
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
@@ -30,10 +37,14 @@ import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take,
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (ByteString, w2c)
 import qualified Data.ByteString.Unsafe           as S
+import           Data.CaseInsensitive             (CI)
 import qualified Data.CaseInsensitive             as CI
 import           Data.IORef                       (newIORef, readIORef,
                                                    writeIORef)
+import           Data.Maybe                       (fromMaybe)
 import           Data.Typeable                    (Typeable)
+import qualified Data.Vector                      as V
+import qualified Data.Vector.Mutable              as MV
 import           GHC.Exts                         (Int (..), Int#, (+#))
 import           Prelude                          hiding (head, take,
                                                    takeWhile)
@@ -50,13 +61,57 @@ import qualified Snap.Types.Headers               as H
 
 
 ------------------------------------------------------------------------------
+newtype StandardHeaders = StandardHeaders (V.Vector (Maybe ByteString))
+type MStandardHeaders = MV.IOVector (Maybe ByteString)
+
+
+------------------------------------------------------------------------------
+contentLengthTag, hostTag, transferEncodingTag, cookieTag, contentTypeTag,
+  connectionTag, nStandardHeaders :: Int
+contentLengthTag    = 0
+hostTag             = 1
+transferEncodingTag = 2
+cookieTag           = 3
+contentTypeTag      = 4
+connectionTag       = 5
+nStandardHeaders    = 6
+
+
+------------------------------------------------------------------------------
+findStdHeaderIndex :: CI ByteString -> Int
+findStdHeaderIndex "content-length"    = contentLengthTag
+findStdHeaderIndex "host"              = hostTag
+findStdHeaderIndex "transfer-encoding" = transferEncodingTag
+findStdHeaderIndex "cookie"            = cookieTag
+findStdHeaderIndex "content-type"      = contentTypeTag
+findStdHeaderIndex "connection"        = connectionTag
+findStdHeaderIndex _                   = -1
+
+
+------------------------------------------------------------------------------
+getStdContentLength, getStdHost, getStdTransferEncoding, getStdCookie,
+    getStdConnection, getStdContentType :: StandardHeaders -> Maybe ByteString
+getStdContentLength    (StandardHeaders v) = V.unsafeIndex v contentLengthTag
+getStdHost             (StandardHeaders v) = V.unsafeIndex v hostTag
+getStdTransferEncoding (StandardHeaders v) = V.unsafeIndex v transferEncodingTag
+getStdCookie           (StandardHeaders v) = V.unsafeIndex v cookieTag
+getStdContentType      (StandardHeaders v) = V.unsafeIndex v contentTypeTag
+getStdConnection       (StandardHeaders v) = V.unsafeIndex v connectionTag
+
+
+------------------------------------------------------------------------------
+newMStandardHeaders :: IO MStandardHeaders
+newMStandardHeaders = MV.replicate nStandardHeaders Nothing
+
+
+------------------------------------------------------------------------------
 -- | an internal version of the headers part of an HTTP request
 data IRequest = IRequest
     { iMethod         :: !Method
-    , iRequestUri     :: {-# UNPACK #-} !ByteString
+    , iRequestUri     :: !ByteString
     , iHttpVersion    :: {-# UNPACK #-} !(Int, Int)
-    , iHost           :: !(Maybe ByteString)
-    , iRequestHeaders :: !Headers
+    , iRequestHeaders :: Headers
+    , iStdHeaders     :: StandardHeaders
     }
 
 ------------------------------------------------------------------------------
@@ -70,7 +125,7 @@ instance Eq IRequest where
 
 ------------------------------------------------------------------------------
 instance Show IRequest where
-    show (IRequest m u (major, minor) host r) =
+    show (IRequest m u (major, minor) hdrs _) =
         concat [ show m
                , " "
                , show u
@@ -79,9 +134,8 @@ instance Show IRequest where
                , "."
                , show minor
                , " "
-               , show host
-               , " "
-               , show r ]
+               , show hdrs
+               ]
 
 
 ------------------------------------------------------------------------------
@@ -93,15 +147,18 @@ instance Exception HttpParseException
 parseRequest :: InputStream ByteString -> IO IRequest
 parseRequest input = do
     line <- pLine input
-    let (!mStr,!s)      = bSp line
+    let (!mStr, !s)     = bSp line
     let (!uri, !vStr)   = bSp s
     let method          = methodFromString mStr
     let !version        = pVer vStr
     let (host, uri')    = getHost uri
     let uri''           = if S.null uri' then "/" else uri'
 
-    hdrs    <- pHeaders input
-    return $! IRequest method uri'' version host hdrs
+    stdHdrs <- newMStandardHeaders
+    MV.unsafeWrite stdHdrs hostTag host
+    hdrs    <- pHeaders stdHdrs input
+    outStd  <- StandardHeaders <$> V.unsafeFreeze stdHdrs
+    return $! IRequest method uri'' version hdrs outStd
 
   where
     getHost s | "http://" `S.isPrefixOf` s
@@ -144,15 +201,14 @@ pLine input = go []
         !mb <- Streams.read input
         !s  <- maybe throwNoCRLF return mb
 
-        case findCRLF s of
-            FoundCRLF idx# -> foundCRLF l s idx#
-            NoCR           -> noCRLF l s
-            LastIsCR idx#  -> lastIsCR l s idx#
-            _              -> throwBadCRLF
+        case S.elemIndex '\r' s of
+            Nothing                               -> noCRLF l s
+            Just !i | i+1 >= S.length s           -> lastIsCR l s i
+                    | S.unsafeIndex s (i+1) == 10 -> foundCRLF l s i
+                    | otherwise                   -> throwBadCRLF
 
-    foundCRLF l s idx# = do
-        let !i1 = (I# idx#)
-        let !i2 = (I# (idx# +# 2#))
+    foundCRLF l s !i1 = do
+        let !i2 = i1 + 2
         let !a = S.unsafeTake i1 s
         when (i2 < S.length s) $ do
             let !b = S.unsafeDrop i2 s
@@ -164,42 +220,20 @@ pLine input = go []
 
     noCRLF l s = go (s:l)
 
-    lastIsCR l s idx# = do
+    lastIsCR l s !idx = do
         !t <- Streams.read input >>= maybe throwNoCRLF return
         if S.null t
-          then lastIsCR l s idx#
+          then lastIsCR l s idx
           else do
             let !c = S.unsafeHead t
             if c /= 10
               then throwBadCRLF
               else do
-                  let !a = S.unsafeTake (I# idx#) s
+                  let !a = S.unsafeTake idx s
                   let !b = S.unsafeDrop 1 t
                   when (not $ S.null b) $ Streams.unRead b input
                   let !out = if null l then a else S.concat (reverse (a:l))
                   return out
-
-
-------------------------------------------------------------------------------
-data CS = FoundCRLF !Int#
-        | NoCR
-        | LastIsCR !Int#
-        | BadCR
-
-
-------------------------------------------------------------------------------
-findCRLF :: ByteString -> CS
-findCRLF b =
-    case S.elemIndex '\r' b of
-      Nothing         -> NoCR
-      Just !i@(I# i#) ->
-          let !i' = i + 1
-          in if i' < S.length b
-               then if S.unsafeIndex b i' == 10
-                      then FoundCRLF i#
-                      else BadCR
-               else LastIsCR i#
-{-# INLINE findCRLF #-}
 
 
 ------------------------------------------------------------------------------
@@ -248,38 +282,44 @@ isLWS c = c == ' ' || c == '\t'
 
 
 ------------------------------------------------------------------------------
-pHeaders :: InputStream ByteString -> IO Headers
-pHeaders input = go H.empty
+pHeaders :: MStandardHeaders -> InputStream ByteString -> IO Headers
+pHeaders stdHdrs input = do
+    hdrs    <- H.fromList <$> go []
+    return hdrs
+
   where
-    go !hdrs = do
+    go !list = do
         line <- pLine input
         if S.null line
-          then return hdrs
+          then return list
           else do
-            let (!k,!v) = splitHeader line
+            let (!k0,!v) = splitHeader line
             vf <- pCont id
             let vs = vf []
             let !v' = if null vs then v else S.concat (v:vs)
-            let !hdrs' = H.insert (CI.mk k) v' hdrs
-            go hdrs'
+            let !k  = CI.mk k0
+            let idx = findStdHeaderIndex k
+            when (idx >= 0) $ MV.unsafeWrite stdHdrs idx $! Just v'
 
-      where
-        trimBegin = S.dropWhile isLWS
+            let l' = ((k, v'):list)
+            go l'
 
-        pCont !dlist = do
-            mbS  <- Streams.peek input
-            maybe (return dlist)
-                  (\s -> if S.null s
-                           then Streams.read input >> pCont dlist
-                           else if isLWS $ w2c $ S.unsafeHead s
-                                  then procCont dlist
-                                  else return dlist)
-                  mbS
+    trimBegin = S.dropWhile isLWS
 
-        procCont !dlist = do
-            line <- pLine input
-            let !t = trimBegin line
-            pCont (dlist . (" ":) . (t:))
+    pCont !dlist = do
+        mbS  <- Streams.peek input
+        maybe (return dlist)
+              (\s -> if S.null s
+                       then Streams.read input >> pCont dlist
+                       else if isLWS $ w2c $ S.unsafeHead s
+                              then procCont dlist
+                              else return dlist)
+              mbS
+
+    procCont !dlist = do
+        line <- pLine input
+        let !t = trimBegin line
+        pCont (dlist . (" ":) . (t:))
 
 
 ------------------------------------------------------------------------------

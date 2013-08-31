@@ -55,7 +55,7 @@ tests = [ testShow
 ------------------------------------------------------------------------------
 testShow :: Test
 testShow = testCase "parser/show" $ do
-    let i = IRequest GET "/" (1, 1) Nothing $ H.empty
+    let i = IRequest GET "/" (1, 1) H.empty undefined
     let !b = show i `using` rdeepseq
     return $ b `seq` ()
 
@@ -176,7 +176,7 @@ testTrivials :: Test
 testTrivials = testCase "parser/trivials" $ do
     coverTypeableInstance (undefined :: HttpParseException)
     coverShowInstance (HttpParseException "ok")
-    coverEqInstance (IRequest GET "" (0, 0) Nothing $ H.empty)
+    coverEqInstance (IRequest GET "" (0, 0) H.empty undefined)
 
 
 ------------------------------------------------------------------------------
@@ -212,41 +212,41 @@ testSimpleParse :: Test
 testSimpleParse = testCase "parser/simpleParse" $ do
     Streams.fromList ["GET / HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple0" (IRequest GET "/" (1, 1) Nothing H.empty)
+        assertEqual "simple0" (IRequest GET "/" (1, 1) H.empty undefined)
 
     Streams.fromList ["GET http://foo.com/ HTTP/1.1\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple1" (IRequest GET "/" (1, 1)
-                                       (Just "foo.com") H.empty)
+        assertEqual "simple1" (IRequest GET "/" (1, 1) H.empty undefined)
 
-    Streams.fromList ["GET http://foo.com HTTP/1.1\r\n\r\n"] >>=
-        parseRequest >>=
-        assertEqual "simple2" (IRequest GET "/" (1, 1)
-                                           (Just "foo.com") H.empty)
+    z <- Streams.fromList ["GET http://foo.com HTTP/1.1\r\n\r\n"] >>=
+        parseRequest
 
-    Streams.fromList ["GET https://foo.com/ HTTP/1.1\r\n\r\n"] >>=
-        parseRequest >>=
-        assertEqual "simple3" (IRequest GET "/" (1, 1)
-                                       (Just "foo.com") H.empty)
+    assertEqual "simple2" z (IRequest GET "/" (1, 1) H.empty undefined)
+    assertEqual "simple2-host" (Just "foo.com") (getStdHost $ iStdHeaders z)
+
+    z2 <- Streams.fromList ["GET https://foo.com/ HTTP/1.1\r\n\r\n"] >>=
+        parseRequest
+    assertEqual "simpleHttps" (IRequest GET "/" (1, 1) H.empty undefined) z2
+    assertEqual "simpleHttps-2" (Just "foo.com") (getStdHost $ iStdHeaders z2)
 
     Streams.fromList ["GET / HTTP/1.1\r\nz:b\r\n", "", "\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple4" (IRequest GET "/" (1, 1) Nothing
-                                        (H.fromList [("z", "b")]))
+        assertEqual "simple4" (IRequest GET "/" (1, 1)
+                               (H.fromList [("z", "b")]) undefined)
 
     Streams.fromList [ "GET / HTTP/1.1\r\na:a\r", "\nz:b\r\n", ""
                      , "\r\n" ] >>=
         parseRequest >>=
-        assertEqual "simple5" (IRequest GET "/" (1, 1) Nothing
-                               (H.fromList [("a", "a"), ("z", "b")]))
+        assertEqual "simple5" (IRequest GET "/" (1, 1)
+                               (H.fromList [("a", "a"), ("z", "b")]) undefined)
 
     Streams.fromList ["GET /\r\n\r\n"] >>=
         parseRequest >>=
-        assertEqual "simple6" (IRequest GET "/" (1, 0) Nothing H.empty)
+        assertEqual "simple6" (IRequest GET "/" (1, 0) H.empty undefined)
 
     Streams.fromList ["G", "ET", " /\r", "\n\r", "", "\n"] >>=
         parseRequest >>=
-        assertEqual "simple7" (IRequest GET "/" (1, 0) Nothing H.empty)
+        assertEqual "simple7" (IRequest GET "/" (1, 0) H.empty undefined)
 
 
 ------------------------------------------------------------------------------
