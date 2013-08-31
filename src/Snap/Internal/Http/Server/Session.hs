@@ -21,8 +21,11 @@ import           Blaze.ByteString.Builder                 (Builder, flush,
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
                                                            fromString,
                                                            writeChar)
-import           Blaze.ByteString.Builder.Internal        (defaultBufferSize,
-                                                           fromWrite)
+import           Blaze.ByteString.Builder.Internal        (Write,
+                                                           defaultBufferSize,
+                                                           exactWrite,
+                                                           fromWrite,
+                                                           getBound)
 import           Blaze.ByteString.Builder.Internal.Buffer (Buffer,
                                                            allocBuffer)
 ------------------------------------------------------------------------------
@@ -42,9 +45,11 @@ import           Control.Exception                        (AsyncException,
                                                            IOException,
                                                            SomeException (..))
 import qualified Control.Exception                        as E
-import           Control.Monad                            (unless, when)
+import           Control.Monad                            (unless, void, when,
+                                                           (>=>))
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
+import qualified Data.ByteString.Unsafe                   as S
 import qualified Data.CaseInsensitive                     as CI
 import           Data.Int                                 (Int64)
 import           Data.IORef                               (IORef, newIORef,
@@ -60,6 +65,11 @@ import           Data.Monoid                              (mconcat, mempty,
 import           Data.Time.Format                         (formatTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Version                             (showVersion)
+import           Data.Word                                (Word8)
+import           Foreign.Marshal.Utils                    (copyBytes)
+import           Foreign.Ptr                              (Ptr, castPtr,
+                                                           plusPtr)
+import           Foreign.Storable                         (pokeByteOff)
 import           System.IO.Streams                        (InputStream,
                                                            OutputStream)
 import qualified System.IO.Streams                        as Streams
@@ -688,53 +698,75 @@ data BuilderIntPair = BIP Builder {-# UNPACK #-} !Int
 
 
 --------------------------------------------------------------------------
-mkHeaderLine :: HttpVersion -> Response -> BuilderIntPair
+mkHeaderLine :: HttpVersion -> Response -> Write
 mkHeaderLine outVer r =
     case outCode of
         200 | outVer == (1, 1) ->
-                  BIP (fromByteString "HTTP/1.1 200 OK\r\n") 17
+                  exactWrite 17 (void . cpBS "HTTP/1.1 200 OK\r\n")
         200 | otherwise ->
-                  BIP (fromByteString "HTTP/1.0 200 OK\r\n") 17
-        _ -> BIP line len
+                  exactWrite 17 (void . cpBS "HTTP/1.0 200 OK\r\n")
+        _ -> exactWrite len (void . line)
   where
     outCode = rspStatus r
-    space   = fromChar ' '
 
     v = if outVer == (1,1) then "HTTP/1.1 " else "HTTP/1.0 "
-    outCodeStr = show outCode
+
+    outCodeStr = S.pack $ show outCode
+    space !op = do
+        pokeByteOff op 0 (32 :: Word8)
+        return $! plusPtr op 1
+
+    line = cpBS v >=> cpBS outCodeStr >=> space >=> cpBS reason
+                  >=> crlfPoke
+
     reason = rspStatusReason r
-    line = fromByteString v        <>
-           fromString outCodeStr   <>
-           space                   <>
-           fromByteString reason   <>
-           writeCRLF
-    len = 12 + length outCodeStr + S.length reason
+    len = 12 + S.length outCodeStr + S.length reason
 
 
 --------------------------------------------------------------------------
 mkHeaderBuilder :: HttpVersion -> Response -> BuilderIntPair
 mkHeaderBuilder v r = BIP builder outlen
   where
-    (BIP hline hline_len) = mkHeaderLine v r
-    (BIP hdrs hlen)       = buildHdrs $ headers r
-    builder               = hline <> hdrs <> writeCRLF
-    outlen                = hline_len + hlen + 2
+    hlineWrite = mkHeaderLine v r
+    hdrsWrite  = headersToWrite $ headers r
+    hlen       = getBound hdrsWrite
+    builder    = fromWrite (hlineWrite <> hdrsWrite)
+    outlen     = getBound hlineWrite + hlen
 
 
 ------------------------------------------------------------------------------
-buildHdrs :: Headers -> BuilderIntPair
-buildHdrs hdrs =
-    H.foldl' f (BIP mempty 0) hdrs
+{-# INLINE headersToWrite #-}
+headersToWrite :: Headers -> Write
+headersToWrite hdrs = exactWrite len copy
   where
-    f (BIP b len) !k !y =
-        let k'    = CI.original k
-            kb    = fromByteString k' <> fromByteString ": "
-            !len' = S.length k' + S.length y + 4
-            b'    = b                <>
-                    kb               <>
-                    fromByteString y <>
-                    writeCRLF
-        in BIP b' (len + len')
+    len = H.foldl' f 0 hdrs + 2
+      where
+        f l k v = l + S.length (CI.original k) + S.length v + 4
+
+    copy = go $ H.toList hdrs
+
+    go []         !op = void $ crlfPoke op
+    go ((k,v):xs) !op = do
+        let k' = CI.original k
+        !op'  <- cpBS k' op
+        pokeByteOff op' 0 (58 :: Word8)  -- colon
+        pokeByteOff op' 1 (32 :: Word8)  -- space
+        !op''  <- cpBS v $ plusPtr op' 2
+        crlfPoke op'' >>= go xs
+
+
+{-# INLINE cpBS #-}
+cpBS :: ByteString -> Ptr Word8 -> IO (Ptr Word8)
+cpBS s !op = S.unsafeUseAsCStringLen s $ \(cstr, clen) -> do
+                let !cl = fromIntegral clen
+                copyBytes op (castPtr cstr) cl
+                return $! plusPtr op cl
+
+{-# INLINE crlfPoke #-}
+crlfPoke !op = do
+    pokeByteOff op 0 (13 :: Word8)  -- cr
+    pokeByteOff op 1 (10 :: Word8)  -- lf
+    return $! plusPtr op 2
 
 
 ------------------------------------------------------------------------------
@@ -794,10 +826,3 @@ renderCookies r = updateHeaders f r
             then h
             else foldl' (\m v -> H.insert "Set-Cookie" v m) h cookies
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
-
-
---------------------------------------------------------------------------
--- | Write a CRLF sequence.
-writeCRLF :: Builder
-writeCRLF = fromWrite (writeChar '\r' <> writeChar '\n')
-{-# INLINE writeCRLF #-}
