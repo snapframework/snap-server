@@ -504,10 +504,8 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                              catchUserException hookState "user handler" req
                            ]
         if b
-          then do yield
-                  writeIORef isNewConnection False
+          then do writeIORef isNewConnection False
                   -- the timer resets to its default value here.
-                  tickle $ const defaultTimeout
                   loop
           else return $! ()
 
