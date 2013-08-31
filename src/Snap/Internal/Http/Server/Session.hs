@@ -18,9 +18,7 @@ module Snap.Internal.Http.Server.Session
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder                 (Builder, flush,
                                                            fromByteString)
-import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow,
-                                                           fromString,
-                                                           writeChar)
+import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow)
 import           Blaze.ByteString.Builder.Internal        (Write,
                                                            defaultBufferSize,
                                                            exactWrite,
@@ -38,7 +36,7 @@ import           Control.Concurrent                       (MVar, ThreadId,
                                                            myThreadId,
                                                            newEmptyMVar,
                                                            putMVar, readMVar,
-                                                           takeMVar, yield)
+                                                           takeMVar)
 import           Control.Exception                        (AsyncException,
                                                            Exception,
                                                            Handler (..),
@@ -58,10 +56,9 @@ import           Data.IORef                               (IORef, newIORef,
 import           Data.List                                (foldl')
 import qualified Data.Map                                 as Map
 import           Data.Maybe                               (fromJust,
-                                                           fromMaybe, isJust,
+                                                           fromMaybe,
                                                            isNothing)
-import           Data.Monoid                              (mconcat, mempty,
-                                                           (<>))
+import           Data.Monoid                              (mconcat, (<>))
 import           Data.Time.Format                         (formatTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Version                             (showVersion)
@@ -85,10 +82,7 @@ import           Snap.Internal.Http.Types                 (Cookie (..),
                                                            ResponseBody (..),
                                                            StreamProc,
                                                            getHeader, headers,
-                                                           rspBodyToEnum,
-                                                           setContentLength,
-                                                           setHeader,
-                                                           updateHeaders)
+                                                           rspBodyToEnum)
 import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
@@ -599,11 +593,13 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                                                        && code /= 304
 
         let (hdrs'', body', shouldClose) = if hasNoCL
-                                             then noCL v hdrs' rsp body
+                                             then noCL v hdrs' body
                                              else (hdrs', body, False)
 
         when shouldClose $ writeIORef forceConnectionClose True
-        let (BIP headerBuilder hlen) = mkHeaderBuilder v rsp hdrs''
+        let hdrWrite      = mkHeaderWrite v rsp hdrs''
+        let hlen          = getBound hdrWrite
+        let headerBuilder = fromWrite hdrWrite
         nBodyBytes <- case body' of
                         Stream s ->
                             whenStream headerBuilder hlen rsp s
@@ -618,10 +614,9 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     noCL :: HttpVersion
          -> Headers
-         -> Response
          -> ResponseBody
          -> (Headers, ResponseBody, Bool)
-    noCL v hdrs r body =
+    noCL v hdrs body =
         if v == (1,1)
           then let origBody = rspBodyToEnum body
                    body'    = \os -> do
@@ -696,10 +691,6 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
 
 --------------------------------------------------------------------------
-data BuilderIntPair = BIP Builder {-# UNPACK #-} !Int
-
-
---------------------------------------------------------------------------
 mkHeaderLine :: HttpVersion -> Response -> Write
 mkHeaderLine outVer r =
     case outCode of
@@ -726,14 +717,8 @@ mkHeaderLine outVer r =
 
 
 --------------------------------------------------------------------------
-mkHeaderBuilder :: HttpVersion -> Response -> Headers -> BuilderIntPair
-mkHeaderBuilder v r hdrs = BIP builder outlen
-  where
-    hlineWrite = mkHeaderLine v r
-    hdrsWrite  = headersToWrite hdrs
-    hlen       = getBound hdrsWrite
-    builder    = fromWrite (hlineWrite <> hdrsWrite)
-    outlen     = getBound hlineWrite + hlen
+mkHeaderWrite :: HttpVersion -> Response -> Headers -> Write
+mkHeaderWrite v r hdrs = mkHeaderLine v r <> headersToWrite hdrs
 
 
 ------------------------------------------------------------------------------
@@ -765,6 +750,7 @@ cpBS s !op = S.unsafeUseAsCStringLen s $ \(cstr, clen) -> do
                 return $! plusPtr op cl
 
 {-# INLINE crlfPoke #-}
+crlfPoke :: Ptr Word8 -> IO (Ptr Word8)
 crlfPoke !op = do
     pokeByteOff op 0 (13 :: Word8)  -- cr
     pokeByteOff op 1 (10 :: Word8)  -- lf
