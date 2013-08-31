@@ -530,9 +530,6 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         let v    = rqVersion req
         cc <- readIORef forceConnectionClose
 
-        -- checkConnectionClose v (H.lookup "connection" $ rspHeaders rsp0)
-        -- let rsp2 = if cc then (setHeader "Connection" "close" rsp0) else rsp0
-
         -- skip unread portion of request body if rspTransformingRqBody is not
         -- true
         unless (rspTransformingRqBody rsp0) $ Streams.skipToEof (rqBody req)
@@ -550,6 +547,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
     --------------------------------------------------------------------------
     addDateAndServerHeaders !is1_0 date !cc !hdrs =
+        {-# SCC "addDateAndServerHeaders" #-}
         let (!hdrs', !newcc) = go [("Date",date)] False cc $ H.toList hdrs
         in (H.fromList hdrs', newcc)
       where
@@ -560,15 +558,11 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                )
         go l _ c (x@("Server",_):xs) = go (x:l) True c xs
         go l seenServer c (("Date",_):xs) = go l seenServer c xs
-        go l seenServer c (x@("Connection", v):xs) =
-            let (l', cc') = if c
-                              then (l,c)
-                              else if (not is1_0 && v == "close")
-                                     then (l, True)
-                                     else if (is1_0 && v /= "keep-alive")
-                                            then (l, True)
-                                            else ((x:l), c)
-            in go l' seenServer cc' xs
+        go l seenServer c (x@("Connection", v):xs)
+              | c = go l seenServer c xs
+              | v == "close" || (is1_0 && v /= "keep-alive") =
+                     go l seenServer True xs
+              | otherwise = go (x:l) seenServer c xs
         go l seenServer c (x:xs) = go (x:l) seenServer c xs
 
     --------------------------------------------------------------------------
@@ -818,7 +812,7 @@ cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
                                   "%a, %d-%b-%Y %H:%M:%S GMT"
 
 
---------------------------------------------------------------------------
+------------------------------------------------------------------------------
 renderCookies :: Response -> Response
 renderCookies r = updateHeaders f r
   where

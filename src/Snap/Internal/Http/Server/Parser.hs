@@ -41,6 +41,7 @@ import           Data.CaseInsensitive             (CI)
 import qualified Data.CaseInsensitive             as CI
 import           Data.IORef                       (newIORef, readIORef,
                                                    writeIORef)
+import           Data.List                        (sort)
 import           Data.Maybe                       (fromMaybe)
 import           Data.Typeable                    (Typeable)
 import qualified Data.Vector                      as V
@@ -109,7 +110,7 @@ newMStandardHeaders = MV.replicate nStandardHeaders Nothing
 data IRequest = IRequest
     { iMethod         :: !Method
     , iRequestUri     :: !ByteString
-    , iHttpVersion    :: {-# UNPACK #-} !(Int, Int)
+    , iHttpVersion    :: (Int, Int)
     , iRequestHeaders :: Headers
     , iStdHeaders     :: StandardHeaders
     }
@@ -117,10 +118,11 @@ data IRequest = IRequest
 ------------------------------------------------------------------------------
 instance Eq IRequest where
     a == b =
-        and [ iMethod a                    == iMethod b
-            , iRequestUri a                == iRequestUri b
-            , iHttpVersion a               == iHttpVersion b
-            , H.toList (iRequestHeaders a) == H.toList (iRequestHeaders b)
+        and [ iMethod a      == iMethod b
+            , iRequestUri a  == iRequestUri b
+            , iHttpVersion a == iHttpVersion b
+            , sort (H.toList (iRequestHeaders a))
+                  == sort (H.toList (iRequestHeaders b))
             ]
 
 ------------------------------------------------------------------------------
@@ -296,7 +298,7 @@ pHeaders stdHdrs input = do
             let (!k0,!v) = splitHeader line
             vf <- pCont id
             let vs = vf []
-            let !v' = if null vs then v else S.concat (v:vs)
+            let !v' = S.concat (v:vs)
             let !k  = CI.mk k0
             let idx = findStdHeaderIndex k
             when (idx >= 0) $ MV.unsafeWrite stdHdrs idx $! Just v'
@@ -309,11 +311,11 @@ pHeaders stdHdrs input = do
     pCont !dlist = do
         mbS  <- Streams.peek input
         maybe (return dlist)
-              (\s -> if S.null s
-                       then Streams.read input >> pCont dlist
-                       else if isLWS $ w2c $ S.unsafeHead s
-                              then procCont dlist
-                              else return dlist)
+              (\s -> if not (S.null s)
+                       then if not $ isLWS $ w2c $ S.unsafeHead s
+                              then return dlist
+                              else procCont dlist
+                       else Streams.read input >> pCont dlist)
               mbS
 
     procCont !dlist = do
