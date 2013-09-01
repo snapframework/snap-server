@@ -4,7 +4,8 @@
 
 module Main where
 
-import           Blaze.ByteString.Builder          (toByteString)
+import           Blaze.ByteString.Builder          (fromByteString,
+                                                    toByteString)
 import           Control.Applicative               ((<$>))
 import           Control.Concurrent                (MVar, ThreadId,
                                                     forkIOWithUnmask,
@@ -18,6 +19,7 @@ import qualified Data.ByteString.Char8             as S
 import qualified Network.Socket                    as N
 import           Snap.Core
 import           System.Environment                (getArgs)
+import qualified System.IO.Streams                 as Streams
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Session (httpAcceptLoop,
                                                     snapToServerHandler)
@@ -77,7 +79,9 @@ main = do
     portNum <- (((read . head) <$> getArgs) >>= evaluate)
                `E.catch` \(_::SomeException) -> return 3000
     (tid, mv) <- startTestSocketServer portNum $ do
-                   modifyResponse $ setContentLength 4
-                   writeBS "PONG"
+                   modifyResponse $ setContentLength 4 . setResponseBody output
     takeMVar mv
     killThread tid
+
+  where
+    output os = Streams.write (Just $ fromByteString "pong") os >> return os

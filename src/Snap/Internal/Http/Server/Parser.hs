@@ -35,7 +35,9 @@ import           Control.Monad                    (void, when)
 import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take,
                                                    takeTill)
 import qualified Data.ByteString.Char8            as S
-import           Data.ByteString.Internal         (ByteString, w2c)
+import           Data.ByteString.Internal         (ByteString (..), c2w,
+                                                   inlinePerformIO, memchr,
+                                                   w2c)
 import qualified Data.ByteString.Unsafe           as S
 import           Data.IORef                       (newIORef, readIORef,
                                                    writeIORef)
@@ -44,7 +46,8 @@ import           Data.Typeable                    (Typeable)
 import qualified Data.Vector                      as V
 import qualified Data.Vector.Mutable              as MV
 import           Foreign.C.Types                  (CChar)
-import           Foreign.Ptr                      (plusPtr)
+import           Foreign.ForeignPtr               (withForeignPtr)
+import           Foreign.Ptr                      (minusPtr, nullPtr, plusPtr)
 import           Foreign.Storable                 (peek, poke)
 import           Prelude                          hiding (head, take,
                                                    takeWhile)
@@ -145,6 +148,7 @@ instance Exception HttpParseException
 
 
 ------------------------------------------------------------------------------
+{-# INLINE parseRequest #-}
 parseRequest :: InputStream ByteString -> IO IRequest
 parseRequest input = do
     line <- pLine input
@@ -202,9 +206,11 @@ pLine input = go []
         !mb <- Streams.read input
         !s  <- maybe throwNoCRLF return mb
 
-        case S.elemIndex '\r' s of
-            Nothing                               -> noCRLF l s
-            Just !i | i+1 >= S.length s           -> lastIsCR l s i
+        let !i = elemIndex '\r' s
+        if i < 0
+          then noCRLF l s
+          else case () of
+                 !_ | i+1 >= S.length s           -> lastIsCR l s i
                     | S.unsafeIndex s (i+1) == 10 -> foundCRLF l s i
                     | otherwise                   -> throwBadCRLF
 
@@ -239,32 +245,37 @@ pLine input = go []
 
 ------------------------------------------------------------------------------
 splitCh :: Char -> ByteString -> (ByteString, ByteString)
-splitCh !c !s = maybe (s, S.empty) f (S.elemIndex c s)
+splitCh !c !s = if idx < 0
+                  then (s, S.empty)
+                  else let !a = S.unsafeTake idx s
+                           !b = S.unsafeDrop (idx + 1) s
+                       in (a, b)
   where
-    f !i = let !a = S.unsafeTake i s
-               !b = S.unsafeDrop (i + 1) s
-           in (a, b)
+    !idx = elemIndex c s
 {-# INLINE splitCh #-}
 
 
 ------------------------------------------------------------------------------
 breakCh :: Char -> ByteString -> (ByteString, ByteString)
-breakCh !c !s = maybe (s, S.empty) f (S.elemIndex c s)
+breakCh !c !s = if idx < 0
+                  then (s, S.empty)
+                  else let !a = S.unsafeTake idx s
+                           !b = S.unsafeDrop idx s
+                       in (a, b)
   where
-    f !i = let !a = S.unsafeTake i s
-               !b = S.unsafeDrop i s
-           in (a, b)
+    !idx = elemIndex c s
 {-# INLINE breakCh #-}
 
 
 ------------------------------------------------------------------------------
 splitHeader :: ByteString -> (ByteString, ByteString)
-splitHeader !s = maybe (s, S.empty) f (S.elemIndex ':' s)
+splitHeader !s = if idx < 0
+                   then (s, S.empty)
+                   else let !a = S.unsafeTake idx s
+                        in (a, skipSp (idx + 1))
   where
-    l = S.length s
-
-    f i = let !a = S.unsafeTake i s
-          in (a, skipSp (i + 1))
+    !idx = elemIndex ':' s
+    l    = S.length s
 
     skipSp !i | i >= l    = S.empty
               | otherwise = let c = S.unsafeIndex s i
@@ -390,8 +401,8 @@ pGetTransferChunk = do
 
 ------------------------------------------------------------------------------
 dodgyInPlaceCaseFold :: ByteString -> IO ()
-dodgyInPlaceCaseFold s = S.unsafeUseAsCStringLen s $ \(cs, len0) -> do
-    let !len  = fromIntegral len0
+dodgyInPlaceCaseFold (PS !fp !start !len) = withForeignPtr fp $ \p -> do
+    let !cs   = plusPtr p start
     let !endP = plusPtr cs len
     caseFold endP cs
   where
@@ -403,3 +414,16 @@ dodgyInPlaceCaseFold s = S.unsafeUseAsCStringLen s $ \(cs, len0) -> do
                                          poke ptr $! w8 + 32
                                    go $! plusPtr ptr 1
 
+
+------------------------------------------------------------------------------
+-- | A version of elemIndex that doesn't allocate a Maybe. (It returns -1 on
+-- not found.)
+elemIndex :: Char -> ByteString -> Int
+elemIndex c (PS !fp !start !len) = inlinePerformIO $
+                                   withForeignPtr fp $ \p0 -> do
+    let !p = plusPtr p0 start
+    q <- memchr p w8 (fromIntegral len)
+    return $! if q == nullPtr then (-1) else q `minusPtr` p
+  where
+    !w8 = c2w c
+{-# INLINE elemIndex #-}

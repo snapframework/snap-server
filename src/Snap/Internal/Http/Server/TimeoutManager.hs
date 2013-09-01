@@ -42,9 +42,9 @@ isCanceled = (== 0)
 
 ------------------------------------------------------------------------------
 data TimeoutHandle = TimeoutHandle {
-      _killAction :: !(IO ())
-    , _state      :: !(IORef State)
-    , _hGetTime   :: !(IO CTime)
+      _killAction :: IO ()
+    , _state      :: IORef State
+    , _hGetTime   :: IO CTime
     }
 
 
@@ -58,7 +58,7 @@ smap now f deadline | isCanceled deadline = canceled
   where
     remaining    = fromEnum $ max 0 (deadline - now)
     newremaining = f remaining
-    !t'          = now + fromIntegral newremaining
+    t'           = now + fromIntegral newremaining
 
 
 ------------------------------------------------------------------------------

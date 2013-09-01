@@ -394,9 +394,12 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                                     $ S.break (== '?') uri
 
         ----------------------------------------------------------------------
-        dropLeadingSlash s = let f (a, s') = if a == '/' then s' else s
-                                 mbS       = S.uncons s
-                             in maybe s f mbS
+        dropLeadingSlash s = if S.null s
+                               then s
+                               else let !a = S.unsafeIndex s 0
+                                    in if a == 47   -- 47 == '/'
+                                         then S.unsafeDrop 0 s
+                                         else s
         {-# INLINE dropLeadingSlash #-}
 
         ----------------------------------------------------------------------
@@ -531,7 +534,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         -- true
         unless (rspTransformingRqBody rsp0) $ Streams.skipToEof (rqBody req)
 
-        date <- getDateString
+        !date <- getDateString
         let (!hdrs, !cc') = addDateAndServerHeaders is_1_0 date cc $
                             headers rsp0
         writeIORef forceConnectionClose cc'
@@ -551,10 +554,9 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         -- N.B.: here we know the date header has already been removed by
         -- "fixupResponse".
         go !l !seenServer !connClose [] =
-            let addsvr = if seenServer then id else (("server", sERVER_HEADER):)
-            in ( addsvr $ if connClose then (("connection", "close"):l) else l
-               , connClose
-               )
+            let !l1 = if seenServer then l else (("server", sERVER_HEADER):l)
+                !l2 = if connClose then (("connection", "close"):l1) else l1
+            in (l2, connClose)
         go l _ c (x@("server",_):xs) = go (x:l) True c xs
         go l seenServer c (x@("connection", v):xs)
               | c = go l seenServer c xs
