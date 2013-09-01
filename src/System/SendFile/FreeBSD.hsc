@@ -11,6 +11,7 @@ module System.SendFile.FreeBSD
 ------------------------------------------------------------------------------
 import           Control.Concurrent    (threadWaitWrite)
 import           Data.Int
+import           Data.Word
 import           Foreign.C.Error       (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
 import           Foreign.C.Types       (CInt (..), CSize (..))
@@ -29,14 +30,14 @@ import           System.Posix.Types    (COff, Fd)
 
 
 ------------------------------------------------------------------------------
-sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFile :: Fd -> Fd -> Word64 -> Word64 -> IO Int64
 
 
 ------------------------------------------------------------------------------
 sendFileImpl :: (Fd -> Fd -> COff -> CSize -> Ptr () -> Ptr COff -> CInt
                     -> IO CInt)
              -> (Fd -> IO ())
-             -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+             -> Fd -> Fd -> Word64 -> Word64 -> IO Int64
 sendFileImpl !rawSendFile !wait out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do

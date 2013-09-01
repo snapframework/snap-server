@@ -80,7 +80,7 @@ bigResponseHandler :: Snap ()
 bigResponseHandler = do
     let sz = 4000000
     let s = L.take sz $ L.cycle $ L.fromChunks [S.replicate 400000 '.']
-    modifyResponse $ setContentLength sz
+    modifyResponse $ setContentLength $ fromIntegral sz
     writeLBS s
 
 

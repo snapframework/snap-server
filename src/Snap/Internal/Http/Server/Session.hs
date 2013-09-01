@@ -62,7 +62,7 @@ import           Data.Monoid                              (mconcat, (<>))
 import           Data.Time.Format                         (formatTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Version                             (showVersion)
-import           Data.Word                                (Word8)
+import           Data.Word                                (Word64, Word8)
 import           Foreign.Marshal.Utils                    (copyBytes)
 import           Foreign.Ptr                              (Ptr, castPtr,
                                                            plusPtr)
@@ -380,7 +380,8 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
         !mbHost       = getStdHost stdHdrs
         !localHost    = fromMaybe localHostname mbHost
-        mbCL          = unsafeFromNat <$> getStdContentLength stdHdrs
+        mbCL          = unsafeFromNat <$>
+                        getStdContentLength stdHdrs
         !isChunked    = (CI.mk <$> getStdTransferEncoding stdHdrs)
                             == Just "chunked"
         cookies       = fromMaybe [] (getStdCookie stdHdrs >>= parseCookie)
@@ -398,7 +399,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                                then s
                                else let !a = S.unsafeIndex s 0
                                     in if a == 47   -- 47 == '/'
-                                         then S.unsafeDrop 0 s
+                                         then S.unsafeDrop 1 s
                                          else s
         {-# INLINE dropLeadingSlash #-}
 
@@ -411,7 +412,8 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         setupReadEnd =
             if isChunked
               then readChunkedTransferEncoding readEnd
-              else maybe (const noContentLength) Streams.takeBytes mbCL readEnd
+              else maybe (const noContentLength)
+                         (Streams.takeBytes . fromIntegral) mbCL readEnd
         {-# INLINE setupReadEnd #-}
 
         ----------------------------------------------------------------------
@@ -591,7 +593,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         terminateSession e
 
     --------------------------------------------------------------------------
-    sendResponse :: HttpVersion -> Response -> Headers -> IO Int64
+    sendResponse :: HttpVersion -> Response -> Headers -> IO Word64
     sendResponse !v !rsp !hdrs = {-# SCC "httpSession/sendResponse" #-} do
         let !hdrs'  = renderCookies rsp hdrs
         let !code   = rspStatus rsp
@@ -647,7 +649,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                  -> IO (OutputStream ByteString)
     limitRspBody hlen rsp os = maybe (return os) f $ rspContentLength rsp
       where
-        f cl = Streams.giveExactly (fromIntegral hlen + cl) os
+        f cl = Streams.giveExactly (fromIntegral hlen + fromIntegral cl) os
     {-# INLINE limitRspBody #-}
 
     --------------------------------------------------------------------------
@@ -655,7 +657,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                -> Int           -- ^ header length
                -> Response      -- ^ response
                -> StreamProc    -- ^ output body
-               -> IO Int64      -- ^ returns number of bytes written
+               -> IO Word64      -- ^ returns number of bytes written
     whenStream headerString hlen rsp body = do
         -- note:
         --
@@ -681,15 +683,15 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         -- Just in case the user handler didn't.
         Streams.write Nothing writeEnd1
         n <- getCount
-        return $! n - fromIntegral hlen
+        return $! fromIntegral n - fromIntegral hlen
     {-# INLINE whenStream #-}
 
     --------------------------------------------------------------------------
     whenSendFile :: Builder     -- ^ headers
                  -> Response    -- ^ response
                  -> FilePath    -- ^ file to serve
-                 -> Int64       -- ^ file start offset
-                 -> IO Int64    -- ^ returns number of bytes written
+                 -> Word64      -- ^ file start offset
+                 -> IO Word64   -- ^ returns number of bytes written
     whenSendFile headerString rsp filePath offset = do
         let !cl = fromJust $ rspContentLength rsp
         sendfileHandler buffer headerString filePath offset cl

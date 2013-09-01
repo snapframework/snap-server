@@ -12,6 +12,7 @@ module System.SendFile.Linux
 ------------------------------------------------------------------------------
 import           Control.Concurrent (threadWaitWrite)
 import           Data.Int
+import           Data.Word
 import           Foreign.C.Error    (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
 import           Foreign.C.Types    (CInt (..), CSize (..))
@@ -30,7 +31,7 @@ import           System.Posix.Types (COff, CSsize, Fd)
 
 
 ------------------------------------------------------------------------------
-sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFile :: Fd -> Fd -> Word64 -> Word64 -> IO Int64
 sendFile = sendFileImpl c_sendfile threadWaitWrite
 {-# INLINE sendFile #-}
 
@@ -38,7 +39,7 @@ sendFile = sendFileImpl c_sendfile threadWaitWrite
 ------------------------------------------------------------------------------
 sendFileImpl :: (Fd -> Fd -> Ptr COff -> CSize -> IO CSsize)
              -> (Fd -> IO ())
-             -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+             -> Fd -> Fd -> Word64 -> Word64 -> IO Int64
 sendFileImpl !raw_sendfile !wait out_fd in_fd off count
   | count <= 0 = return 0
   | off   == 0 = do

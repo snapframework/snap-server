@@ -17,7 +17,7 @@ module System.SendFile
 import           Blaze.ByteString.Builder
 import           Control.Concurrent       (threadWaitWrite)
 import qualified Data.ByteString.Unsafe   as S
-import           Data.Int
+import           Data.Word
 import           Foreign.C.Error          (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
 import           Foreign.C.Types          (CChar (..), CInt (..), CSize (..))
@@ -43,15 +43,17 @@ import qualified System.SendFile.Darwin   as SF
 ------------------------------------------------------------------------------
 sendFile :: Fd                  -- ^ out fd (i.e. the socket)
          -> Fd                  -- ^ in fd (i.e. the file)
-         -> Int64               -- ^ offset in bytes
-         -> Int64               -- ^ count in bytes
+         -> Word64              -- ^ offset in bytes
+         -> Word64              -- ^ count in bytes
          -> IO ()
 sendFile out_fd in_fd = go
   where
     go !offs !count | count <= 0 = return $! ()
-                    | otherwise  = do nsent <- SF.sendFile out_fd in_fd
+                    | otherwise  = do nsent <- fromIntegral `fmap`
+                                               SF.sendFile out_fd in_fd
                                                            offs count
-                                      go (offs + nsent) (count - nsent)
+                                      go (offs + nsent)
+                                         (count - nsent)
 
 
 ------------------------------------------------------------------------------

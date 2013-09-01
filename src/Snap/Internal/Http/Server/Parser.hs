@@ -176,7 +176,6 @@ parseRequest input = do
                     in (Just $! host, uri)
               | otherwise = (Nothing, s)
 
-
     pVer s = if "HTTP/" `S.isPrefixOf` s
                then pVers (S.unsafeDrop 5 s)
                else (1, 0)

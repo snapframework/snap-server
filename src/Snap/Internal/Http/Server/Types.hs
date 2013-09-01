@@ -31,8 +31,8 @@ import           Blaze.ByteString.Builder                 (Builder)
 import           Blaze.ByteString.Builder.Internal.Buffer (Buffer)
 import           Control.Exception                        (SomeException)
 import           Data.ByteString                          (ByteString)
-import           Data.Int                                 (Int64)
 import           Data.IORef                               (IORef)
+import           Data.Word                                (Word64)
 import           Network.Socket                           (Socket)
 import           Snap.Core                                (Request, Response)
 import           System.IO.Streams                        (InputStream,
@@ -133,7 +133,7 @@ type EscapeSnapHook hookState = IORef hookState -> IO ()
 -- | Data and services that all HTTP response handlers share.
 --
 data ServerConfig hookState = ServerConfig
-    { _logAccess             :: !(Request -> Response -> Int64 -> IO ())
+    { _logAccess             :: !(Request -> Response -> Word64 -> IO ())
     , _logError              :: !(Builder -> IO ())
     , _onStart               :: !(StartHook hookState)
     , _onParse               :: !(ParseHook hookState)
@@ -204,8 +204,8 @@ type SendFileHandler =
        Buffer                   -- ^ builder buffer
     -> Builder                  -- ^ status line and headers
     -> FilePath                 -- ^ file to send
-    -> Int64                    -- ^ start offset
-    -> Int64                    -- ^ number of bytes
+    -> Word64                   -- ^ start offset
+    -> Word64                   -- ^ number of bytes
     -> IO ()
 
 

@@ -30,7 +30,6 @@ import           Control.Monad.State.Class                (modify)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
-import           Data.Int                                 (Int64)
 import           Data.IORef                               (IORef, newIORef,
                                                            readIORef,
                                                            writeIORef)
@@ -39,6 +38,7 @@ import           Data.Maybe                               (isNothing)
 import           Data.Monoid                              (mappend)
 import           Data.Time.Clock.POSIX
 import           Data.Typeable                            (Typeable)
+import           Data.Word                                (Word64)
 import qualified Network.Http.Client                      as Http
 import           System.Timeout                           (timeout)
 import           Test.Framework
@@ -626,8 +626,8 @@ mockSendFileHandler os !_ hdrs fp start nbytes = do
     let hstr = toByteString hdrs
     Streams.write (Just hstr) os
 
-    Streams.withFileAsInputStartingAt start fp $
-        Streams.takeBytes nbytes >=> Streams.supplyTo os
+    Streams.withFileAsInputStartingAt (fromIntegral start) fp $
+        Streams.takeBytes (fromIntegral nbytes) >=> Streams.supplyTo os
 
     Streams.write Nothing os
 
@@ -842,7 +842,7 @@ instance Exception TestException
 
 
 ------------------------------------------------------------------------------
-data Result = SendFile ByteString FilePath Int64 Int64
+data Result = SendFile ByteString FilePath Word64 Word64
             | Output ByteString
   deriving (Eq, Ord, Show)
 

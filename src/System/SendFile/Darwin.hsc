@@ -10,6 +10,7 @@ module System.SendFile.Darwin
 
 import           Control.Concurrent (threadWaitWrite)
 import           Data.Int
+import           Data.Word
 import           Foreign.C.Error    (throwErrnoIfMinus1RetryMayBlock_)
 #if __GLASGOW_HASKELL__ >= 703
 import           Foreign.C.Types    (CInt (CInt))
@@ -26,7 +27,7 @@ import           System.Posix.Types (COff, Fd)
 #endif
 
 ------------------------------------------------------------------------------
-sendFile :: Fd -> Fd -> Int64 -> Int64 -> IO Int64
+sendFile :: Fd -> Fd -> Word64 -> Word64 -> IO Int64
 sendFile = sendFileImpl c_sendfile threadWaitWrite
 {-# INLINE sendFile #-}
 
@@ -34,7 +35,7 @@ sendFile = sendFileImpl c_sendfile threadWaitWrite
 ------------------------------------------------------------------------------
 sendFileImpl :: (Fd -> Fd -> COff -> Ptr COff -> IO CInt)
              -> (Fd -> IO ())
-             -> Fd -> Fd -> Int64 -> Int64 -> IO Int64
+             -> Fd -> Fd -> Word64 -> Word64 -> IO Int64
 sendFileImpl !rawSendFile !wait out_fd in_fd off count
   | count == 0 = return 0
   | otherwise  = alloca $ \pbytes -> do
