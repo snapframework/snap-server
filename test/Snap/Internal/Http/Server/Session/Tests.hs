@@ -66,6 +66,7 @@ import qualified System.IO.Streams.Debug                  as Streams
 tests :: [Test]
 tests = [ testPong
         , testPong1_0
+        , testDateHeaderDeleted
         , testServerHeader
         , testBadParses
         , testEof
@@ -110,14 +111,23 @@ testPong = testCase "session/pong" $ do
                              Http.getHeader resp "Transfer-Encoding"
     -- test pipelining
     do
-      [_, (resp, body)] <- runRequestPipeline [return (), return ()] snap2
-      assertEqual "code3" 200 $ Http.getStatusCode resp
+      [_, (resp, body)] <- runRequestPipeline [return (), return ()] snap3
+      assertEqual "code3" 233 $ Http.getStatusCode resp
+      assertEqual "reason3" "ZOMG" $ Http.getStatusMessage resp
       assertEqual "body3" pong body
-      assertEqual "chunked3" (Just $ CI.mk "chunked") $
-                             fmap CI.mk $
-                             Http.getHeader resp "Transfer-Encoding"
+      assertEqual "chunked3" Nothing $ Http.getHeader resp "Transfer-Encoding"
+
+    do
+      [_, (resp, body)] <- runRequestPipeline [http_1_0, http_1_0] snap3
+      assertEqual "code4" 233 $ Http.getStatusCode resp
+      assertEqual "reason4" "ZOMG" $ Http.getStatusMessage resp
+      assertEqual "body4" pong body
+      assertEqual "chunked4" Nothing $ Http.getHeader resp "Transfer-Encoding"
 
   where
+    http_1_0 = do
+        T.setHttpVersion (1, 0)
+        T.setHeader "Connection" "keep-alive"
     pong = "PONG"
     snap1 = writeBS pong >> modifyResponse (setContentLength 4)
     snap2 = do
@@ -125,15 +135,46 @@ testPong = testCase "session/pong" $ do
         if null cookies
           then writeBS pong
           else writeBS "wat"
-
+    snap3 = do
+        modifyResponse (setResponseStatus 233 "ZOMG" . setContentLength 4)
+        writeBS pong
 
 ------------------------------------------------------------------------------
 testPong1_0 :: Test
 testPong1_0 = testCase "session/pong1_0" $ do
-    req <- makeRequest (T.setHttpVersion (1, 0))
+    req <- makeRequest (T.setHttpVersion (1, 0) >>
+                        T.setHeader "Connection" "zzz")
     out <- getSessionOutput [req] $ writeBS "PONG"
     assertBool "200 ok" $ S.isPrefixOf "HTTP/1.0 200 OK\r\n" out
     assertBool "PONG" $ S.isSuffixOf "\r\n\r\nPONG" out
+
+
+------------------------------------------------------------------------------
+testDateHeaderDeleted :: Test
+testDateHeaderDeleted = testCase "session/dateHeaderDeleted" $ do
+    [(resp, _)] <- runRequestPipeline [mkRq] snap
+    assertBool "date header" $ Just "plop" /= Http.getHeader resp "Date"
+
+    [_, (resp2, _)] <- runRequestPipeline [mkRq2, mkRq2] snap
+    assertBool "date header 2" $ Just "plop" /= Http.getHeader resp2 "Date"
+
+  where
+    snap = do
+        modifyResponse (setHeader "Date" "plop" .
+                        setHeader "Connection" "ok" .
+                        setContentLength 4)
+        writeBS "PONG"
+
+    mkRq = do
+        T.setHttpVersion (1,0)
+        T.setHeader "fnargle" "plop"
+        T.setHeader "Content-Length" "0"
+        T.setHeader "Connection" "keep-alive"
+
+    mkRq2 = do
+        T.setHeader "fnargle" "plop"
+        T.setHeader "Content-Length" "0"
+        T.setHeader "Connection" "keep-alive"
 
 
 ------------------------------------------------------------------------------
@@ -182,8 +223,19 @@ testHttp100 = testCase "session/expect100" $ do
     assertBool "100-continue" $
                S.isPrefixOf "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK" out
 
+    req2 <- makeRequest expect100_2
+    out2 <- getSessionOutput [req2] (writeBS "OK")
+
+    assertBool "100-continue-2" $
+               S.isPrefixOf "HTTP/1.0 100 Continue\r\n\r\nHTTP/1.0 200 OK" out2
+
   where
     expect100 = do
+        queryGetParams
+        T.setHeader "Expect" "100-continue"
+
+    expect100_2 = do
+        T.setHttpVersion (1, 0)
         queryGetParams
         T.setHeader "Expect" "100-continue"
 
@@ -473,8 +525,15 @@ testConnectionClose = testCase "session/connectionClose" $ do
                            fmap CI.mk $
                            Http.getHeader resp "Connection"
 
+    do
+      [(resp, _)] <- runRequestPipeline [http1_0_2, http1_0] (return ())
+      assertEqual "close3" (Just $ CI.mk "close") $
+                           fmap CI.mk $
+                           Http.getHeader resp "Connection"
+
   where
     http1_0 = T.setHttpVersion (1, 0)
+    http1_0_2 = T.setHttpVersion (1, 0) >> T.setHeader "Connection" "fnargle"
     snap  = modifyResponse $ setHeader "Connection" "close"
 
 

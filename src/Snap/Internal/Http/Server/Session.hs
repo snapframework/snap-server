@@ -485,7 +485,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     {-# INLINE checkExpect100Continue #-}
     checkExpect100Continue req =
-        when (getHeader "Expect" req == Just "100-continue") $ do
+        when (getHeader "expect" req == Just "100-continue") $ do
             let v = if rqVersion req == (1,1) then "HTTP/1.1" else "HTTP/1.0"
 
             let hl = fromByteString v                       <>
@@ -521,16 +521,19 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
         -- check whether we should close the connection after sending the
         -- response
-        let v    = rqVersion req
-        cc <- readIORef forceConnectionClose
+        let v      = rqVersion req
+        let is_1_0 = (v == (1,0))
+        cc <- if is_1_0 && (isNothing $ rspContentLength rsp0)
+                then return $! True
+                else readIORef forceConnectionClose
 
         -- skip unread portion of request body if rspTransformingRqBody is not
         -- true
         unless (rspTransformingRqBody rsp0) $ Streams.skipToEof (rqBody req)
 
         date <- getDateString
-        let (hdrs, cc') = addDateAndServerHeaders (v == (1,0)) date cc $
-                          headers rsp0
+        let (!hdrs, !cc') = addDateAndServerHeaders is_1_0 date cc $
+                            headers rsp0
         writeIORef forceConnectionClose cc'
         bytesSent <- sendResponse v rsp0 hdrs `E.catch`
                      catchUserException hookState "sending-response" req
@@ -541,17 +544,19 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     addDateAndServerHeaders !is1_0 date !cc !hdrs =
         {-# SCC "addDateAndServerHeaders" #-}
-        let (!hdrs', !newcc) = go [("Date",date)] False cc $ H.toList hdrs
-        in (H.fromList hdrs', newcc)
+        let (!hdrs', !newcc) = go [("date",date)] False cc
+                                 $ H.unsafeToCaseFoldedList hdrs
+        in (H.unsafeFromCaseFoldedList hdrs', newcc)
       where
+        -- N.B.: here we know the date header has already been removed by
+        -- "fixupResponse".
         go !l !seenServer !connClose [] =
-            let addsvr = if seenServer then id else (("Server", sERVER_HEADER):)
-            in ( addsvr $ if connClose then (("Connection", "close"):l) else l
+            let addsvr = if seenServer then id else (("server", sERVER_HEADER):)
+            in ( addsvr $ if connClose then (("connection", "close"):l) else l
                , connClose
                )
-        go l _ c (x@("Server",_):xs) = go (x:l) True c xs
-        go l seenServer c (("Date",_):xs) = go l seenServer c xs
-        go l seenServer c (x@("Connection", v):xs)
+        go l _ c (x@("server",_):xs) = go (x:l) True c xs
+        go l seenServer c (x@("connection", v):xs)
               | c = go l seenServer c xs
               | v == "close" || (is1_0 && v /= "keep-alive") =
                      go l seenServer True xs
@@ -585,7 +590,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
     --------------------------------------------------------------------------
     sendResponse :: HttpVersion -> Response -> Headers -> IO Int64
-    sendResponse !v !rsp !hdrs = {-# SCC "sendResponse" #-} do
+    sendResponse !v !rsp !hdrs = {-# SCC "httpSession/sendResponse" #-} do
         let !hdrs'  = renderCookies rsp hdrs
         let !code   = rspStatus rsp
         let body    = rspBody rsp
@@ -596,7 +601,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                                              then noCL v hdrs' body
                                              else (hdrs', body, False)
 
-        when shouldClose $ writeIORef forceConnectionClose True
+        when shouldClose $ writeIORef forceConnectionClose $! True
         let hdrWrite      = mkHeaderWrite v rsp hdrs''
         let hlen          = getBound hdrWrite
         let headerBuilder = fromWrite hdrWrite
@@ -622,13 +627,13 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                    body'    = \os -> do
                                  os' <- writeChunkedTransferEncoding os
                                  origBody os'
-               in ( H.insert "Transfer-Encoding" "chunked" hdrs
+               in ( H.set "transfer-encoding" "chunked" hdrs
                   , Stream body'
                   , False)
           else
-            -- HTTP/1.0 and no content-length? We'll have to close the
-            -- socket.
-            (H.insert "Connection" "close" hdrs, body, True)
+            -- We've already noted that we have to close the socket earlier in
+            -- runServerHandler.
+            (hdrs, body, True)
     {-# INLINE noCL #-}
 
     --------------------------------------------------------------------------
@@ -726,16 +731,15 @@ mkHeaderWrite v r hdrs = mkHeaderLine v r <> headersToWrite hdrs
 headersToWrite :: Headers -> Write
 headersToWrite hdrs = exactWrite len copy
   where
-    len = H.foldl' f 0 hdrs + 2
+    len = H.foldedFoldl' f 0 hdrs + 2
       where
-        f l k v = l + S.length (CI.original k) + S.length v + 4
+        f l k v = l + S.length k + S.length v + 4
 
-    copy = go $ H.toList hdrs
+    copy = go $ H.unsafeToCaseFoldedList hdrs
 
     go []         !op = void $ crlfPoke op
     go ((k,v):xs) !op = do
-        let k' = CI.original k
-        !op'  <- cpBS k' op
+        !op'  <- cpBS k op
         pokeByteOff op' 0 (58 :: Word8)  -- colon
         pokeByteOff op' 1 (32 :: Word8)  -- space
         !op''  <- cpBS v $ plusPtr op' 2
@@ -810,7 +814,7 @@ cookieToBS (Cookie k v mbExpTime mbDomain mbPath isSec isHOnly) = cookie
 renderCookies :: Response -> Headers -> Headers
 renderCookies r hdrs
     | null cookies = hdrs
-    | otherwise = foldl' (\m v -> H.insert "Set-Cookie" v m) hdrs cookies
+    | otherwise = foldl' (\m v -> H.unsafeInsert "set-cookie" v m) hdrs cookies
 
   where
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
