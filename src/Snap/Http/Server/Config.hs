@@ -35,6 +35,7 @@ module Snap.Http.Server.Config
   , getSSLPort
   , getVerbose
   , getStartupHook
+  , getMaxPOSTBodySize
 
   , setAccessLog
   , setBind
@@ -53,6 +54,7 @@ module Snap.Http.Server.Config
   , setSSLPort
   , setVerbose
   , setStartupHook
+  , setMaxPOSTBodySize
   , StartupInfo
   , getStartupSockets
   , getStartupConfig

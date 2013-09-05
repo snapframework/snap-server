@@ -20,6 +20,7 @@ import           Control.Monad
 import qualified Data.ByteString.Char8 as B
 import           Data.ByteString (ByteString)
 import           Data.Char
+import           Data.Int
 import           Data.Function
 import           Data.List
 import           Data.Maybe
@@ -78,24 +79,25 @@ instance Show ConfigLog where
 -- Any fields which are unspecified in the 'Config' passed to 'httpServe' (and
 -- this is the norm) are filled in with default values from 'defaultConfig'.
 data Config m a = Config
-    { hostname       :: Maybe ByteString
-    , accessLog      :: Maybe ConfigLog
-    , errorLog       :: Maybe ConfigLog
-    , locale         :: Maybe String
-    , port           :: Maybe Int
-    , bind           :: Maybe ByteString
-    , sslport        :: Maybe Int
-    , sslbind        :: Maybe ByteString
-    , sslcert        :: Maybe FilePath
-    , sslkey         :: Maybe FilePath
-    , compression    :: Maybe Bool
-    , verbose        :: Maybe Bool
-    , errorHandler   :: Maybe (SomeException -> m ())
-    , defaultTimeout :: Maybe Int
-    , other          :: Maybe a
-    , backend        :: Maybe ConfigBackend
-    , proxyType      :: Maybe ProxyType
-    , startupHook    :: Maybe (StartupInfo m a -> IO ())
+    { hostname        :: Maybe ByteString
+    , accessLog       :: Maybe ConfigLog
+    , errorLog        :: Maybe ConfigLog
+    , locale          :: Maybe String
+    , port            :: Maybe Int
+    , bind            :: Maybe ByteString
+    , sslport         :: Maybe Int
+    , sslbind         :: Maybe ByteString
+    , sslcert         :: Maybe FilePath
+    , sslkey          :: Maybe FilePath
+    , compression     :: Maybe Bool
+    , verbose         :: Maybe Bool
+    , errorHandler    :: Maybe (SomeException -> m ())
+    , defaultTimeout  :: Maybe Int
+    , other           :: Maybe a
+    , backend         :: Maybe ConfigBackend
+    , proxyType       :: Maybe ProxyType
+    , startupHook     :: Maybe (StartupInfo m a -> IO ())
+    , maxPOSTBodySize :: Maybe Int64
     }
 #if MIN_VERSION_base(4,7,0)    
                 deriving (Typeable)
@@ -148,45 +150,47 @@ emptyConfig = mempty
 ------------------------------------------------------------------------------
 instance Monoid (Config m a) where
     mempty = Config
-        { hostname       = Nothing
-        , accessLog      = Nothing
-        , errorLog       = Nothing
-        , locale         = Nothing
-        , port           = Nothing
-        , bind           = Nothing
-        , sslport        = Nothing
-        , sslbind        = Nothing
-        , sslcert        = Nothing
-        , sslkey         = Nothing
-        , compression    = Nothing
-        , verbose        = Nothing
-        , errorHandler   = Nothing
-        , defaultTimeout = Nothing
-        , other          = Nothing
-        , backend        = Nothing
-        , proxyType      = Nothing
-        , startupHook    = Nothing
+        { hostname        = Nothing
+        , accessLog       = Nothing
+        , errorLog        = Nothing
+        , locale          = Nothing
+        , port            = Nothing
+        , bind            = Nothing
+        , sslport         = Nothing
+        , sslbind         = Nothing
+        , sslcert         = Nothing
+        , sslkey          = Nothing
+        , compression     = Nothing
+        , verbose         = Nothing
+        , errorHandler    = Nothing
+        , defaultTimeout  = Nothing
+        , other           = Nothing
+        , backend         = Nothing
+        , proxyType       = Nothing
+        , startupHook     = Nothing
+        , maxPOSTBodySize = Nothing
         }
 
     a `mappend` b = Config
-        { hostname       = ov hostname
-        , accessLog      = ov accessLog
-        , errorLog       = ov errorLog
-        , locale         = ov locale
-        , port           = ov port
-        , bind           = ov bind
-        , sslport        = ov sslport
-        , sslbind        = ov sslbind
-        , sslcert        = ov sslcert
-        , sslkey         = ov sslkey
-        , compression    = ov compression
-        , verbose        = ov verbose
-        , errorHandler   = ov errorHandler
-        , defaultTimeout = ov defaultTimeout
-        , other          = ov other
-        , backend        = ov backend
-        , proxyType      = ov proxyType
-        , startupHook    = ov startupHook
+        { hostname        = ov hostname
+        , accessLog       = ov accessLog
+        , errorLog        = ov errorLog
+        , locale          = ov locale
+        , port            = ov port
+        , bind            = ov bind
+        , sslport         = ov sslport
+        , sslbind         = ov sslbind
+        , sslcert         = ov sslcert
+        , sslkey          = ov sslkey
+        , compression     = ov compression
+        , verbose         = ov verbose
+        , errorHandler    = ov errorHandler
+        , defaultTimeout  = ov defaultTimeout
+        , other           = ov other
+        , backend         = ov backend
+        , proxyType       = ov proxyType
+        , startupHook     = ov startupHook
+        , maxPOSTBodySize = ov maxPOSTBodySize
         }
       where
         ov f = getLast $! (mappend `on` (Last . f)) a b
@@ -212,18 +216,19 @@ instance (Typeable1 m) => Typeable1 (Config m) where
 -- | These are the default values for the options
 defaultConfig :: MonadSnap m => Config m a
 defaultConfig = mempty
-    { hostname       = Just "localhost"
-    , accessLog      = Just $ ConfigFileLog "log/access.log"
-    , errorLog       = Just $ ConfigFileLog "log/error.log"
-    , locale         = Just "en_US"
-    , compression    = Just True
-    , verbose        = Just True
-    , errorHandler   = Just defaultErrorHandler
-    , bind           = Just "0.0.0.0"
-    , sslbind        = Just "0.0.0.0"
-    , sslcert        = Just "cert.pem"
-    , sslkey         = Just "key.pem"
-    , defaultTimeout = Just 60
+    { hostname        = Just "localhost"
+    , accessLog       = Just $ ConfigFileLog "log/access.log"
+    , errorLog        = Just $ ConfigFileLog "log/error.log"
+    , locale          = Just "en_US"
+    , compression     = Just True
+    , verbose         = Just True
+    , errorHandler    = Just defaultErrorHandler
+    , bind            = Just "0.0.0.0"
+    , sslbind         = Just "0.0.0.0"
+    , sslcert         = Just "cert.pem"
+    , sslkey          = Just "key.pem"
+    , defaultTimeout  = Just 60
+    , maxPOSTBodySize = Just (10*1024*1024)
     }
 
 
@@ -304,6 +309,8 @@ getProxyType = proxyType
 getStartupHook :: Config m a -> Maybe (StartupInfo m a -> IO ())
 getStartupHook = startupHook
 
+getMaxPOSTBodySize :: Config m a -> Maybe Int64
+getMaxPOSTBodySize = maxPOSTBodySize
 
 ------------------------------------------------------------------------------
 setHostname       :: ByteString              -> Config m a -> Config m a
@@ -360,6 +367,8 @@ setProxyType x c = c { proxyType = Just x }
 setStartupHook    :: (StartupInfo m a -> IO ()) -> Config m a -> Config m a
 setStartupHook x c = c { startupHook = Just x }
 
+setMaxPOSTBodySize :: Int64                  -> Config m a -> Config m a
+setMaxPOSTBodySize x c = c { maxPOSTBodySize = Just x }
 
 ------------------------------------------------------------------------------
 

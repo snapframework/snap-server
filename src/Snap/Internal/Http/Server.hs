@@ -128,6 +128,7 @@ data ServerState = ServerState
     , _sessionPort          :: SessionInfo
     , _logAccess            :: Request -> Response -> IO ()
     , _logError             :: ByteString -> IO ()
+    , _maxPOSTBodySize      :: Int64
     }
 
 
@@ -137,10 +138,11 @@ runServerMonad :: ByteString                     -- ^ local host name
                -> (Request -> Response -> IO ()) -- ^ access log function
                -> (ByteString -> IO ())          -- ^ error log function
                -> ServerMonad a                  -- ^ monadic action to run
+               -> Int64                          -- ^ maximum POST body size
                -> Iteratee ByteString IO a
-runServerMonad lh s la le m = evalStateT m st
+runServerMonad lh s la le m mpbs = evalStateT m st
   where
-    st = ServerState False lh s la le
+    st = ServerState False lh s la le mpbs
 
 
 ------------------------------------------------------------------------------
@@ -155,8 +157,9 @@ httpServe :: Int                         -- ^ default timeout
           -> Maybe (ByteString -> IO ()) -- ^ error log action
           -> ([Socket] -> IO ())         -- ^ initialisation
           -> ServerHandler               -- ^ handler procedure
+          -> Int64                       -- ^ maximum post body size
           -> IO ()
-httpServe defaultTimeout ports localHostname alog' elog' initial handler =
+httpServe defaultTimeout ports localHostname alog' elog' initial handler mpbs =
     withSocketsDo $ spawnAll alog' elog' `catches` errorHandlers
 
   where
@@ -207,7 +210,7 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
         let socks = map (\x -> case x of ListenHttp s -> s; ListenHttps s _ -> s) nports
 
         (simpleEventLoop defaultTimeout nports numCapabilities (logE elog) (initial socks)
-                    $ runHTTP defaultTimeout alog elog handler localHostname)
+                    $ runHTTP defaultTimeout alog elog handler localHostname mpbs)
           `finally` do
             logE elog "Server.httpServe: SHUTDOWN"
 
@@ -273,6 +276,7 @@ runHTTP :: Int                           -- ^ default timeout
         -> Maybe (ByteString -> IO ())   -- ^ error logger
         -> ServerHandler                 -- ^ handler procedure
         -> ByteString                    -- ^ local host name
+        -> Int64                         -- ^ maximum POST body size
         -> SessionInfo                   -- ^ session port information
         -> Enumerator ByteString IO ()   -- ^ read end of socket
         -> Iteratee ByteString IO ()     -- ^ write end of socket
@@ -280,7 +284,7 @@ runHTTP :: Int                           -- ^ default timeout
                                          -- ^ sendfile end
         -> ((Int -> Int) -> IO ())       -- ^ timeout tickler
         -> IO ()
-runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
+runHTTP defaultTimeout alog elog handler lh mpbs sinfo readEnd writeEnd onSendFile
         tickle =
     go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
                        return ()
@@ -304,9 +308,11 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
 
     go = do
         buf <- allocBuffer 16384
-        let iter1 = runServerMonad lh sinfo (logA alog) (logE elog) $
-                                   httpSession defaultTimeout writeEnd buf
-                                               onSendFile tickle handler
+        let iter1 = runServerMonad lh sinfo (logA alog) (logE elog)
+                                   (httpSession defaultTimeout writeEnd buf
+                                               onSendFile tickle handler)
+                                   mpbs
+
         let iter = iterateeDebugWrapper "httpSession iteratee" iter1
 
         debug "runHTTP/go: prepping iteratee for start"
@@ -615,19 +621,17 @@ receiveRequest writeEnd = do
         mbCT'  = liftM trimIt mbCT
         doIt   = mbCT' == Just "application/x-www-form-urlencoded"
 
-        maximumPOSTBodySize :: Int64
-        maximumPOSTBodySize = 10*1024*1024
-
         getIt :: ServerMonad Request
         getIt = {-# SCC "receiveRequest/parseForm/getIt" #-} do
             debug "parseForm: got application/x-www-form-urlencoded"
             debug "parseForm: reading POST body"
             senum <- liftIO $ readIORef $ rqBody req
+            mpbs <- gets _maxPOSTBodySize
             let (SomeEnumerator enum) = senum
             consumeStep <- liftIO $ runIteratee consume
             step <- liftIO $
                     runIteratee $
-                    joinI $ takeNoMoreThan maximumPOSTBodySize consumeStep
+                    joinI $ takeNoMoreThan mpbs consumeStep
             body <- liftM S.concat $ lift $ enum step
             let newParams = parseUrlEncoded body
 
