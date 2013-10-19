@@ -244,11 +244,14 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
     waitLoop (EventLoopCpu _ _ mv) = readMVar mv
 
     --------------------------------------------------------------------------
-    killLoop (EventLoopCpu tid tm mv) = E.mask_ $ do
+    killLoop ev = E.mask_ $ do
         killThread tid
         TM.stop tm
         takeMVar mv >>= E.evaluate
-
+      where
+        tid = _acceptThread ev
+        tm  = _timeoutManager ev
+        mv  = _exitMVar ev
 
 ------------------------------------------------------------------------------
 httpSession :: forall hookState .
