@@ -32,8 +32,6 @@ Executable testsuite
     directory-tree,
     enumerator                 >= 0.4.15   && <0.5,
     filepath,
-    -- Blacklist bad versions of hashable
-    hashable                  (>= 1.1 && < 1.2) || (>= 1.2.0.6 && <1.3),
     http-conduit               >= 1.8      && <1.9,
     HUnit                      >= 1.2      && <2,
     mtl                        >= 2        && <3,
@@ -100,8 +98,6 @@ Executable pongserver
     directory-tree,
     enumerator                >= 0.4.15  && <0.5,
     filepath,
-    -- Blacklist bad versions of hashable
-    hashable                  (>= 1.1 && < 1.2) || (>= 1.2.0.6 && <1.3),
     HUnit                     >= 1.2     && <2,
     mtl                       >= 2       && <3,
     old-locale,
@@ -168,8 +164,6 @@ Executable testserver
     directory-tree,
     enumerator                 >= 0.4.15   && <0.5,
     filepath,
-    -- Blacklist bad versions of hashable
-    hashable                  (>= 1.1 && < 1.2) || (>= 1.2.0.6 && <1.3),
     HUnit                      >= 1.2      && <2,
     MonadCatchIO-transformers  >= 0.2.1    && <0.4,
     mtl                        >= 2        && <3,
