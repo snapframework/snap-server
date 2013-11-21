@@ -17,3 +17,5 @@ TAGS
 *.prof_*
 *.aux
 *.hp
+.cabal-sandbox
+cabal.sandbox.config

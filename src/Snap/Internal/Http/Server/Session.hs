@@ -149,6 +149,9 @@ data EventLoopCpu = EventLoopCpu
 
 
 ------------------------------------------------------------------------------
+-- | The main Snap webserver loop. Given a server handler, configuration, and a
+-- function to accept new connections, runs an HTTP loop forever over N
+-- threads, until a ThreadKilled exception is received.
 httpAcceptLoop :: forall hookState .
                   ServerHandler hookState  -- ^ server handler
                -> ServerConfig hookState   -- ^ server config

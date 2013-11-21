@@ -122,6 +122,54 @@ instance Show ConfigLog where
     show (ConfigFileLog f) = "log to file " ++ show f
     show (ConfigIoLog _)   = "custom logging handler"
 
+
+------------------------------------------------------------------------------
+-- We should be using ServerConfig here. There needs to be a clearer
+-- separation between:
+--
+--   * what the underlying code needs to configure itself
+--
+--   * what the command-line processing does.
+--
+-- The latter will provide "library" helper functions that operate on
+-- ServerConfig/etc in order to allow users to configure their own environment.
+--
+--
+-- Todo:
+--
+--  * need a function ::
+--      CommandLineConfig -> IO [(ServerConfig hookState, AcceptFunc)]
+--
+--       this will prep for another function that will spawn all of the
+--       accept loops with httpAcceptLoop.
+--
+--  * all backends provide "Some -> Foo -> Config -> IO AcceptFunc"
+--
+--  * add support for socket activation to command line, or delegate to
+--    different library? It's linux-only anyways, need to ifdef. It would be
+--    silly to depend on the socket-activation library for that one little
+--    function.
+--
+--  * break config into multiple modules:
+--
+--     * everything that modifies the snap handler (compression, proxy
+--       settings, error handler)
+--
+--     * everything that directly modifies server settings (hostname /
+--       defaultTimeout / hooks / etc)
+--
+--     * everything that configures backends (port/bind/ssl*)
+--
+--     * everything that handles command line stuff
+--
+--     * utility stuff
+--
+-- Cruft that definitely must be removed:
+--
+--  * ConfigLog -- this becomes a binary option on the command-line side (no
+--    logging or yes, to this file), but the ConfigIoLog gets zapped
+--    altogether.
+
 ------------------------------------------------------------------------------
 -- | A record type which represents partial configurations (for 'httpServe')
 -- by wrapping all of its fields in a 'Maybe'. Values of this type are usually

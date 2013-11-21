@@ -18,10 +18,13 @@ module Snap.Http.Server
 
 ------------------------------------------------------------------------------
 import           Data.ByteString.Char8   (ByteString)
+import qualified Data.ByteString.Char8   as S
+import           Data.Version            (showVersion)
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
 ------------------------------------------------------------------------------
+import qualified Paths_snap_server       as V
 import           Snap.Core               (MonadSnap (..), Snap)
 import           Snap.Http.Server.Config
 
@@ -29,7 +32,7 @@ import           Snap.Http.Server.Config
 ------------------------------------------------------------------------------
 -- | A short string describing the Snap server version
 snapServerVersion :: ByteString
-snapServerVersion = undefined
+snapServerVersion = S.pack $! showVersion V.version
 
 
 ------------------------------------------------------------------------------
