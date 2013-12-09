@@ -445,7 +445,7 @@ testEcho ssl port name =
 ------------------------------------------------------------------------------
 testServerHeader :: Bool -> Int -> String -> Test
 testServerHeader ssl port name =
-    testCase (name ++ "/blackbox/server-header") $ do
+    testCase (name ++ "blackbox/server-header") $ do
         let uri = (if ssl then "https" else "http")
                   ++ "://127.0.0.1:" ++ show port ++ "/server-header"
         HTTP.get (S.pack uri) $ \resp _ -> do
