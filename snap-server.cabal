@@ -64,7 +64,7 @@ Library
     Snap.Internal.Http.Server.Types
 
   build-depends:
-    attoparsec                >= 0.10     && < 0.11,
+    attoparsec                >= 0.10     && < 0.12,
     base                      >= 4        && < 5,
     blaze-builder             >= 0.2.1.4  && < 0.4,
     bytestring                >= 0.9.1    && < 0.11,
@@ -79,7 +79,7 @@ Library
     old-locale,
     snap-core                 >= 1.0      && < 1.1,
     template-haskell          >= 2.2      && < 2.9,
-    text                      >= 0.11     && < 0.12,
+    text                      >= 0.11     && < 1.2,
     time                      >= 1.0      && < 1.5,
     transformers              >= 0.3      && < 0.4,
     transformers-base         >= 0.4      && < 0.5,
@@ -166,7 +166,7 @@ Test-suite testsuite
     Test.Common.TestHandler
 
   build-depends:
-    attoparsec                 >= 0.10     && < 0.11,
+    attoparsec                 >= 0.10     && < 0.12,
     base                       >= 4        && < 5,
     base16-bytestring          >= 0.1      && < 0.2,
     blaze-builder              >= 0.2.1.4  && < 0.4,
@@ -183,7 +183,7 @@ Test-suite testsuite
     old-locale,
     snap-core                  >= 1.0      && < 1.1,
     template-haskell           >= 2.2      && < 2.9,
-    text                       >= 0.11     && < 0.12,
+    text                       >= 0.11     && < 1.2,
     threads                    >= 0.5      && < 0.6,
     time                       >= 1.0      && < 1.5,
     transformers               >= 0.3      && < 0.4,
@@ -339,7 +339,7 @@ Executable snap-test-pong-server
       System.SendFile.FreeBSD
 
   build-depends:
-    attoparsec                >= 0.10     && < 0.11,
+    attoparsec                >= 0.10     && < 0.12,
     base                      >= 4        && < 5,
     blaze-builder             >= 0.2.1.4  && < 0.4,
     bytestring                >= 0.9.1    && < 0.11,
@@ -354,7 +354,7 @@ Executable snap-test-pong-server
     old-locale,
     snap-core                 >= 1.0      && < 1.1,
     template-haskell          >= 2.2      && < 2.9,
-    text                      >= 0.11     && < 0.12,
+    text                      >= 0.11     && < 1.2,
     time                      >= 1.0      && < 1.5,
     transformers              >= 0.3      && < 0.4,
     transformers-base         >= 0.4      && < 0.5,
