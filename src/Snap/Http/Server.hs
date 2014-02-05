@@ -83,6 +83,7 @@ simpleHttpServe config handler = do
                                                 ($ dat)
                                                 (getStartupHook conf))
                           (runSnap handler)
+                          (fromJust $ getMaxPOSTBodySize conf)
 
     --------------------------------------------------------------------------
     mkStartupInfo sockets conf =
