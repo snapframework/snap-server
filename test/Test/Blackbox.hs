@@ -13,16 +13,12 @@ module Test.Blackbox
 --------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder
 import           Control.Concurrent
-import           Control.Exception                    (SomeException,
-                                                       bracketOnError, catch,
-                                                       throwIO)
+import           Control.Exception                    (bracketOnError)
 import           Control.Monad
-import           Control.Monad.Trans
 import qualified Data.ByteString.Base16               as B16
 import           Data.ByteString.Char8                (ByteString)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
-import           Data.CaseInsensitive                 (CI)
 import           Data.Int
 import           Data.List
 import           Data.Monoid
@@ -36,7 +32,6 @@ import           Prelude                              hiding (catch, take)
 import qualified System.IO.Streams                    as Streams
 import           System.Timeout
 import           Test.Framework
-import           Test.Framework.Options
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
 import           Test.HUnit                           hiding (Test, path)
@@ -97,9 +92,8 @@ startTestSocketServer = bracketOnError getSock cleanup forkServer
 
     forkServer sock = do
         port <- liftM fromIntegral $ N.socketPort sock
-        let scfg = emptyServerConfig { Types._localPort = port }
         tid <- forkIO $ httpAcceptLoop (snapToServerHandler testHandler)
-                                       scfg
+                                       emptyServerConfig
                                        (Sock.httpAcceptFunc sock)
         return (tid, port)
 
@@ -123,7 +117,6 @@ startTestSocketServer = bracketOnError getSock cleanup forkServer
                                            onExceptionHook
                                            onEscape
                                            "localhost"
-                                           0
                                            6
                                            False
                                            1

@@ -185,25 +185,27 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
     loop mv tm loopRestore = eatException go `E.finally` putMVar mv ()
       where
         ----------------------------------------------------------------------
-        handlers = [ Handler $ \(e :: IOException)    -> logException e >> go
-                   , Handler $ \(e :: AsyncException) -> loopRestore (E.throwIO $! e)
-                   , Handler $ \(e :: SomeException)  -> logException e >>
-                                                         loopRestore (E.throwIO e)
-                   ]
+        handlers =
+            [ Handler $ \(e :: IOException)    -> logException e >> go
+            , Handler $ \(e :: AsyncException) -> loopRestore (E.throwIO $! e)
+            , Handler $ \(e :: SomeException)  -> do logException e
+                                                     loopRestore (E.throwIO e)
+            ]
 
         go = do
-            (sendFileHandler, localAddress, remoteAddress, remotePort,
-             readEnd, writeEnd, cleanup) <- acceptFunc loopRestore
-                                            `E.catches` handlers
+            (sendFileHandler, localAddress, localPort, remoteAddress,
+             remotePort, readEnd, writeEnd, cleanup) <- acceptFunc loopRestore
+                                                          `E.catches` handlers
 
             forkIOWithUnmask
                 $ eatException
-                . prep sendFileHandler localAddress remoteAddress
+                . prep sendFileHandler localAddress localPort remoteAddress
                        remotePort readEnd writeEnd cleanup
             go
 
         prep :: SendFileHandler
              -> ByteString
+             -> Int
              -> ByteString
              -> Int
              -> InputStream ByteString
@@ -211,8 +213,8 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
              -> IO ()
              -> (forall a . IO a -> IO a)
              -> IO ()
-        prep sendFileHandler localAddress remoteAddress remotePort readEnd
-             writeEnd cleanup restore =
+        prep sendFileHandler localAddress localPort remoteAddress remotePort
+             readEnd writeEnd cleanup restore =
           do
             connClose <- newIORef False
             newConn   <- newIORef True
@@ -220,15 +222,16 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
             tmHandle  <- TM.register (killThread tid) tm
             let twiddleTimeout = TM.modify tmHandle
 
-            let psd = PerSessionData connClose
-                                     twiddleTimeout
-                                     newConn
-                                     sendFileHandler
-                                     localAddress
-                                     remoteAddress
-                                     remotePort
-                                     readEnd
-                                     writeEnd
+            let !psd = PerSessionData connClose
+                                      twiddleTimeout
+                                      newConn
+                                      sendFileHandler
+                                      localAddress
+                                      localPort
+                                      remoteAddress
+                                      remotePort
+                                      readEnd
+                                      writeEnd
             restore (session psd) `E.finally` cleanup
 
     --------------------------------------------------------------------------
@@ -269,7 +272,6 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     defaultTimeout          = _defaultTimeout config
     isSecure                = _isSecure config
     localHostname           = _localHostname config
-    localPort               = _localPort config
     logAccess               = _logAccess config
     logError                = _logError config
     startHook               = _onStart config
@@ -283,9 +285,10 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     forceConnectionClose    = _forceConnectionClose sessionData
     isNewConnection         = _isNewConnection sessionData
     localAddress            = _localAddress sessionData
-    readEnd                 = _readEnd sessionData
+    localPort               = _localPort sessionData
     remoteAddress           = _remoteAddress sessionData
     remotePort              = _remotePort sessionData
+    readEnd                 = _readEnd sessionData
     tickle f                = _twiddleTimeout sessionData f
     writeEnd                = _writeEnd sessionData
     sendfileHandler         = _sendfileHandler sessionData

@@ -650,6 +650,7 @@ makePerSessionData readEnd writeEnd = do
                              isNewConnection
                              (mockSendFileHandler writeEnd)
                              localAddress
+                             80
                              remoteAddress
                              remotePort
                              readEnd
@@ -809,7 +810,6 @@ makeServerConfig hs = ServerConfig logAccess
                                    onEx
                                    onEscape
                                    "backup-localhost"
-                                   8080
                                    10
                                    False
                                    1
@@ -932,7 +932,7 @@ runAcceptLoop requests snap = dieIfTimeout $ do
         when b $ myThreadId >>= killThread
         os <- Streams.makeOutputStream out >>=
               Streams.contramap S.copy
-        return (sendFileFunc, "localhost", "localhost", 55555, inputStream,
+        return (sendFileFunc, "localhost", 80, "localhost", 55555, inputStream,
                 os, putMVar lock ())
 
       where

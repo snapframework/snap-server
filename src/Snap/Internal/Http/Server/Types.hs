@@ -144,7 +144,6 @@ data ServerConfig hookState = ServerConfig
 
       -- | will be overridden by a @Host@ header if it appears.
     , _localHostname         :: !ByteString
-    , _localPort             :: {-# UNPACK #-} !Int
     , _defaultTimeout        :: {-# UNPACK #-} !Int
     , _isSecure              :: !Bool
 
@@ -174,6 +173,9 @@ data PerSessionData = PerSessionData
       -- | The server's idea of its local address.
     , _localAddress         :: !ByteString
 
+      -- | The listening port number.
+    , _localPort            :: {-# UNPACK #-} !Int
+
       -- | The address of the remote user.
     , _remoteAddress        :: !ByteString
 
@@ -193,6 +195,7 @@ type AcceptFunc =
            (forall a . IO a -> IO a)     -- ^ exception restore function
         -> IO ( SendFileHandler          -- ^ what to do on sendfile
               , ByteString               -- ^ local address
+              , Int                      -- ^ local port
               , ByteString               -- ^ remote address
               , Int                      -- ^ remote port
               , InputStream ByteString   -- ^ socket read end

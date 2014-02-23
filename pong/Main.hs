@@ -14,7 +14,6 @@ import           Control.Concurrent                (MVar, ThreadId,
 import           Control.Exception                 (SomeException,
                                                     bracketOnError, evaluate)
 import qualified Control.Exception                 as E
-import           Control.Monad                     (liftM)
 import qualified Data.ByteString.Char8             as S
 import qualified Network.Socket                    as N
 import           Snap.Core
@@ -37,8 +36,8 @@ startTestSocketServer portNum userHandler =
 
     forkServer sock = do
         port <- fromIntegral <$> N.socketPort sock
-        putStrLn $ "starting on " ++ show port
-        let scfg = emptyServerConfig { Types._localPort = port }
+        putStrLn $ "starting on " ++ show (port :: Int)
+        let scfg = emptyServerConfig
         mv <- newEmptyMVar
         tid <- forkIOWithUnmask $ \unmask -> do
             putStrLn "server start"
@@ -68,7 +67,6 @@ startTestSocketServer portNum userHandler =
                                            onExceptionHook
                                            onEscape
                                            "localhost"
-                                           0
                                            6
                                            False
                                            1
