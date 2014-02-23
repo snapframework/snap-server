@@ -647,13 +647,13 @@ makePerSessionData readEnd writeEnd = do
 
     let psd = PerSessionData forceConnectionClose
                              twiddleTimeout
+                             isNewConnection
                              (mockSendFileHandler writeEnd)
                              localAddress
                              remoteAddress
                              remotePort
                              readEnd
                              writeEnd
-                             isNewConnection
 
     return psd
 

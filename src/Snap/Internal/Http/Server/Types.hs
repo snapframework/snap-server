@@ -156,15 +156,35 @@ data ServerConfig hookState = ServerConfig
 ------------------------------------------------------------------------------
 -- | All of the things a session needs to service a single HTTP request.
 data PerSessionData = PerSessionData
-    { _forceConnectionClose :: {-# UNPACK #-} !(IORef Bool)
+    { -- | If the bool stored in this IORef becomes true, the server will close
+      -- the connection after the current request is processed.
+      _forceConnectionClose :: {-# UNPACK #-} !(IORef Bool)
+
+      -- | An IO action to modify the current request timeout.
     , _twiddleTimeout       :: !((Int -> Int) -> IO ())
-    , _sendfileHandler      :: !SendFileHandler
-    , _localAddress         :: !ByteString
-    , _remoteAddress        :: !ByteString
-    , _remotePort           :: {-# UNPACK #-} !Int
-    , _readEnd              :: !(InputStream ByteString)
-    , _writeEnd             :: !(OutputStream ByteString)
+
+      -- | The value stored in this IORef is True if this request is the first
+      -- on a new connection, and False if it is a subsequent keep-alive
+      -- request.
     , _isNewConnection      :: !(IORef Bool)
+
+      -- | The function called when we want to use @sendfile().@
+    , _sendfileHandler      :: !SendFileHandler
+
+      -- | The server's idea of its local address.
+    , _localAddress         :: !ByteString
+
+      -- | The address of the remote user.
+    , _remoteAddress        :: !ByteString
+
+      -- | The remote user's port.
+    , _remotePort           :: {-# UNPACK #-} !Int
+
+      -- | The read end of the socket connection.
+    , _readEnd              :: !(InputStream ByteString)
+
+      -- | The write end of the socket connection.
+    , _writeEnd             :: !(OutputStream ByteString)
     }
 
 

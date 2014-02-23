@@ -222,13 +222,13 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
 
             let psd = PerSessionData connClose
                                      twiddleTimeout
+                                     newConn
                                      sendFileHandler
                                      localAddress
                                      remoteAddress
                                      remotePort
                                      readEnd
                                      writeEnd
-                                     newConn
             restore (session psd) `E.finally` cleanup
 
     --------------------------------------------------------------------------
