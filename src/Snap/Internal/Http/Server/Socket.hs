@@ -16,7 +16,7 @@ import           Network.Socket                    (Socket, SocketOption (NoDela
                                                     getSocketName, listen,
                                                     setSocketOption, socket)
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
-import           Snap.Internal.Http.Server.Types   (AcceptFunc,
+import           Snap.Internal.Http.Server.Types   (AcceptFunc (..),
                                                     SendFileHandler)
 import qualified System.IO.Streams                 as Streams
 #ifndef PORTABLE
@@ -56,7 +56,7 @@ bUFSIZ = 4064
 ------------------------------------------------------------------------------
 httpAcceptFunc :: Socket                     -- ^ bound socket
                -> AcceptFunc
-httpAcceptFunc boundSocket restore = do
+httpAcceptFunc boundSocket = AcceptFunc $ \restore -> do
     (sock, remoteAddr)       <- restore $ accept boundSocket
     localAddr                <- getSocketName sock
     (localPort, localHost)   <- getAddress localAddr

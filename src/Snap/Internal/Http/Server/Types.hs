@@ -14,7 +14,7 @@ module Snap.Internal.Http.Server.Types
   -- * Handlers
   , SendFileHandler
   , ServerHandler
-  , AcceptFunc
+  , AcceptFunc(..)
 
   -- * Socket types
   , SocketConfig(..)
@@ -129,18 +129,18 @@ data PerSessionData = PerSessionData
 
 
 ------------------------------------------------------------------------------
-type AcceptFunc =
-           (forall a . IO a -> IO a)     -- ^ exception restore function
-        -> IO ( SendFileHandler          -- ^ what to do on sendfile
-              , ByteString               -- ^ local address
-              , Int                      -- ^ local port
-              , ByteString               -- ^ remote address
-              , Int                      -- ^ remote port
-              , InputStream ByteString   -- ^ socket read end
-              , OutputStream ByteString  -- ^ socket write end
-              , IO ()                    -- ^ cleanup action
-              )
-
+newtype AcceptFunc = AcceptFunc {
+  runAcceptFunc :: (forall a . IO a -> IO a)     -- ^ exception restore function
+                -> IO ( SendFileHandler          -- ^ what to do on sendfile
+                      , ByteString               -- ^ local address
+                      , Int                      -- ^ local port
+                      , ByteString               -- ^ remote address
+                      , Int                      -- ^ remote port
+                      , InputStream ByteString   -- ^ socket read end
+                      , OutputStream ByteString  -- ^ socket write end
+                      , IO ()                    -- ^ cleanup action
+                      )
+  }
 
                              --------------------
                              -- function types --

@@ -258,6 +258,7 @@ testNoHost1_0 = testCase "session/noHost1_0" $ do
     snap1 = getRequest >>= writeBS . rqHostName
     snap2 = getRequest >>= writeBS . rqLocalHostname
 
+
 ------------------------------------------------------------------------------
 testChunkedRequest :: Test
 testChunkedRequest = testCase "session/chunkedRequest" $ do
@@ -899,15 +900,16 @@ runAcceptLoop requests snap = dieIfTimeout $ do
                -> MVar [Result]
                -> MVar ()
                -> AcceptFunc
-    afuncError _ _ lock restore = restore $ withMVar lock $ \_ ->
-        error "error"
+    afuncError _ _ lock = AcceptFunc $ \restore ->
+                          restore $ withMVar lock $ \_ ->
+                          error "error"
 
     --------------------------------------------------------------------------
     afuncSuicide :: InputStream ByteString
                  -> MVar [Result]
                  -> MVar ()
                  -> AcceptFunc
-    afuncSuicide _ _ lock restore =
+    afuncSuicide _ _ lock = AcceptFunc $ \restore ->
         restore $ withMVar lock (\_ -> throwIO ThreadKilled)
 
     --------------------------------------------------------------------------
@@ -916,7 +918,8 @@ runAcceptLoop requests snap = dieIfTimeout $ do
                      -> MVar [Result]
                      -> MVar ()
                      -> AcceptFunc
-    afuncIOException ref _ _ lock restore = restore $ withMVar lock $ const $ do
+    afuncIOException ref _ _ lock = AcceptFunc $ \restore ->
+                                    restore $ withMVar lock $ const $ do
         x <- readIORef ref
         writeIORef ref $! x + 1
         if x >= 2
@@ -928,7 +931,7 @@ runAcceptLoop requests snap = dieIfTimeout $ do
                -> MVar [Result]
                -> MVar ()
                -> AcceptFunc
-    acceptFunc inputStream output lock restore = restore $ do
+    acceptFunc inputStream output lock = AcceptFunc $ \restore -> restore $ do
         void $ takeMVar lock
         b <- atEOF
         when b $ myThreadId >>= killThread

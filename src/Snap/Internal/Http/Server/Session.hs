@@ -101,7 +101,7 @@ import           Snap.Internal.Http.Server.Parser         (IRequest (..),
                                                            parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
 import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
 import qualified Snap.Internal.Http.Server.TimeoutManager as TM
-import           Snap.Internal.Http.Server.Types          (AcceptFunc, PerSessionData (..),
+import           Snap.Internal.Http.Server.Types          (AcceptFunc (..), PerSessionData (..),
                                                            SendFileHandler,
                                                            ServerConfig (..),
                                                            ServerHandler)
@@ -194,8 +194,9 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
 
         go = do
             (sendFileHandler, localAddress, localPort, remoteAddress,
-             remotePort, readEnd, writeEnd, cleanup) <- acceptFunc loopRestore
-                                                          `E.catches` handlers
+             remotePort, readEnd,
+             writeEnd, cleanup) <- runAcceptFunc acceptFunc loopRestore
+                                       `E.catches` handlers
 
             forkIOWithUnmask
                 $ eatException
