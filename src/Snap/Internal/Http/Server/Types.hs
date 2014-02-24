@@ -4,17 +4,11 @@
 module Snap.Internal.Http.Server.Types
   ( ServerConfig(..)
   , PerSessionData(..)
-
-  -- * HTTP lifecycle
-  -- $lifecycle
-
-  -- * Hooks
-  -- $hooks
   , DataFinishedHook
   , EscapeSnapHook
   , ExceptionHook
   , ParseHook
-  , StartHook
+  , NewRequestHook
   , UserHandlerFinishedHook
 
   -- * Handlers
@@ -38,68 +32,12 @@ import           Snap.Core                                (Request, Response)
 import           System.IO.Streams                        (InputStream,
                                                            OutputStream)
 
-                          ---------------------------
-                          -- snap server lifecycle --
-                          ---------------------------
-
 ------------------------------------------------------------------------------
--- $lifecycle
---
--- 'Request' \/ 'Response' lifecycle for \"normal\" requests (i.e. without
--- errors):
---
--- 1. accept a new connection, set it up (e.g. with SSL)
---
--- 2. create a 'PerSessionData' object
---
--- 3. Enter the 'SessionHandler', which:
---
--- 4. calls the 'StartHook', making a new hookState object.
---
--- 5. parses the HTTP request. If the session is over, we stop here.
---
--- 6. calls the 'ParseHook'
---
--- 7. enters the 'ServerHandler', which is provided by another part of the
---    framework
---
--- 8. the server handler passes control to the user handler
---
--- 9. a 'Response' is produced, and the 'UserHandlerFinishedHook' is called.
---
--- 10. the 'Response' is written to the client
---
--- 11. the 'DataFinishedHook' is called.
---
--- 12. we go to #3.
-
-
-                                  -----------
-                                  -- hooks --
-                                  -----------
-
-------------------------------------------------------------------------------
--- $hooks
--- #hooks#
---
--- At various critical points in the HTTP lifecycle, the Snap server will call
--- user-defined \"hooks\" that can be used for instrumentation or tracing of
--- the process of building the HTTP response. The first hook called, the
--- 'StartHook', will generate a \"hookState\" object (having some user-defined
--- abstract type), and this object will be passed to the rest of the hooks as
--- the server handles the process of responding to the HTTP request.
---
--- For example, you could pass a set of hooks to the Snap server that measured
--- timings for each URI handled by the server to produce online statistics and
--- metrics using something like @statsd@ (<https://github.com/etsy/statsd>).
-
-
-------------------------------------------------------------------------------
--- | The 'StartHook' is called once processing for an HTTP request begins, i.e.
--- after the connection has been accepted and we know that there's data
--- available to read from the socket. It produces a custom \"hookState\" that
--- will be passed to the rest of the hooks.
-type StartHook hookState = PerSessionData -> IO hookState
+-- | The 'NewRequestHook' is called once processing for an HTTP request begins,
+-- i.e. after the connection has been accepted and we know that there's data
+-- available to read from the socket. The IORef passed to the hook initially
+-- contains a bottom value that will throw an exception if evaluated.
+type NewRequestHook hookState = PerSessionData -> IO hookState
 
 -- | The 'ParseHook' is called after the HTTP Request has been parsed by the
 -- server, but before the user handler starts running.
@@ -135,7 +73,7 @@ type EscapeSnapHook hookState = IORef hookState -> IO ()
 data ServerConfig hookState = ServerConfig
     { _logAccess             :: !(Request -> Response -> Word64 -> IO ())
     , _logError              :: !(Builder -> IO ())
-    , _onStart               :: !(StartHook hookState)
+    , _onNewRequest          :: !(NewRequestHook hookState)
     , _onParse               :: !(ParseHook hookState)
     , _onUserHandlerFinished :: !(UserHandlerFinishedHook hookState)
     , _onDataFinished        :: !(DataFinishedHook hookState)

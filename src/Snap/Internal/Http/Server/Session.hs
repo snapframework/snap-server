@@ -274,7 +274,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     localHostname           = _localHostname config
     logAccess               = _logAccess config
     logError                = _logError config
-    startHook               = _onStart config
+    newRequestHook          = _onNewRequest config
     parseHook               = _onParse config
     userHandlerFinishedHook = _onUserHandlerFinished config
     dataFinishedHook        = _onDataFinished config
@@ -303,7 +303,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     loop = do
         -- peek first to ensure startHook gets generated at the right time.
         readEndAtEof >>= (flip unless $ do
-            hookState <- startHook sessionData >>= newIORef
+            hookState <- newRequestHook sessionData >>= newIORef
             -- parse HTTP request
             req <- receiveRequest
             parseHook hookState req

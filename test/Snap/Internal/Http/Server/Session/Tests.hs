@@ -556,6 +556,7 @@ testSendFile = testCase "session/sendFile" $ do
     snap1 = sendFile "test/dummy.txt"
     snap2 = sendFilePartial "test/dummy.txt" (1,4)
 
+
 ------------------------------------------------------------------------------
 testBasicAcceptLoop :: Test
 testBasicAcceptLoop = testCase "session/basicAcceptLoop" $
@@ -565,6 +566,7 @@ testBasicAcceptLoop = testCase "session/basicAcceptLoop" $
     void (evaluate out) `catch` \(e::SomeException) -> do
         throwIO e
     assertBool "basic accept" $ S.isPrefixOf "HTTP/1.1 200 OK\r\n" out
+
 
 ------------------------------------------------------------------------------
 testTrivials :: Test
