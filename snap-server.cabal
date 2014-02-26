@@ -50,6 +50,7 @@ Library
     Snap.Http.Server,
     Snap.Http.Server.Config,
     Snap.Http.Server.Types,
+    Snap.Internal.Http.Server.Types,
     System.FastLogger
 
   other-modules:
@@ -61,8 +62,7 @@ Library
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Socket,
-    Snap.Internal.Http.Server.TimeoutManager,
-    Snap.Internal.Http.Server.Types
+    Snap.Internal.Http.Server.TimeoutManager
 
   build-depends:
     attoparsec                >= 0.10     && < 0.12,

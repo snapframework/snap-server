@@ -9,8 +9,10 @@ module System.FastLogger
   , combinedLogEntry
   , newLogger
   , newLoggerWithCustomErrorFunction
-  , logMsg
+  , withLogger
+  , withLoggerWithCustomErrorFunction
   , stopLogger
+  , logMsg
   ) where
 
 
@@ -26,8 +28,8 @@ import           Control.Concurrent                 (MVar, ThreadId, forkIO,
                                                      withMVar)
 import           Control.Exception                  (AsyncException,
                                                      Handler (..),
-                                                     SomeException, catch,
-                                                     catches)
+                                                     SomeException, bracket,
+                                                     catch, catches)
 import           Control.Monad                      (unless, void, when)
 import           Data.ByteString.Char8              (ByteString)
 import qualified Data.ByteString.Char8              as S
@@ -96,6 +98,31 @@ newLoggerWithCustomErrorFunction errAction fp = do
 
 
 ------------------------------------------------------------------------------
+-- | Creates a Logger and passes it into the given function, cleaning up
+-- with \"stopLogger\" afterwards.
+withLogger :: FilePath                      -- ^ log file to use
+          -> (Logger -> IO a)
+          -> IO a
+withLogger f = bracket (newLogger f) stopLogger
+
+
+------------------------------------------------------------------------------
+-- | Creates a Logger with \"newLoggerWithCustomErrorFunction\" and passes it
+-- into the given function, cleaning up with \"stopLogger\" afterwards.
+withLoggerWithCustomErrorFunction :: (ByteString -> IO ())
+                                     -- ^ logger uses this action to log any
+                                     -- error messages of its own
+                                  -> FilePath       -- ^ log file to use
+                                  -> (Logger -> IO a)
+                                  -> IO a
+withLoggerWithCustomErrorFunction e f =
+    bracket (newLoggerWithCustomErrorFunction e f) stopLogger
+
+
+------------------------------------------------------------------------------
+-- FIXME: can be a builder, and we could even use the same trick we use for
+-- HTTP
+--
 -- | Prepares a log message with the time prepended.
 timestampedLogEntry :: ByteString -> IO ByteString
 timestampedLogEntry msg = do
@@ -109,6 +136,8 @@ timestampedLogEntry msg = do
 
 
 ------------------------------------------------------------------------------
+-- FIXME: builder
+--
 -- | Prepares a log message in \"combined\" format.
 combinedLogEntry :: ByteString        -- ^ remote host
                  -> Maybe ByteString  -- ^ remote user
