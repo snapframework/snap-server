@@ -36,9 +36,8 @@ import qualified Data.ByteString.Char8              as S
 import           Data.ByteString.Internal           (c2w)
 import qualified Data.ByteString.Lazy.Char8         as L
 import           Data.Int                           (Int64)
-import           Data.IORef                         (IORef, atomicModifyIORef,
-                                                     newIORef, readIORef,
-                                                     writeIORef)
+import           Data.IORef                         (IORef, newIORef,
+                                                     readIORef, writeIORef)
 import           Data.Monoid                        (mappend, mconcat, mempty)
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
@@ -49,6 +48,7 @@ import           System.IO                          (IOMode (AppendMode),
                                                      hClose, hFlush, openFile,
                                                      stderr, stdout)
 
+import           Snap.Internal.Http.Server.Common   (atomicModifyIORef')
 import           Snap.Internal.Http.Server.Date     (getCurrentDateTime,
                                                      getLogDateString)
 
@@ -194,7 +194,7 @@ combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
 logMsg :: Logger -> ByteString -> IO ()
 logMsg !lg !s = do
     let !s' = fromByteString s `mappend` fromWord8 (c2w '\n')
-    atomicModifyIORef (_queuedMessages lg) $ \d -> (d `mappend` s',())
+    atomicModifyIORef' (_queuedMessages lg) $ \d -> (d `mappend` s',())
     void $ tryPutMVar (_dataWaiting lg) ()
 
 
@@ -248,7 +248,7 @@ loggingThread (Logger queue notifier filePath _ errAct) = initialize >>= go
 
     --------------------------------------------------------------------------
     flushIt (!href, !lastOpened) = do
-        dl <- atomicModifyIORef queue $ \x -> (mempty,x)
+        dl <- atomicModifyIORef' queue $ \x -> (mempty,x)
 
         let !msgs = toLazyByteString dl
         h <- readIORef href

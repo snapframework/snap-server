@@ -18,7 +18,8 @@ module Snap.Internal.Http.Server.TimeoutManager
 import           Control.Concurrent
 import           Control.Exception
 import           Control.Monad
-import           Data.IORef
+import           Data.IORef                       (IORef, newIORef, readIORef,
+                                                   writeIORef)
 import           Foreign.C.Types
 import           Prelude                          (Bool, IO, Int, const,
                                                    fromEnum, fromIntegral, id,
@@ -26,7 +27,8 @@ import           Prelude                          (Bool, IO, Int, const,
                                                    toEnum, ($), ($!), (+),
                                                    (++), (-), (.), (<=), (==))
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Common (eatException)
+import           Snap.Internal.Http.Server.Common (atomicModifyIORef',
+                                                   eatException)
 ------------------------------------------------------------------------------
 
 
@@ -113,7 +115,7 @@ register killAction tm = do
     stateRef <- newIORef state
 
     let !h = TimeoutHandle killAction stateRef getTime
-    !_ <- atomicModifyIORef connections $ \x -> (h:x, ())
+    !_ <- atomicModifyIORef' connections $ \x -> (h:x, ())
 
     wakeup tm
     return h
@@ -178,12 +180,12 @@ managerThread tm restore =
     --------------------------------------------------------------------------
     loop = do
         restore waitABit
-        handles <- atomicModifyIORef connections (\x -> ([], x))
+        handles <- atomicModifyIORef' connections (\x -> ([], x))
         if null handles
           then restore $ takeMVar morePlease
           else do
             (keeps, discards) <- process handles
-            atomicModifyIORef connections (\x -> (keeps x, ())) >>= evaluate
+            atomicModifyIORef' connections (\x -> (keeps x, ())) >>= evaluate
             mapM_ (eatException . _killAction) $ discards []
         loop
 
