@@ -47,6 +47,35 @@ import qualified Test.Framework.Runners.Console           as Console
 import           Test.HUnit                               hiding (Test, path)
 ------------------------------------------------------------------------------
 import           Snap.Core
+import           Snap.Http.Server.Types                   (emptyServerConfig,
+                                                           getDefaultTimeout,
+                                                           getIsSecure,
+                                                           getLocalAddress,
+                                                           getLocalHostname,
+                                                           getLocalPort,
+                                                           getLogAccess,
+                                                           getLogError,
+                                                           getNumAcceptLoops,
+                                                           getOnDataFinished,
+                                                           getOnEscape,
+                                                           getOnException,
+                                                           getOnNewRequest,
+                                                           getOnParse, getOnUserHandlerFinished,
+                                                           getRemoteAddress,
+                                                           getRemotePort,
+                                                           getTwiddleTimeout,
+                                                           isNewConnection,
+                                                           setDefaultTimeout,
+                                                           setIsSecure,
+                                                           setLocalHostname,
+                                                           setLogAccess,
+                                                           setLogError,
+                                                           setNumAcceptLoops,
+                                                           setOnDataFinished,
+                                                           setOnEscape,
+                                                           setOnException,
+                                                           setOnNewRequest,
+                                                           setOnParse, setOnUserHandlerFinished)
 import           Snap.Internal.Http.Server.Date           (getLogDateString)
 import           Snap.Internal.Http.Server.Session
 import           Snap.Internal.Http.Server.Types
@@ -580,6 +609,31 @@ testTrivials = testCase "session/trivials" $ do
     coverTypeableInstance (undefined :: BadRequestException)
     coverTypeableInstance (undefined :: LengthRequiredException)
 
+    expectException (getOnNewRequest emptyServerConfig undefined >>= evaluate)
+    is <- Streams.fromList []
+    (os, _) <- Streams.listOutputStream
+    psd <- makePerSessionData is os
+    isNewConnection psd >>= assertEqual "new connection" False
+
+    -- cover getters
+    let !_ = getTwiddleTimeout psd
+    let !_ = getRemotePort psd
+    let !_ = getRemoteAddress psd
+    let !_ = getLocalPort psd
+    let !_ = getLocalAddress psd
+    getOnParse emptyServerConfig undefined undefined
+    getOnEscape emptyServerConfig undefined
+    getOnException emptyServerConfig undefined undefined
+    getOnDataFinished emptyServerConfig undefined undefined undefined
+    getOnUserHandlerFinished emptyServerConfig undefined undefined undefined
+    getLogError emptyServerConfig undefined
+    getLogAccess emptyServerConfig undefined undefined undefined
+    let !_ = getLogError emptyServerConfig
+    let !_ = getLocalHostname emptyServerConfig
+    let !_ = getDefaultTimeout emptyServerConfig
+    let !_ = getNumAcceptLoops emptyServerConfig
+    let !_ = getIsSecure emptyServerConfig
+
     !x <- getLogDateString
     threadDelay $ 2 * seconds
     !y <- getLogDateString
@@ -646,11 +700,11 @@ makePerSessionData readEnd writeEnd = do
     let localAddress = "127.0.0.1"
     let remoteAddress = "127.0.0.1"
     let remotePort = 43321
-    isNewConnection <- newIORef False
+    newConnectionRef <- newIORef False
 
     let psd = PerSessionData forceConnectionClose
                              twiddleTimeout
-                             isNewConnection
+                             newConnectionRef
                              (mockSendFileHandler writeEnd)
                              localAddress
                              80
@@ -804,18 +858,19 @@ runSession readEnd writeEnd handler = do
 
 ------------------------------------------------------------------------------
 makeServerConfig :: hookState -> ServerConfig hookState
-makeServerConfig hs = ServerConfig logAccess
-                                   logErr
-                                   onStart
-                                   onParse
-                                   onUserHandlerFinished
-                                   onDataFinished
-                                   onEx
-                                   onEscape
-                                   "backup-localhost"
-                                   10
-                                   False
-                                   1
+makeServerConfig hs = setOnException onEx                            .
+                      setOnNewRequest onStart                        .
+                      setLogError logErr                             .
+                      setLogAccess logAccess                         .
+                      setOnDataFinished onDataFinished               .
+                      setOnEscape onEscape                           .
+                      setOnUserHandlerFinished onUserHandlerFinished .
+                      setDefaultTimeout 10                           .
+                      setLocalHostname "backup-localhost"            .
+                      setIsSecure False                              .
+                      setNumAcceptLoops 1                            .
+                      setOnParse onParse                             $
+                      emptyServerConfig
   where
     onStart !psd = do
         void $ readIORef (_isNewConnection psd) >>= evaluate

@@ -35,7 +35,13 @@ module Snap.Http.Server.Types
   , setOnUserHandlerFinished
 
   -- * PerSessionData
-  -- ** getters\/setters
+  -- ** getters
+  , getTwiddleTimeout
+  , isNewConnection
+  , getLocalAddress
+  , getLocalPort
+  , getRemoteAddress
+  , getRemotePort
 
   -- * HTTP lifecycle
   -- $lifecycle
@@ -62,6 +68,7 @@ module Snap.Http.Server.Types
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder        (Builder)
 import           Data.ByteString                 (ByteString)
+import           Data.IORef                      (readIORef)
 import           Data.Word                       (Word64)
 import           Snap.Core                       (Request, Response)
 ------------------------------------------------------------------------------
@@ -115,9 +122,10 @@ import           Snap.Internal.Http.Server.Types
 -- At various critical points in the HTTP lifecycle, the Snap server will call
 -- user-defined \"hooks\" that can be used for instrumentation or tracing of
 -- the process of building the HTTP response. The first hook called, the
--- 'NewRequestHook', FIXME FIXME FIXME will generate a \"hookState\" object (having some user-defined
--- abstract type), and this object will be passed to the rest of the hooks as
--- the server handles the process of responding to the HTTP request.
+-- 'NewRequestHook', will generate a \"hookState\" object (having some
+-- user-defined abstract type), and this object will be passed to the rest of
+-- the hooks as the server handles the process of responding to the HTTP
+-- request.
 --
 -- For example, you could pass a set of hooks to the Snap server that measured
 -- timings for each URI handled by the server to produce online statistics and
@@ -128,13 +136,13 @@ import           Snap.Internal.Http.Server.Types
 emptyServerConfig :: ServerConfig a
 emptyServerConfig =
     ServerConfig (\_ _ _ -> return $! ())
-                 (\_ -> return $! ())
-                 (\_ -> return $ error "undefined hook state")
-                 (\_ _ -> return $! ())
+                 (\_     -> return $! ())
+                 (\_     -> return $ error "undefined hook state")
+                 (\_ _   -> return $! ())
                  (\_ _ _ -> return $! ())
                  (\_ _ _ -> return $! ())
-                 (\_ _ -> return $! ())
-                 (\_ -> return $! ())
+                 (\_ _   -> return $! ())
+                 (\_     -> return $! ())
                  "localhost"
                  30
                  False
@@ -278,3 +286,33 @@ setIsSecure s sc              = sc { _isSecure = s }
 ------------------------------------------------------------------------------
 setNumAcceptLoops :: Int -> ServerConfig hookState -> ServerConfig hookState
 setNumAcceptLoops s sc        = sc { _numAcceptLoops = s }
+
+
+------------------------------------------------------------------------------
+getTwiddleTimeout :: PerSessionData -> ((Int -> Int) -> IO ())
+getTwiddleTimeout psd = _twiddleTimeout psd
+
+
+------------------------------------------------------------------------------
+isNewConnection :: PerSessionData -> IO Bool
+isNewConnection = readIORef . _isNewConnection
+
+
+------------------------------------------------------------------------------
+getLocalAddress :: PerSessionData -> ByteString
+getLocalAddress psd = _localAddress psd
+
+
+------------------------------------------------------------------------------
+getLocalPort :: PerSessionData -> Int
+getLocalPort psd = _localPort psd
+
+
+------------------------------------------------------------------------------
+getRemoteAddress :: PerSessionData -> ByteString
+getRemoteAddress psd = _remoteAddress psd
+
+
+------------------------------------------------------------------------------
+getRemotePort :: PerSessionData -> Int
+getRemotePort psd = _remotePort psd

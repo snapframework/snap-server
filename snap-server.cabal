@@ -146,6 +146,7 @@ Test-suite testsuite
     Paths_snap_server,
     Snap.Http.Server,
     Snap.Http.Server.Config,
+    Snap.Http.Server.Types,
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Common,
     Snap.Internal.Http.Server.Config,
