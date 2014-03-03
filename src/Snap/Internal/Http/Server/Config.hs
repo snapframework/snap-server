@@ -96,6 +96,7 @@ import           System.Posix.Env
 import           System.Exit
 import           System.IO
 import qualified System.IO.Streams              as Streams
+------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------------------------
@@ -296,9 +297,9 @@ defaultConfig = mempty
     , verbose        = Just True
     , errorHandler   = Just defaultErrorHandler
     , bind           = Just "0.0.0.0"
-    , sslbind        = Just "0.0.0.0"
-    , sslcert        = Just "cert.pem"
-    , sslkey         = Just "key.pem"
+    , sslbind        = Nothing
+    , sslcert        = Nothing
+    , sslkey         = Nothing
     , defaultTimeout = Just 60
     }
 

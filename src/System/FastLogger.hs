@@ -35,12 +35,12 @@ import           Data.ByteString.Char8              (ByteString)
 import qualified Data.ByteString.Char8              as S
 import           Data.ByteString.Internal           (c2w)
 import qualified Data.ByteString.Lazy.Char8         as L
-import           Data.Int                           (Int64)
 import           Data.IORef                         (IORef, newIORef,
                                                      readIORef, writeIORef)
 import           Data.Monoid                        (mappend, mconcat, mempty)
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
+import           Data.Word                          (Word64)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                            hiding (catch)
 #endif
@@ -144,13 +144,13 @@ combinedLogEntry :: ByteString        -- ^ remote host
                  -> ByteString        -- ^ request line (up to you to ensure
                                       --   there are no quotes in here)
                  -> Int               -- ^ status code
-                 -> Maybe Int64       -- ^ num bytes sent
+                 -> Word64            -- ^ num bytes sent
                  -> Maybe ByteString  -- ^ referer (up to you to ensure
                                       --   there are no quotes in here)
                  -> ByteString        -- ^ user agent (up to you to ensure
                                       --   there are no quotes in here)
                  -> IO ByteString
-combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
+combinedLogEntry !host !mbUser !req !status !numBytes !mbReferer !ua = do
     timeStr <- getLogDateString
 
     let !l = [ fromByteString host
@@ -163,7 +163,7 @@ combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
              , fromByteString "\" "
              , fromShow status
              , space
-             , numBytes
+             , fromShow numBytes
              , space
              , referer
              , fromByteString " \""
@@ -179,7 +179,6 @@ combinedLogEntry !host !mbUser !req !status !mbNumBytes !mbReferer !ua = do
     quote    = fromWord8 $ c2w '\"'
     space    = fromWord8 $ c2w ' '
     user     = maybe dash fromByteString mbUser
-    numBytes = maybe dash fromShow mbNumBytes
     referer  = maybe dash
                      (\s -> mconcat [ quote
                                     , fromByteString s
