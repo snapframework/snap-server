@@ -14,6 +14,7 @@ module Snap.Internal.Http.Server.TimeoutManager
 
 ------------------------------------------------------------------------------
 import           Control.Concurrent
+import           Control.Concurrent.Extended (forkIOLabeledWithUnmask)
 import           Control.Exception
 import           Control.Monad
 import           Data.IORef
@@ -116,7 +117,8 @@ initialize defaultTimeout getTime = do
 
     let tm = TimeoutManager defaultTimeout getTime conns inact mp mthr
 
-    thr <- forkIO $ managerThread tm
+    thr <- forkIOLabeledWithUnmask "snap-server: timeout manager" $ \unmask ->
+             unmask $ managerThread tm
     putMVar mthr thr
     return tm
 

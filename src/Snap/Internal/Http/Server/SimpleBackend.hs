@@ -16,6 +16,7 @@ module Snap.Internal.Http.Server.SimpleBackend
 import           Control.Monad.Trans
 
 import           Control.Concurrent hiding (yield)
+import           Control.Concurrent.Extended (forkOnLabeledWithUnmask)
 import           Control.Exception
 import           Control.Monad
 import           Data.ByteString (ByteString)
@@ -24,7 +25,7 @@ import           Data.ByteString.Internal (c2w)
 import           Data.Maybe
 import           Foreign hiding (new)
 import           Foreign.C
-import           GHC.Conc (labelThread, forkOnIO)
+import           GHC.Conc (labelThread)
 import           Network.Socket
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
@@ -85,8 +86,10 @@ newLoop :: Int
 newLoop defaultTimeout sockets handler elog cpu = do
     tmgr       <- TM.initialize defaultTimeout getCurrentDateTime
     exit       <- newEmptyMVar
-    accThreads <- forM sockets $ \p -> forkOnIO cpu $
-                  acceptThread defaultTimeout handler tmgr elog cpu p exit
+    accThreads <- forM sockets $ \p -> do
+      let label = "snap-server: " ++ show p ++ " on capability: " ++ show cpu
+      forkOnLabeledWithUnmask label cpu $ \unmask ->
+        unmask $ acceptThread defaultTimeout handler tmgr elog cpu p exit
 
     return $! EventLoopCpu cpu accThreads tmgr exit
 
@@ -115,7 +118,10 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
         (s,addr) <- accept $ Listen.listenSocket sock
         setSocketOption s NoDelay 1
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
-        _ <- forkOnIO cpu (go s addr `catches` cleanup)
+        let label = "snap-server: connection from remote: " ++ show addr
+                    ++ " on socket: " ++ show (fdSocket s)
+        _ <- forkOnLabeledWithUnmask label cpu $ \unmask ->
+               unmask $ go s addr `catches` cleanup
         return ()
 
     loop = do
@@ -156,7 +162,6 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
     curId <- myThreadId
 
     debug $ "Backend.withConnection: running session: " ++ show addr
-    labelThread curId $ "connHndl " ++ show fd
 
     (rport,rhost) <- getAddress addr
     (lport,lhost) <- getSocketName sock >>= getAddress
