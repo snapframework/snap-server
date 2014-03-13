@@ -1,4 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 -- | Handy functions that should really be merged into
 -- Control.Concurrent itself.
@@ -8,11 +10,18 @@ module Control.Concurrent.Extended
 
     , forkOnLabeled
     , forkOnLabeledWithUnmask
+
+    , labelThreadBs
     ) where
 
 import Control.Exception
 import Control.Concurrent
-import GHC.Conc.Sync (labelThread)
+import GHC.Conc.Sync (ThreadId(..))
+import GHC.Ptr (Ptr(..))
+import GHC.IO (IO(..))
+import GHC.Base (labelThread#)
+import qualified Data.ByteString        as B
+import qualified Data.ByteString.Unsafe as BU
 
 -- | Sparks off a new thread using 'forkIO' to run the given IO
 -- computation, but first labels the thread with the given label
@@ -27,25 +36,25 @@ import GHC.Conc.Sync (labelThread)
 -- the calling thread.
 --
 -- Returns the 'ThreadId' of the newly created thread.
-forkIOLabeled :: String -- ^ Thread label
+forkIOLabeled :: B.ByteString -- ^ Latin-1 encoded label
               -> IO ()
               -> IO ThreadId
 forkIOLabeled label m =
     mask $ \restore -> forkIO $ do
       tid <- myThreadId
-      labelThread tid label
+      labelThreadBs tid label
       restore m
 
 -- | Like 'forkIOLabeled', but lets you specify on which capability
 -- (think CPU) the thread should run.
-forkOnLabeled :: String -- ^ Thread label
-              -> Int    -- ^ Capability
+forkOnLabeled :: B.ByteString -- ^ Latin-1 encoded label
+              -> Int          -- ^ Capability
               -> IO ()
               -> IO ThreadId
 forkOnLabeled label cap m =
     mask $ \restore -> forkOn cap $ do
       tid <- myThreadId
-      labelThread tid label
+      labelThreadBs tid label
       restore m
 
 -- | Sparks off a new thread using 'forkIOWithUnmask' to run the given
@@ -62,23 +71,30 @@ forkOnLabeled label cap m =
 -- function for the motivation.
 --
 -- Returns the 'ThreadId' of the newly created thread.
-forkIOLabeledWithUnmask :: String -- ^ Thread label
+forkIOLabeledWithUnmask :: B.ByteString -- ^ Latin-1 encoded label
                         -> ((forall a. IO a -> IO a) -> IO ())
                         -> IO ThreadId
 forkIOLabeledWithUnmask label m =
     mask_ $ forkIOWithUnmask $ \unmask -> do
       tid <- myThreadId
-      labelThread tid label
+      labelThreadBs tid label
       m unmask
 
 -- | Like 'forkIOLabeledWithUnmask', but lets you specify on which
 -- capability (think CPU) the thread should run.
-forkOnLabeledWithUnmask :: String -- ^ Thread label
-                        -> Int    -- ^ Capability
+forkOnLabeledWithUnmask :: B.ByteString -- ^ Latin-1 encoded label
+                        -> Int          -- ^ Capability
                         -> ((forall a. IO a -> IO a) -> IO ())
                         -> IO ThreadId
 forkOnLabeledWithUnmask label cap m =
     mask_ $ forkOnWithUnmask cap $ \unmask -> do
       tid <- myThreadId
-      labelThread tid label
+      labelThreadBs tid label
       m unmask
+
+-- | Like 'labelThread' but uses a Latin-1 encoded 'ByteString'
+-- instead of a 'String'.
+labelThreadBs :: ThreadId -> B.ByteString -> IO ()
+labelThreadBs (ThreadId t) bs = BU.unsafeUseAsCString bs $ \(Ptr p) ->
+    IO $ \s -> case labelThread# t p s of
+                 s1 -> (# s1, () #)

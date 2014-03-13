@@ -21,6 +21,7 @@ import           Control.Exception
 import           Control.Monad
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
+import qualified Data.ByteString.Char8 as SC
 import           Data.ByteString.Internal (c2w)
 import           Data.Maybe
 import           Foreign hiding (new)
@@ -87,7 +88,10 @@ newLoop defaultTimeout sockets handler elog cpu = do
     tmgr       <- TM.initialize defaultTimeout getCurrentDateTime
     exit       <- newEmptyMVar
     accThreads <- forM sockets $ \p -> do
-      let label = "snap-server: " ++ show p ++ " on capability: " ++ show cpu
+      let label = S.concat
+                  [ "snap-server: ",    SC.pack (show p)
+                  , " on capability: ", SC.pack (show cpu)
+                  ]
       forkOnLabeledWithUnmask label cpu $ \unmask ->
         unmask $ acceptThread defaultTimeout handler tmgr elog cpu p exit
 
@@ -118,8 +122,12 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
         (s,addr) <- accept $ Listen.listenSocket sock
         setSocketOption s NoDelay 1
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
-        let label = "snap-server: connection from remote: " ++ show addr
-                    ++ " on socket: " ++ show (fdSocket s)
+        let label = S.concat
+                    [ "snap-server: connection from remote: "
+                    , SC.pack (show addr)
+                    , " on socket: "
+                    , SC.pack (show (fdSocket s))
+                    ]
         _ <- forkOnLabeledWithUnmask label cpu $ \unmask ->
                unmask $ go s addr `catches` cleanup
         return ()
