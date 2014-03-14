@@ -123,7 +123,7 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
         setSocketOption s NoDelay 1
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
         let label = S.concat
-                    [ "snap-server: connection from remote: "
+                    [ "snap-server: connection from: "
                     , SC.pack (show addr)
                     , " on socket: "
                     , SC.pack (show (fdSocket s))
