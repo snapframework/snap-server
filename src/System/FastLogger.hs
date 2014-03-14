@@ -18,7 +18,7 @@ module System.FastLogger
 import           Blaze.ByteString.Builder
 import           Blaze.ByteString.Builder.Char.Utf8
 import           Control.Concurrent
-import           Control.Concurrent.Extended (forkIOLabeledWithUnmask)
+import           Control.Concurrent.Extended (forkIOLabeledWithUnmaskBs)
 import           Control.Exception
 import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as S
@@ -75,7 +75,7 @@ newLoggerWithCustomErrorFunction errAction fp = do
 
     let lg = Logger q dw fp th errAction
 
-    tid <- forkIOLabeledWithUnmask "snap-server: logging" $ \unmask ->
+    tid <- forkIOLabeledWithUnmaskBs "snap-server: logging" $ \unmask ->
              unmask $ loggingThread lg
     putMVar th tid
 

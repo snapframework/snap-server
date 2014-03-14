@@ -16,7 +16,7 @@ module Snap.Internal.Http.Server.SimpleBackend
 import           Control.Monad.Trans
 
 import           Control.Concurrent hiding (yield)
-import           Control.Concurrent.Extended (forkOnLabeledWithUnmask)
+import           Control.Concurrent.Extended (forkOnLabeledWithUnmaskBs)
 import           Control.Exception
 import           Control.Monad
 import           Data.ByteString (ByteString)
@@ -92,7 +92,7 @@ newLoop defaultTimeout sockets handler elog cpu = do
                   [ "snap-server: ",    SC.pack (show p)
                   , " on capability: ", SC.pack (show cpu)
                   ]
-      forkOnLabeledWithUnmask label cpu $ \unmask ->
+      forkOnLabeledWithUnmaskBs label cpu $ \unmask ->
         unmask $ acceptThread defaultTimeout handler tmgr elog cpu p exit
 
     return $! EventLoopCpu cpu accThreads tmgr exit
@@ -127,8 +127,9 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
                     , SC.pack (show addr)
                     , " on socket: "
                     , SC.pack (show (fdSocket s))
+                    , "\0"
                     ]
-        _ <- forkOnLabeledWithUnmask label cpu $ \unmask ->
+        _ <- forkOnLabeledWithUnmaskBs label cpu $ \unmask ->
                unmask $ go s addr `catches` cleanup
         return ()
 
