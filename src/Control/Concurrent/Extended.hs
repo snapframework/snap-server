@@ -20,8 +20,7 @@ import GHC.Conc.Sync (ThreadId(..))
 import GHC.Ptr (Ptr(..))
 import GHC.IO (IO(..))
 import GHC.Base (labelThread#)
-import qualified Data.ByteString        as B
-import qualified Data.ByteString.Unsafe as BU
+import qualified Data.ByteString as B
 
 -- | Sparks off a new thread using 'forkIO' to run the given IO
 -- computation, but first labels the thread with the given label
@@ -95,6 +94,6 @@ forkOnLabeledWithUnmask label cap m =
 -- | Like 'labelThread' but uses a Latin-1 encoded 'ByteString'
 -- instead of a 'String'.
 labelThreadBs :: ThreadId -> B.ByteString -> IO ()
-labelThreadBs (ThreadId t) bs = BU.unsafeUseAsCString bs $ \(Ptr p) ->
+labelThreadBs (ThreadId t) bs = B.useAsCString bs $ \(Ptr p) ->
     IO $ \s -> case labelThread# t p s of
                  s1 -> (# s1, () #)
