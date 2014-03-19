@@ -24,7 +24,11 @@ import           Data.ByteString.Internal (c2w)
 import           Data.Maybe
 import           Foreign hiding (new)
 import           Foreign.C
+#if MIN_VERSION_base(4,4,0)
+import           GHC.Conc (labelThread, forkOn)
+#else
 import           GHC.Conc (labelThread, forkOnIO)
+#endif
 import           Network.Socket
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
@@ -43,6 +47,13 @@ import           Snap.Iteratee hiding (map)
 import qualified System.SendFile as SF
 import           System.Posix.IO
 import           System.Posix.Types (Fd(..))
+#endif
+
+
+------------------------------------------------------------------------------
+#if !MIN_VERSION_base(4,4,0)
+forkOn :: Int -> IO () -> IO ThreadId
+forkOn = forkOnIO
 #endif
 
 
@@ -85,11 +96,10 @@ newLoop :: Int
 newLoop defaultTimeout sockets handler elog cpu = do
     tmgr       <- TM.initialize defaultTimeout getCurrentDateTime
     exit       <- newEmptyMVar
-    accThreads <- forM sockets $ \p -> forkOnIO cpu $
+    accThreads <- forM sockets $ \p -> forkOn cpu $
                   acceptThread defaultTimeout handler tmgr elog cpu p exit
 
     return $! EventLoopCpu cpu accThreads tmgr exit
-
 
 ------------------------------------------------------------------------------
 stopLoop :: EventLoopCpu -> IO ()
@@ -115,7 +125,7 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
         (s,addr) <- accept $ Listen.listenSocket sock
         setSocketOption s NoDelay 1
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
-        _ <- forkOnIO cpu (go s addr `catches` cleanup)
+        _ <- forkOn cpu (go s addr `catches` cleanup)
         return ()
 
     loop = do
