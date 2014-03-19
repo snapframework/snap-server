@@ -93,7 +93,7 @@ newLoop defaultTimeout sockets handler elog cpu = do
 
 ------------------------------------------------------------------------------
 stopLoop :: EventLoopCpu -> IO ()
-stopLoop loop = block $ do
+stopLoop loop = mask $ \_ -> do
     TM.stop $ _timeoutManager loop
     Prelude.mapM_ killThread $ _acceptThreads loop
 
@@ -169,7 +169,7 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
 
     bracket (Listen.createSession lsock 8192 fd
               (threadWaitRead $ fromIntegral fd))
-            (\session -> block $ do
+            (\session -> mask $ \_ -> do
                  debug "thread killed, closing socket"
 
                  -- cancel thread timeout
