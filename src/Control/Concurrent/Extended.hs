@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
@@ -10,6 +11,8 @@ module Control.Concurrent.Extended
 
     , forkOnLabeledBs
     , forkOnLabeledWithUnmaskBs
+
+    , labelMe
 
     , labelThreadBs
     , labelThreadCString
@@ -43,8 +46,7 @@ forkIOLabeledBs :: B.ByteString -- ^ Latin-1 encoded label
                 -> IO ThreadId
 forkIOLabeledBs label m =
     mask $ \restore -> forkIO $ do
-      tid <- myThreadId
-      labelThreadBs tid label
+      labelMe label
       restore m
 
 -- | Like 'forkIOLabeledBs', but lets you specify on which capability
@@ -55,8 +57,7 @@ forkOnLabeledBs :: B.ByteString -- ^ Latin-1 encoded label
                 -> IO ThreadId
 forkOnLabeledBs label cap m =
     mask $ \restore -> forkOn cap $ do
-      tid <- myThreadId
-      labelThreadBs tid label
+      labelMe label
       restore m
 
 -- | Sparks off a new thread using 'forkIOWithUnmask' to run the given
@@ -78,8 +79,7 @@ forkIOLabeledWithUnmaskBs :: B.ByteString -- ^ Latin-1 encoded label
                           -> IO ThreadId
 forkIOLabeledWithUnmaskBs label m =
     mask_ $ forkIOWithUnmask $ \unmask -> do
-      tid <- myThreadId
-      labelThreadBs tid label
+      labelMe label
       m unmask
 
 -- | Like 'forkIOLabeledWithUnmaskBs', but lets you specify on which
@@ -90,9 +90,19 @@ forkOnLabeledWithUnmaskBs :: B.ByteString -- ^ Latin-1 encoded label
                           -> IO ThreadId
 forkOnLabeledWithUnmaskBs label cap m =
     mask_ $ forkOnWithUnmask cap $ \unmask -> do
-      tid <- myThreadId
-      labelThreadBs tid label
+      labelMe label
       m unmask
+
+-- | Label the current thread.
+labelMe :: B.ByteString -> IO ()
+#if defined(LABEL_THREADS)
+labelMe label = do
+    tid <- myThreadId
+    labelThreadBs tid label
+#else
+labelMe _label = return ()
+#endif
+{-# INLINE labelMe #-}
 
 -- | Like 'labelThread' but uses a Latin-1 encoded 'ByteString'
 -- instead of a 'String'.
