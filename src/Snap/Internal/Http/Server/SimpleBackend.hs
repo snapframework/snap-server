@@ -132,10 +132,9 @@ acceptThread defaultTimeout handler tmgr elog cpu sock unmask = loop
                     , "\0"
                     ]
         _ <- forkOnLabeledWithUnmaskBs label cpu $ \unmask' ->
-               unmask' (go s addr) `catches` cleanup
+               unmask' (runSession defaultTimeout handler tmgr sock s addr)
+                 `catches` cleanup
         return ()
-
-    go = runSession defaultTimeout handler tmgr sock
 
     acceptHandler =
         [ Handler $ \(e :: AsyncException) -> throwIO e
@@ -150,7 +149,13 @@ acceptThread defaultTimeout handler tmgr elog cpu sock unmask = loop
 
     cleanup =
         [
-          Handler $ \(_ :: AsyncException) -> return ()
+          Handler $ \(e :: AsyncException) ->
+              case e of
+                ThreadKilled  -> return ()
+                UserInterrupt -> return ()
+                _ -> throwIO e -- This ensures all other asynchronous exceptions
+                               -- (StackOverflow and HeapOverflow) are logged to
+                               -- stderr by forkIO.
         , Handler $ \(e :: SomeException) -> elog
                   $ S.concat [ "SimpleBackend.acceptThread: "
                              , S.pack . map c2w $ show e]
