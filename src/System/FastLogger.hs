@@ -20,6 +20,7 @@ import           Blaze.ByteString.Builder.Char.Utf8
 import           Control.Concurrent
 import           Control.Concurrent.Extended (forkIOLabeledWithUnmaskBs)
 import           Control.Exception
+import           Control.Monad
 import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
@@ -75,9 +76,10 @@ newLoggerWithCustomErrorFunction errAction fp = do
 
     let lg = Logger q dw fp th errAction
 
-    tid <- forkIOLabeledWithUnmaskBs "snap-server: logging" $ \unmask ->
-             unmask $ loggingThread lg
-    putMVar th tid
+    mask_ $ do
+      tid <- forkIOLabeledWithUnmaskBs "snap-server: logging" $
+               loggingThread lg
+      putMVar th tid
 
     return lg
 
@@ -157,8 +159,8 @@ logMsg !lg !s = do
 
 
 ------------------------------------------------------------------------------
-loggingThread :: Logger -> IO ()
-loggingThread (Logger queue notifier filePath _ errAct) = do
+loggingThread :: Logger -> (forall a. IO a -> IO a) -> IO ()
+loggingThread (Logger queue notifier filePath _ errAct) unmask = do
     initialize >>= go
 
   where
@@ -169,7 +171,7 @@ loggingThread (Logger queue notifier filePath _ errAct) = do
             if filePath == "stderr"
               then return stderr
               else openFile filePath AppendMode `catch`
-                     \(e::SomeException) -> do
+                     \(e::IOException) -> do
                        logInternalError $ "Can't open log file \"" ++
                                           filePath ++ "\".\n"
                        logInternalError $ "Exception: " ++ show e ++ "\n"
@@ -178,14 +180,13 @@ loggingThread (Logger queue notifier filePath _ errAct) = do
                                           "FIX THIS**\n\n"
                        return stderr
 
-    closeIt h = if h == stdout || h == stderr
-                  then return ()
-                  else hClose h
+    closeIt h = unless (h == stdout || h == stderr) $
+                  hClose h
 
     logInternalError = errAct . T.encodeUtf8 . T.pack
 
     go (href, lastOpened) =
-        (loop (href, lastOpened))
+        (unmask $ forever $ waitFlushDelay (href, lastOpened))
           `catches`
           [ Handler $ \(_::AsyncException) -> killit (href, lastOpened)
           , Handler $ \(e::SomeException)  -> do
@@ -215,7 +216,7 @@ loggingThread (Logger queue notifier filePath _ errAct) = do
         let !msgs = toLazyByteString dl
         h <- readIORef href
         (do L.hPut h msgs
-            hFlush h) `catch` \(e::SomeException) -> do
+            hFlush h) `catch` \(e::IOException) -> do
                 logInternalError $ "got exception writing to log " ++
                                    filePath ++ ": " ++ show e ++ "\n"
                 logInternalError $ "writing log entries to stderr.\n"
@@ -225,15 +226,13 @@ loggingThread (Logger queue notifier filePath _ errAct) = do
         t   <- getCurrentDateTime
         old <- readIORef lastOpened
 
-        if t-old > 900
-          then do
-              closeIt h
-              openIt >>= writeIORef href
-              writeIORef lastOpened t
-          else return ()
+        when (t-old > 900) $ do
+            closeIt h
+            mask_ $ openIt >>= writeIORef href
+            writeIORef lastOpened t
 
 
-    loop !d = do
+    waitFlushDelay !d = do
         -- wait on the notification mvar
         _ <- takeMVar notifier
 
@@ -242,7 +241,6 @@ loggingThread (Logger queue notifier filePath _ errAct) = do
 
         -- at least five seconds between log dumps
         threadDelay 5000000
-        loop d
 
 
 ------------------------------------------------------------------------------

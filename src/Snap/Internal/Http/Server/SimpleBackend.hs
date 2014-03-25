@@ -23,10 +23,8 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as SC
 import           Data.ByteString.Internal (c2w)
-import           Data.Maybe
 import           Foreign hiding (new)
 import           Foreign.C
-import           GHC.Conc (labelThread)
 import           Network.Socket
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude hiding (catch)
@@ -93,14 +91,15 @@ newLoop defaultTimeout sockets handler elog cpu = do
                   , " on capability: ", SC.pack (show cpu)
                   ]
       forkOnLabeledWithUnmaskBs label cpu $ \unmask ->
-        unmask $ acceptThread defaultTimeout handler tmgr elog cpu p exit
+        acceptThread defaultTimeout handler tmgr elog cpu p unmask
+          `finally` (tryPutMVar exit () >> return ())
 
     return $! EventLoopCpu cpu accThreads tmgr exit
 
 
 ------------------------------------------------------------------------------
 stopLoop :: EventLoopCpu -> IO ()
-stopLoop loop = block $ do
+stopLoop loop = mask_ $ do
     TM.stop $ _timeoutManager loop
     Prelude.mapM_ killThread $ _acceptThreads loop
 
@@ -112,11 +111,14 @@ acceptThread :: Int
              -> (S.ByteString -> IO ())
              -> Int
              -> ListenSocket
-             -> MVar ()
+             -> (forall a. IO a -> IO a)
              -> IO ()
-acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
-    loop `finally` (tryPutMVar exitMVar () >> return ())
+acceptThread defaultTimeout handler tmgr elog cpu sock unmask = loop
   where
+    loop = do
+        unmask (forever acceptAndFork) `catches` acceptHandler
+        loop
+
     acceptAndFork = do
         debug $ "acceptThread: calling accept() on socket " ++ show sock
         (s,addr) <- accept $ Listen.listenSocket sock
@@ -129,13 +131,9 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
                     , SC.pack (show (fdSocket s))
                     , "\0"
                     ]
-        _ <- forkOnLabeledWithUnmaskBs label cpu $ \unmask ->
-               unmask (go s addr) `catches` cleanup
+        _ <- forkOnLabeledWithUnmaskBs label cpu $ \unmask' ->
+               unmask' (go s addr) `catches` cleanup
         return ()
-
-    loop = do
-        acceptAndFork `catches` acceptHandler
-        loop
 
     go = runSession defaultTimeout handler tmgr sock
 
@@ -183,7 +181,7 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
 
     bracket (Listen.createSession lsock 8192 fd
               (threadWaitRead $ fromIntegral fd))
-            (\session -> block $ do
+            (\session -> mask_ $ do
                  debug "thread killed, closing socket"
 
                  -- cancel thread timeout
