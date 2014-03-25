@@ -130,7 +130,7 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
                     , "\0"
                     ]
         _ <- forkOnLabeledWithUnmaskBs label cpu $ \unmask ->
-               unmask $ go s addr `catches` cleanup
+               unmask (go s addr) `catches` cleanup
         return ()
 
     loop = do
