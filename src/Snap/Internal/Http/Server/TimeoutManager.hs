@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -16,6 +17,7 @@ module Snap.Internal.Http.Server.TimeoutManager
 
 ------------------------------------------------------------------------------
 import           Control.Concurrent
+import           Control.Concurrent.Extended      (forkIOLabeledWithUnmaskBs)
 import           Control.Exception
 import           Control.Monad
 import           Data.IORef                       (IORef, newIORef, readIORef,
@@ -85,7 +87,8 @@ initialize defaultTimeout getTime = do
 
     let tm = TimeoutManager defaultTimeout getTime conns mp mthr
 
-    thr <- mask $ \restore -> forkIO $ managerThread tm restore
+    thr <- forkIOLabeledWithUnmaskBs "snap-server: timeout manager" $
+             managerThread tm
     putMVar mthr thr
     return tm
 
@@ -165,11 +168,9 @@ cancel h = _killAction h >> writeIORef (_state h) canceled
 
 
 ------------------------------------------------------------------------------
-managerThread :: TimeoutManager
-              -> (forall a. IO a -> IO a)
-              -> IO ()
-managerThread tm restore =
-    loop `finally` (readIORef connections >>= destroyAll)
+managerThread :: TimeoutManager -> (forall a. IO a -> IO a) -> IO ()
+managerThread tm restore = loop `finally`
+                           (readIORef connections >>= destroyAll)
   where
     --------------------------------------------------------------------------
     connections = _connections tm
@@ -179,28 +180,23 @@ managerThread tm restore =
 
     --------------------------------------------------------------------------
     loop = do
-        restore waitABit
+        now   <- restore (waitABit >> getTime)
         handles <- atomicModifyIORef' connections (\x -> ([], x))
         if null handles
           then restore $ takeMVar morePlease
           else do
-            (keeps, discards) <- process handles
+            (keeps, discards) <- processHandles now handles
             atomicModifyIORef' connections (\x -> (keeps x, ())) >>= evaluate
             mapM_ (eatException . _killAction) $ discards []
         loop
 
     --------------------------------------------------------------------------
-    process handles = do
-        now   <- getTime
-        processHandles now handles
-
-    --------------------------------------------------------------------------
     processHandles now handles = go handles id id
       where
-        go [] !keeps !discards = return (keeps, discards)
+        go [] !keeps !discards = return $! (keeps, discards)
 
         go (x:xs) !keeps !discards = do
-            state   <- readIORef $ _state x
+            !state    <- readIORef $ _state x
             (!k',!d') <- if isCanceled state
                            then return (keeps, discards)
                            else if state <= now

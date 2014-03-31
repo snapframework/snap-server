@@ -37,6 +37,13 @@ import           Data.Maybe                        (catMaybes, fromJust,
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
 import           Network.Socket                    (Socket, sClose)
+import           Prelude                           (Bool (..), Eq (..), IO,
+                                                    Maybe (..), Monad (..),
+                                                    Ord (..), Show (..),
+                                                    String, const, error,
+                                                    mapM, mapM_, maybe,
+                                                    undefined, unzip3, ($),
+                                                    ($!), (++), (.), (||))
 import           Snap.Core                         (MonadSnap (..), Request,
                                                     Response, Snap,
                                                     rqClientAddr, rqHeaders,

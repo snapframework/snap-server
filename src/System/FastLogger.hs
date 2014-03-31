@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module System.FastLogger
@@ -21,15 +22,17 @@ import           Blaze.ByteString.Builder           (Builder, fromByteString,
                                                      fromWord8, toByteString,
                                                      toLazyByteString)
 import           Blaze.ByteString.Builder.Char.Utf8 (fromShow)
-import           Control.Concurrent                 (MVar, ThreadId, forkIO,
+import           Control.Concurrent                 (MVar, ThreadId,
                                                      killThread, newEmptyMVar,
                                                      putMVar, takeMVar,
                                                      threadDelay, tryPutMVar,
                                                      withMVar)
+import           Control.Concurrent.Extended        (forkIOLabeledWithUnmaskBs)
 import           Control.Exception                  (AsyncException,
                                                      Handler (..),
+                                                     IOException,
                                                      SomeException, bracket,
-                                                     catch, catches)
+                                                     catch, catches, mask_)
 import           Control.Monad                      (unless, void, when)
 import           Data.ByteString.Char8              (ByteString)
 import qualified Data.ByteString.Char8              as S
@@ -41,9 +44,12 @@ import           Data.Monoid                        (mappend, mconcat, mempty)
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
 import           Data.Word                          (Word64)
-#if !MIN_VERSION_base(4,6,0)
-import           Prelude                            hiding (catch)
-#endif
+import           Prelude                            (Eq (..), FilePath, IO,
+                                                     Int, Maybe, Monad (..),
+                                                     Num (..), Ord (..),
+                                                     Show (..), String, mapM_,
+                                                     maybe, ($), ($!), (++),
+                                                     (.), (||))
 import           System.IO                          (IOMode (AppendMode),
                                                      hClose, hFlush, openFile,
                                                      stderr, stdout)
@@ -91,8 +97,10 @@ newLoggerWithCustomErrorFunction errAction fp = do
 
     let lg = Logger q dw fp th errAction
 
-    tid <- forkIO $ loggingThread lg
-    putMVar th tid
+    mask_ $ do
+      tid <- forkIOLabeledWithUnmaskBs "snap-server: logging" $
+               loggingThread lg
+      putMVar th tid
 
     return lg
 
@@ -198,37 +206,42 @@ logMsg !lg !s = do
 
 
 ------------------------------------------------------------------------------
-loggingThread :: Logger -> IO ()
-loggingThread (Logger queue notifier filePath _ errAct) = initialize >>= go
+loggingThread :: Logger -> (forall a. IO a -> IO a) -> IO ()
+loggingThread (Logger queue notifier filePath _ errAct) unmask = do
+    initialize >>= go
+
   where
-    --------------------------------------------------------------------------
-    openIt | filePath == "-"      = return stdout
-           | filePath == "stderr" = return stderr
-           | otherwise =
-               openFile filePath AppendMode `catch` \(e::SomeException) -> do
-                   logInternalError $ "Can't open log file \"" ++
-                                      filePath ++ "\".\n"
-                   logInternalError $ "Exception: " ++ show e ++ "\n"
-                   logInternalError $ "Logging to stderr instead. " ++
-                                      "**THIS IS BAD, YOU OUGHT TO " ++
-                                      "FIX THIS**\n\n"
-                   return stderr
+    openIt =
+        if filePath == "-"
+          then return stdout
+          else
+            if filePath == "stderr"
+              then return stderr
+              else openFile filePath AppendMode `catch`
+                     \(e::IOException) -> do
+                       logInternalError $ "Can't open log file \"" ++
+                                          filePath ++ "\".\n"
+                       logInternalError $ "Exception: " ++ show e ++ "\n"
+                       logInternalError $ "Logging to stderr instead. " ++
+                                          "**THIS IS BAD, YOU OUGHT TO " ++
+                                          "FIX THIS**\n\n"
+                       return stderr
 
-    --------------------------------------------------------------------------
-    closeIt h = unless (h == stdout || h == stderr) $ hClose h
+    closeIt h = unless (h == stdout || h == stderr) $
+                  hClose h
 
-    --------------------------------------------------------------------------
     logInternalError = errAct . T.encodeUtf8 . T.pack
 
     --------------------------------------------------------------------------
-    go (href, lastOpened) =
-        loop (href, lastOpened) `catches`
+    go (href, lastOpened) = unmask loop `catches`
           [ Handler $ \(_::AsyncException) -> killit (href, lastOpened)
           , Handler $ \(e::SomeException)  -> do
                 logInternalError $ "logger got exception: "
                                    ++ Prelude.show e ++ "\n"
                 threadDelay 20000000
                 go (href, lastOpened) ]
+      where
+        loop = waitFlushDelay (href, lastOpened) >> loop
 
     --------------------------------------------------------------------------
     initialize = do
@@ -252,7 +265,7 @@ loggingThread (Logger queue notifier filePath _ errAct) = initialize >>= go
         let !msgs = toLazyByteString dl
         h <- readIORef href
         (do L.hPut h msgs
-            hFlush h) `catch` \(e::SomeException) -> do
+            hFlush h) `catch` \(e::IOException) -> do
                 logInternalError $ "got exception writing to log " ++
                                    filePath ++ ": " ++ show e ++ "\n"
                 logInternalError "writing log entries to stderr.\n"
@@ -262,13 +275,13 @@ loggingThread (Logger queue notifier filePath _ errAct) = initialize >>= go
         t   <- getCurrentDateTime
         old <- readIORef lastOpened
 
-        when (t - old > 900) $ do
+        when (t-old > 900) $ do
             closeIt h
-            openIt >>= writeIORef href
+            mask_ $ openIt >>= writeIORef href
             writeIORef lastOpened t
 
-    --------------------------------------------------------------------------
-    loop !d = do
+
+    waitFlushDelay !d = do
         -- wait on the notification mvar
         _ <- takeMVar notifier
 
@@ -277,7 +290,6 @@ loggingThread (Logger queue notifier filePath _ errAct) = initialize >>= go
 
         -- at least five seconds between log dumps
         threadDelay 5000000
-        loop d
 
 
 ------------------------------------------------------------------------------

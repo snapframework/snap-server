@@ -390,7 +390,7 @@ pGetTransferChunk = do
       then return $! E.throw $! HttpParseException $!
            "pGetTransferChunk: chunk of size " ++ show hex ++ " too long."
       else if hex <= 0
-        then return Nothing
+        then crlf >> return Nothing
         else do
             -- now safe to take this many bytes.
             !x <- take hex

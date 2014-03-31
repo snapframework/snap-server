@@ -42,6 +42,11 @@ Flag build-pong
                for benchmarks.
   Default: False
 
+Flag debug
+  Description: Enable support for debugging.
+  Default: False
+  Manual: True
+
 Library
   hs-source-dirs:    src
   Default-language:  Haskell2010
@@ -63,6 +68,7 @@ Library
     Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Socket,
     Snap.Internal.Http.Server.TimeoutManager
+    Control.Concurrent.Extended
 
   build-depends:
     attoparsec                >= 0.10     && < 0.12,
@@ -135,6 +141,8 @@ Library
   else
     ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
+  if flag(debug)
+    cpp-options: -DLABEL_THREADS
 
 Test-suite testsuite
   hs-source-dirs:    src test
@@ -250,6 +258,7 @@ Test-suite testsuite
       System.SendFile.Tests
     c-sources: test/cbits/errno_util.c
 
+  cpp-options: -DTESTSUITE
   ghc-prof-options: -prof -auto
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
