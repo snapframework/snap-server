@@ -1,6 +1,6 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE MagicHash     #-}
+{-# LANGUAGE RankNTypes    #-}
 {-# LANGUAGE UnboxedTuples #-}
 
 -- | Handy functions that should really be merged into
@@ -8,26 +8,24 @@
 module Control.Concurrent.Extended
     ( forkIOLabeledBs
     , forkIOLabeledWithUnmaskBs
-
     , forkOnLabeledBs
     , forkOnLabeledWithUnmaskBs
-
-    , labelMe
-
-    , labelThreadBs
-    , labelThreadCString
     ) where
 
-import Control.Exception
-import Control.Concurrent
-import Foreign.C.String (CString)
-import GHC.Conc.Sync (ThreadId(..))
-import GHC.Ptr (Ptr(..))
-import GHC.IO (IO(..))
-import GHC.Base (labelThread#)
+------------------------------------------------------------------------------
+import           Control.Concurrent     (forkIO, forkOn, forkIOWithUnmask, forkOnWithUnmask)
+import           Control.Exception      (mask, mask_)
 import qualified Data.ByteString        as B
-import qualified Data.ByteString.Unsafe as BU
+import           GHC.Conc.Sync          (ThreadId (..))
 
+#ifdef LABEL_THREADS
+import qualified Data.ByteString.Unsafe as BU
+import           GHC.Base               (labelThread#)
+import           Foreign.C.String       (CString)
+import           GHC.IO                 (IO (..))
+import           GHC.Ptr                (Ptr (..))
+#endif
+------------------------------------------------------------------------------
 -- | Sparks off a new thread using 'forkIO' to run the given IO
 -- computation, but first labels the thread with the given label
 -- (using 'labelThreadBs').
@@ -49,6 +47,8 @@ forkIOLabeledBs label m =
       labelMe label
       restore m
 
+
+------------------------------------------------------------------------------
 -- | Like 'forkIOLabeledBs', but lets you specify on which capability
 -- (think CPU) the thread should run.
 forkOnLabeledBs :: B.ByteString -- ^ Latin-1 encoded label
@@ -60,6 +60,8 @@ forkOnLabeledBs label cap m =
       labelMe label
       restore m
 
+
+------------------------------------------------------------------------------
 -- | Sparks off a new thread using 'forkIOWithUnmask' to run the given
 -- IO computation, but first labels the thread with the given label
 -- (using 'labelThreadBs').
@@ -82,6 +84,8 @@ forkIOLabeledWithUnmaskBs label m =
       labelMe label
       m unmask
 
+
+------------------------------------------------------------------------------
 -- | Like 'forkIOLabeledWithUnmaskBs', but lets you specify on which
 -- capability (think CPU) the thread should run.
 forkOnLabeledWithUnmaskBs :: B.ByteString -- ^ Latin-1 encoded label
@@ -93,17 +97,18 @@ forkOnLabeledWithUnmaskBs label cap m =
       labelMe label
       m unmask
 
+
+------------------------------------------------------------------------------
 -- | Label the current thread.
+{-# INLINE labelMe #-}
 labelMe :: B.ByteString -> IO ()
 #if defined(LABEL_THREADS)
 labelMe label = do
     tid <- myThreadId
     labelThreadBs tid label
-#else
-labelMe _label = return ()
-#endif
-{-# INLINE labelMe #-}
 
+
+------------------------------------------------------------------------------
 -- | Like 'labelThread' but uses a Latin-1 encoded 'ByteString'
 -- instead of a 'String'.
 --
@@ -118,8 +123,16 @@ labelThreadBs tid bs
   where
     n = B.length bs
 
+
+------------------------------------------------------------------------------
 -- | Like 'labelThread' but uses a 'CString' instead of a 'String'
 labelThreadCString :: ThreadId -> CString -> IO ()
 labelThreadCString (ThreadId t) (Ptr p) =
     IO $ \s -> case labelThread# t p s of
                  s1 -> (# s1, () #)
+#elif defined(TESTSUITE)
+labelMe !_ = return $! ()
+#else
+labelMe _label = return $! ()
+#endif
+

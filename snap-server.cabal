@@ -1,5 +1,5 @@
 name:           snap-server
-version:        0.9.4.1
+version:        0.9.4.2
 synopsis:       A fast, iteratee-based, epoll-enabled web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -61,8 +61,8 @@ Flag openssl
   Description: Enable https support using the HsOpenSSL library.
   Default: False
 
-Flag label-threads
-  Description: Enable support for thread labeling
+Flag debug
+  Description: Enable support for debugging.
   Default: False
   Manual: True
 
@@ -156,7 +156,7 @@ Library
   else
     ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
-  if flag(label-threads)
+  if flag(debug)
     cpp-options: -DLABEL_THREADS
 
 source-repository head

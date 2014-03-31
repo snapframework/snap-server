@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module System.FastLogger
@@ -18,20 +19,20 @@ module System.FastLogger
 import           Blaze.ByteString.Builder
 import           Blaze.ByteString.Builder.Char.Utf8
 import           Control.Concurrent
-import           Control.Concurrent.Extended (forkIOLabeledWithUnmaskBs)
+import           Control.Concurrent.Extended        (forkIOLabeledWithUnmaskBs)
 import           Control.Exception
 import           Control.Monad
-import           Data.ByteString.Char8 (ByteString)
-import qualified Data.ByteString.Char8 as S
-import qualified Data.ByteString.Lazy.Char8 as L
-import           Data.ByteString.Internal (c2w)
+import           Data.ByteString.Char8              (ByteString)
+import qualified Data.ByteString.Char8              as S
+import           Data.ByteString.Internal           (c2w)
+import qualified Data.ByteString.Lazy.Char8         as L
 import           Data.Int
 import           Data.IORef
 import           Data.Monoid
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
+import qualified Data.Text                          as T
+import qualified Data.Text.Encoding                 as T
 #if !MIN_VERSION_base(4,6,0)
-import           Prelude hiding (catch)
+import           Prelude                            hiding (catch)
 #endif
 import           System.IO
 

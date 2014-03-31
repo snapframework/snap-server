@@ -28,6 +28,7 @@ Executable testsuite
     bytestring,
     conduit                    >= 0.5      && <0.6,
     containers,
+    cryptocipher               >= 0.3.7    && <0.4,
     directory,
     directory-tree,
     enumerator                 >= 0.4.15   && <0.5,
@@ -74,6 +75,7 @@ Executable testsuite
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
 
+  cpp-options: -DTESTSUITE
   ghc-prof-options: -prof -auto-all
   ghc-options: -O2 -Wall -fhpc -fwarn-tabs
                -funbox-strict-fields -threaded
