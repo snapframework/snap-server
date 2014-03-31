@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DeriveDataTypeable       #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -15,38 +14,40 @@ module Snap.Internal.Http.Server.SimpleBackend
 ------------------------------------------------------------------------------
 import           Control.Monad.Trans
 
-import           Control.Concurrent hiding (yield)
+import           Control.Concurrent                       hiding (yield)
+import           Control.Concurrent.Extended              (forkOnLabeledWithUnmaskBs)
 import           Control.Exception
 import           Control.Monad
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as S
-import           Data.ByteString.Internal (c2w)
-import           Data.Maybe
-import           Foreign hiding (new)
+import           Data.ByteString                          (ByteString)
+import qualified Data.ByteString                          as S
+import qualified Data.ByteString.Char8                    as SC
+import           Data.ByteString.Internal                 (c2w)
+import           Foreign                                  hiding (new)
 import           Foreign.C
 #if MIN_VERSION_base(4,4,0)
-import           GHC.Conc (labelThread, forkOn)
+import           GHC.Conc                                 (forkOn, labelThread)
 #else
-import           GHC.Conc (labelThread, forkOnIO)
+import           GHC.Conc                                 (forkOnIO,
+                                                           labelThread)
 #endif
 import           Network.Socket
 #if !MIN_VERSION_base(4,6,0)
-import           Prelude hiding (catch)
+import           Prelude                                  hiding (catch)
 #endif
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
-import           Snap.Internal.Http.Server.Date
-import qualified Snap.Internal.Http.Server.TimeoutManager as TM
-import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
-import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Server.Address
-import qualified Snap.Internal.Http.Server.ListenHelpers as Listen
-import           Snap.Iteratee hiding (map)
+import           Snap.Internal.Http.Server.Backend
+import           Snap.Internal.Http.Server.Date
+import qualified Snap.Internal.Http.Server.ListenHelpers  as Listen
+import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
+import qualified Snap.Internal.Http.Server.TimeoutManager as TM
+import           Snap.Iteratee                            hiding (map)
 
 #if defined(HAS_SENDFILE)
-import qualified System.SendFile as SF
 import           System.Posix.IO
-import           System.Posix.Types (Fd(..))
+import           System.Posix.Types                       (Fd (..))
+import qualified System.SendFile                          as SF
 #endif
 
 
@@ -63,10 +64,10 @@ forkOn = forkOnIO
 --    * A TimeoutManager
 --    * An mvar to signal when the timeout thread is shutdown
 data EventLoopCpu = EventLoopCpu
-    { _boundCpu        :: Int
-    , _acceptThreads   :: [ThreadId]
-    , _timeoutManager  :: TimeoutManager
-    , _exitMVar        :: !(MVar ())
+    { _boundCpu       :: Int
+    , _acceptThreads  :: [ThreadId]
+    , _timeoutManager :: TimeoutManager
+    , _exitMVar       :: !(MVar ())
     }
 
 
@@ -96,14 +97,20 @@ newLoop :: Int
 newLoop defaultTimeout sockets handler elog cpu = do
     tmgr       <- TM.initialize defaultTimeout getCurrentDateTime
     exit       <- newEmptyMVar
-    accThreads <- forM sockets $ \p -> forkOn cpu $
-                  acceptThread defaultTimeout handler tmgr elog cpu p exit
+    accThreads <- forM sockets $ \p -> do
+      let label = S.concat
+                  [ "snap-server: ",    SC.pack (show p)
+                  , " on capability: ", SC.pack (show cpu)
+                  ]
+      forkOnLabeledWithUnmaskBs label cpu $ \unmask ->
+        acceptThread defaultTimeout handler tmgr elog cpu p unmask
+          `finally` (tryPutMVar exit () >> return ())
 
     return $! EventLoopCpu cpu accThreads tmgr exit
 
 ------------------------------------------------------------------------------
 stopLoop :: EventLoopCpu -> IO ()
-stopLoop loop = mask $ \_ -> do
+stopLoop loop = mask_ $ do
     TM.stop $ _timeoutManager loop
     Prelude.mapM_ killThread $ _acceptThreads loop
 
@@ -115,24 +122,30 @@ acceptThread :: Int
              -> (S.ByteString -> IO ())
              -> Int
              -> ListenSocket
-             -> MVar ()
+             -> (forall a. IO a -> IO a)
              -> IO ()
-acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
-    loop `finally` (tryPutMVar exitMVar () >> return ())
+acceptThread defaultTimeout handler tmgr elog cpu sock unmask = loop
   where
+    loop = do
+        unmask (forever acceptAndFork) `catches` acceptHandler
+        loop
+
     acceptAndFork = do
         debug $ "acceptThread: calling accept() on socket " ++ show sock
         (s,addr) <- accept $ Listen.listenSocket sock
         setSocketOption s NoDelay 1
         debug $ "acceptThread: accepted connection from remote: " ++ show addr
-        _ <- forkOn cpu (go s addr `catches` cleanup)
+        let label = S.concat
+                    [ "snap-server: connection from: "
+                    , SC.pack (show addr)
+                    , " on socket: "
+                    , SC.pack (show (fdSocket s))
+                    , "\0"
+                    ]
+        _ <- forkOnLabeledWithUnmaskBs label cpu $ \unmask' ->
+               unmask' (runSession defaultTimeout handler tmgr sock s addr)
+                 `catches` cleanup
         return ()
-
-    loop = do
-        acceptAndFork `catches` acceptHandler
-        loop
-
-    go = runSession defaultTimeout handler tmgr sock
 
     acceptHandler =
         [ Handler $ \(e :: AsyncException) -> throwIO e
@@ -147,7 +160,13 @@ acceptThread defaultTimeout handler tmgr elog cpu sock exitMVar =
 
     cleanup =
         [
-          Handler $ \(_ :: AsyncException) -> return ()
+          Handler $ \(e :: AsyncException) ->
+              case e of
+                ThreadKilled  -> return ()
+                UserInterrupt -> return ()
+                _ -> throwIO e -- This ensures all other asynchronous exceptions
+                               -- (StackOverflow and HeapOverflow) are logged to
+                               -- stderr by forkIO.
         , Handler $ \(e :: SomeException) -> elog
                   $ S.concat [ "SimpleBackend.acceptThread: "
                              , S.pack . map c2w $ show e]
@@ -166,7 +185,6 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
     curId <- myThreadId
 
     debug $ "Backend.withConnection: running session: " ++ show addr
-    labelThread curId $ "connHndl " ++ show fd
 
     (rport,rhost) <- getAddress addr
     (lport,lhost) <- getSocketName sock >>= getAddress
@@ -179,7 +197,7 @@ runSession defaultTimeout handler tmgr lsock sock addr = do
 
     bracket (Listen.createSession lsock 8192 fd
               (threadWaitRead $ fromIntegral fd))
-            (\session -> mask $ \_ -> do
+            (\session -> mask_ $ do
                  debug "thread killed, closing socket"
 
                  -- cancel thread timeout

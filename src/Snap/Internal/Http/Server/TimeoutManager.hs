@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Snap.Internal.Http.Server.TimeoutManager
   ( TimeoutManager
@@ -14,6 +15,7 @@ module Snap.Internal.Http.Server.TimeoutManager
 
 ------------------------------------------------------------------------------
 import           Control.Concurrent
+import           Control.Concurrent.Extended (forkIOLabeledWithUnmaskBs)
 import           Control.Exception
 import           Control.Monad
 import           Data.IORef
@@ -116,7 +118,8 @@ initialize defaultTimeout getTime = do
 
     let tm = TimeoutManager defaultTimeout getTime conns inact mp mthr
 
-    thr <- forkIO $ managerThread tm
+    thr <- forkIOLabeledWithUnmaskBs "snap-server: timeout manager" $
+             managerThread tm
     putMVar mthr thr
     return tm
 
@@ -196,8 +199,8 @@ cancel h = writeIORef (_state h) Canceled
 
 
 ------------------------------------------------------------------------------
-managerThread :: TimeoutManager -> IO ()
-managerThread tm = loop `finally` (readIORef connections >>= destroyAll)
+managerThread :: TimeoutManager -> (forall a. IO a -> IO a) -> IO ()
+managerThread tm unmask = unmask loop `finally` (readIORef connections >>= destroyAll)
   where
     --------------------------------------------------------------------------
     connections = _connections tm

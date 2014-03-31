@@ -61,6 +61,10 @@ Flag openssl
   Description: Enable https support using the HsOpenSSL library.
   Default: False
 
+Flag label-threads
+  Description: Enable support for thread labeling
+  Default: False
+  Manual: True
 
 Library
   hs-source-dirs: src
@@ -82,7 +86,8 @@ Library
     Snap.Internal.Http.Server.HttpPort,
     Snap.Internal.Http.Server.SimpleBackend,
     Snap.Internal.Http.Server.TimeoutManager,
-    Snap.Internal.Http.Server.TLS
+    Snap.Internal.Http.Server.TLS,
+    Control.Concurrent.Extended
 
   build-depends:
     attoparsec                >= 0.10     && < 0.12,
@@ -151,6 +156,8 @@ Library
   else
     ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
+  if flag(label-threads)
+    cpp-options: -DLABEL_THREADS
 
 source-repository head
   type:     git
