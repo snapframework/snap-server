@@ -238,9 +238,6 @@ listeners conf = do
                    return (sock, Sock.httpAcceptFunc sock))
 
 
--- TODO(dbp 2014.4.5): I just copied this nearly verbatim from 0.9 (only a change
--- to lifted-base catch). Perhaps this needs to be revisited for config changes?
--- But this allows tests in snap to run, for example.
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP requests using the given handler, with settings from
 -- the 'Config' passed in. This function never returns; to shut down the HTTP
