@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns #-}
 
 ------------------------------------------------------------------------------
 -- | The Snap HTTP server is a high performance web server library written in
@@ -28,6 +29,7 @@ import           Control.Concurrent                (forkIOWithUnmask,
 import           Control.Exception                 (SomeException, bracket,
                                                     catch, finally, mask,
                                                     mask_)
+import qualified Control.Exception.Lifted as L     (catch)
 import           Control.Monad                     (liftM, when)
 import           Control.Monad.Trans               (MonadIO)
 import           Data.ByteString.Char8             (ByteString)
@@ -43,7 +45,8 @@ import           Prelude                           (Bool (..), Eq (..), IO,
                                                     String, const, error,
                                                     mapM, mapM_, maybe,
                                                     undefined, unzip3, ($),
-                                                    ($!), (++), (.), (||))
+                                                    ($!), (++), (.), (||), flip,
+                                                    id)
 import           Snap.Core                         (MonadSnap (..), Request,
                                                     Response, Snap,
                                                     rqClientAddr, rqHeaders,
@@ -55,6 +58,8 @@ import           System.Posix.Env
 #endif
 import           Snap.Internal.Debug               (debug)
 import qualified Snap.Types.Headers                as H
+import           Snap.Util.GZip                    (withCompression)
+import           Snap.Util.Proxy                   (behindProxy)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Http.Server.Config
@@ -232,12 +237,34 @@ listeners conf = do
                 do sock <- Sock.bindHttp b p
                    return (sock, Sock.httpAcceptFunc sock))
 
+
+-- TODO(dbp 2014.4.5): I just copied this nearly verbatim from 0.9 (only a change
+-- to lifted-base catch). Perhaps this needs to be revisited for config changes?
+-- But this allows tests in snap to run, for example.
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP requests using the given handler, with settings from
 -- the 'Config' passed in. This function never returns; to shut down the HTTP
 -- server, kill the controlling thread.
 httpServe :: Config Snap a -> Snap () -> IO ()
-httpServe = undefined
+httpServe config handler0 = do
+    conf <- completeConfig config
+    let !handler = chooseProxy conf
+    let serve = compress conf . catch500 conf $ handler
+    simpleHttpServe conf serve
+
+  where
+    chooseProxy conf = maybe handler0
+                             (\ptype -> behindProxy ptype handler0)
+                             (getProxyType conf)
+
+
+------------------------------------------------------------------------------
+catch500 :: MonadSnap m => Config m a -> m () -> m ()
+catch500 conf = flip L.catch $ fromJust $ getErrorHandler conf
+
+------------------------------------------------------------------------------
+compress :: MonadSnap m => Config m a -> m () -> m ()
+compress conf = if fromJust $ getCompression conf then withCompression else id
 
 
 ------------------------------------------------------------------------------
@@ -246,7 +273,9 @@ httpServe = undefined
 -- 'commandLineConfig'. This function never returns; to shut down the HTTP
 -- server, kill the controlling thread.
 quickHttpServe :: Snap () -> IO ()
-quickHttpServe = undefined
+quickHttpServe handler = do
+    conf <- commandLineConfig defaultConfig
+    httpServe conf handler
 
 
 ------------------------------------------------------------------------------
