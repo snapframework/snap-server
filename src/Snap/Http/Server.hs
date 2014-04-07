@@ -45,7 +45,6 @@ import           Snap.Internal.Debug               (debug)
 import qualified Snap.Types.Headers                as H
 import           Snap.Util.GZip                    (withCompression)
 import           Snap.Util.Proxy                   (behindProxy)
-------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getPort, getProxyType, getSSLBind, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
