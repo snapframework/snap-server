@@ -39,8 +39,8 @@ import           System.Posix.Env
 #endif
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder          (Builder, toByteString)
-import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
 ------------------------------------------------------------------------------
+import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
 import           Snap.Internal.Debug               (debug)
 import qualified Snap.Types.Headers                as H
 import           Snap.Util.GZip                    (withCompression)
