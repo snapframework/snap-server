@@ -67,8 +67,6 @@ module Snap.Internal.Http.Server.Config
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder       (Builder, fromByteString, toByteString)
-import           Blaze.ByteString.Builder.Char8 (fromShow)
 import           Control.Exception              (SomeException)
 import           Control.Monad                  (when)
 import           Data.ByteString                (ByteString)
@@ -85,9 +83,6 @@ import           Network                        (Socket)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                        hiding (catch)
 #endif
-import           Snap.Core                      (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
-import           Snap.Internal.Debug            (debug)
-import           Snap.Util.Proxy                (ProxyType)
 import           System.Console.GetOpt          (ArgDescr (..), ArgOrder (Permute), OptDescr (..), getOpt, usageInfo)
 import           System.Environment             hiding (getEnv)
 #ifndef PORTABLE
@@ -95,8 +90,14 @@ import           System.Posix.Env               (getEnv)
 #endif
 import           System.Exit                    (exitFailure)
 import           System.IO                      (hPutStrLn, stderr)
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder       (Builder, fromByteString, toByteString)
+import           Blaze.ByteString.Builder.Char8 (fromShow)
 import qualified System.IO.Streams              as Streams
 ------------------------------------------------------------------------------
+import           Snap.Core                      (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
+import           Snap.Internal.Debug            (debug)
+import           Snap.Util.Proxy                (ProxyType)
 
 
 ------------------------------------------------------------------------------

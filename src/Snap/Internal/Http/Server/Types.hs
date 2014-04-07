@@ -21,15 +21,17 @@ module Snap.Internal.Http.Server.Types
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder                 (Builder)
-import           Blaze.ByteString.Builder.Internal.Buffer (Buffer)
 import           Control.Exception                        (SomeException)
 import           Data.ByteString                          (ByteString)
 import           Data.IORef                               (IORef)
 import           Data.Word                                (Word64)
 import           Network.Socket                           (Socket)
-import           Snap.Core                                (Request, Response)
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder                 (Builder)
+import           Blaze.ByteString.Builder.Internal.Buffer (Buffer)
 import           System.IO.Streams                        (InputStream, OutputStream)
+------------------------------------------------------------------------------
+import           Snap.Core                                (Request, Response)
 
 
 ------------------------------------------------------------------------------

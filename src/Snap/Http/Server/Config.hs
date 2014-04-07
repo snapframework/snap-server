@@ -55,4 +55,5 @@ module Snap.Http.Server.Config
   , getStartupConfig
   ) where
 
+------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Config

@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.Session
   ( httpAcceptLoop
   , httpSession
@@ -15,6 +14,7 @@ module Snap.Internal.Http.Server.Session
   , TerminateSessionException(..)
   ) where
 
+------------------------------------------------------------------------------
 import           Control.Applicative                      ((<$>))
 import           Control.Arrow                            (first, second)
 import           Control.Concurrent                       (MVar, ThreadId, forkIOWithUnmask, forkOnWithUnmask, killThread, myThreadId, newEmptyMVar, putMVar, readMVar, takeMVar)
@@ -38,11 +38,14 @@ import           Data.Word                                (Word64, Word8)
 import           Foreign.Marshal.Utils                    (copyBytes)
 import           Foreign.Ptr                              (Ptr, castPtr, plusPtr)
 import           Foreign.Storable                         (pokeByteOff)
+import           System.Locale                            (defaultTimeLocale)
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder                 (Builder, flush, fromByteString)
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow)
 import           Blaze.ByteString.Builder.Internal        (Write, defaultBufferSize, exactWrite, fromWrite, getBound)
 import           Blaze.ByteString.Builder.Internal.Buffer (Buffer, allocBuffer)
+import           System.IO.Streams                        (InputStream, OutputStream)
+import qualified System.IO.Streams                        as Streams
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                        as V
 import           Snap.Core                                (EscapeSnap (..))
@@ -57,9 +60,6 @@ import           Snap.Internal.Http.Types                 (Cookie (..), HttpVers
 import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
-import           System.IO.Streams                        (InputStream, OutputStream)
-import qualified System.IO.Streams                        as Streams
-import           System.Locale                            (defaultTimeLocale)
 
 
 ------------------------------------------------------------------------------

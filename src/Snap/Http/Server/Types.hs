@@ -66,13 +66,13 @@ module Snap.Http.Server.Types
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder        (Builder)
 import           Data.ByteString                 (ByteString)
 import           Data.IORef                      (readIORef)
 import           Data.Word                       (Word64)
 ------------------------------------------------------------------------------
-import           Snap.Core                       (Request, Response)
+import           Blaze.ByteString.Builder        (Builder)
 ------------------------------------------------------------------------------
+import           Snap.Core                       (Request, Response)
 import           Snap.Internal.Http.Server.Types (AcceptFunc, DataFinishedHook, EscapeSnapHook, ExceptionHook, NewRequestHook, ParseHook, PerSessionData (_isNewConnection, _localAddress, _localPort, _remoteAddress, _remotePort, _twiddleTimeout), SendFileHandler, ServerConfig (..), ServerHandler, SocketConfig (..), UserHandlerFinishedHook)
 
 

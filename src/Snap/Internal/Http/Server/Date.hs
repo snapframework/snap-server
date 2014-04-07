@@ -13,9 +13,10 @@ import           Control.Monad            (when)
 import           Data.ByteString          (ByteString)
 import           Data.IORef               (IORef, newIORef, readIORef, writeIORef)
 import           Foreign.C.Types          (CTime)
-import           Snap.Internal.Http.Types (formatHttpTime, formatLogTime)
 import           System.IO.Unsafe         (unsafePerformIO)
 import           System.PosixCompat.Time  (epochTime)
+------------------------------------------------------------------------------
+import           Snap.Internal.Http.Types (formatHttpTime, formatLogTime)
 
 
 ------------------------------------------------------------------------------

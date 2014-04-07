@@ -15,7 +15,6 @@ module System.SendFile
 #include <sys/socket.h>
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder (Builder, toByteString)
 import           Control.Concurrent       (threadWaitWrite)
 import qualified Data.ByteString.Unsafe   as S
 import           Data.Word                (Word64)
@@ -31,6 +30,8 @@ import           System.Posix.Types       (Fd (..))
 #else
 import           System.Posix.Types       (COff, CSsize, Fd)
 #endif
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder (Builder, toByteString)
 ------------------------------------------------------------------------------
 #if defined(LINUX)
 import qualified System.SendFile.Linux    as SF

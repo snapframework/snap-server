@@ -7,6 +7,7 @@ import           Control.Concurrent.Thread                (forkIO, result)
 import           Control.Monad                            (replicateM)
 import           Data.IORef                               (newIORef, readIORef, writeIORef)
 import           Data.Maybe                               (isJust)
+------------------------------------------------------------------------------
 import qualified Snap.Internal.Http.Server.TimeoutManager as TM
 import           System.PosixCompat.Time                  (epochTime)
 import           System.Timeout                           (timeout)
