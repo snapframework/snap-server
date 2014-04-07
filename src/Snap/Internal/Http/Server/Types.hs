@@ -29,8 +29,8 @@ import           Data.IORef                               (IORef)
 import           Data.Word                                (Word64)
 import           Network.Socket                           (Socket)
 import           Snap.Core                                (Request, Response)
-import           System.IO.Streams                        (InputStream,
-                                                           OutputStream)
+import           System.IO.Streams                        (InputStream, OutputStream)
+
 
 ------------------------------------------------------------------------------
 -- | The 'NewRequestHook' is called once processing for an HTTP request begins,

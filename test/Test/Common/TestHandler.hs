@@ -3,23 +3,26 @@
 
 module Test.Common.TestHandler (testHandler) where
 
-import           Blaze.ByteString.Builder
+------------------------------------------------------------------------------
 import           Control.Concurrent         (threadDelay)
 import           Control.Exception          (throwIO)
-import           Control.Monad
-import           Control.Monad.Trans
+import           Control.Monad              (liftM)
+import           Control.Monad.Trans        (MonadIO (liftIO))
 import qualified Data.ByteString.Char8      as S
 import qualified Data.ByteString.Lazy.Char8 as L
-import           Data.List
+import           Data.List                  (sort)
 import qualified Data.Map                   as Map
-import           Data.Maybe
-import           Data.Monoid
-import           Snap.Core
-import           Snap.Internal.Debug
-import           Snap.Util.FileServe
-import           Snap.Util.FileUploads
-import           Snap.Util.GZip
-import           System.Directory
+import           Data.Maybe                 (fromMaybe)
+import           Data.Monoid                (Monoid (mappend, mconcat, mempty))
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder   (Builder, flush, fromByteString)
+------------------------------------------------------------------------------
+import           Snap.Core                  (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, route, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
+import           Snap.Internal.Debug        ()
+import           Snap.Util.FileServe        (serveDirectory)
+import           Snap.Util.FileUploads      (PartInfo (partContentType, partFileName), allowWithMaximumSize, defaultUploadPolicy, disallow, handleFileUploads)
+import           Snap.Util.GZip             (noCompression, withCompression)
+import           System.Directory           (createDirectoryIfMissing)
 import           System.IO.Streams          (OutputStream)
 import qualified System.IO.Streams          as Streams
 import           Test.Common.Rot13          (rot13)

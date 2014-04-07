@@ -16,47 +16,28 @@ module System.FastLogger
   , logMsg
   ) where
 
-
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder           (Builder, fromByteString,
-                                                     fromWord8, toByteString,
-                                                     toLazyByteString)
-import           Blaze.ByteString.Builder.Char.Utf8 (fromShow)
-import           Control.Concurrent                 (MVar, ThreadId,
-                                                     killThread, newEmptyMVar,
-                                                     putMVar, takeMVar,
-                                                     threadDelay, tryPutMVar,
-                                                     withMVar)
+import           Control.Concurrent                 (MVar, ThreadId, killThread, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar, withMVar)
 import           Control.Concurrent.Extended        (forkIOLabeledWithUnmaskBs)
-import           Control.Exception                  (AsyncException,
-                                                     Handler (..),
-                                                     IOException,
-                                                     SomeException, bracket,
-                                                     catch, catches, mask_)
+import           Control.Exception                  (AsyncException, Handler (..), IOException, SomeException, bracket, catch, catches, mask_)
 import           Control.Monad                      (unless, void, when)
 import           Data.ByteString.Char8              (ByteString)
 import qualified Data.ByteString.Char8              as S
 import           Data.ByteString.Internal           (c2w)
 import qualified Data.ByteString.Lazy.Char8         as L
-import           Data.IORef                         (IORef, newIORef,
-                                                     readIORef, writeIORef)
+import           Data.IORef                         (IORef, newIORef, readIORef, writeIORef)
 import           Data.Monoid                        (mappend, mconcat, mempty)
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
 import           Data.Word                          (Word64)
-import           Prelude                            (Eq (..), FilePath, IO,
-                                                     Int, Maybe, Monad (..),
-                                                     Num (..), Ord (..),
-                                                     Show (..), String, mapM_,
-                                                     maybe, ($), ($!), (++),
-                                                     (.), (||))
-import           System.IO                          (IOMode (AppendMode),
-                                                     hClose, hFlush, openFile,
-                                                     stderr, stdout)
-
+import           Prelude                            (Eq (..), FilePath, IO, Int, Maybe, Monad (..), Num (..), Ord (..), Show (..), String, mapM_, maybe, ($), ($!), (++), (.), (||))
+import           System.IO                          (IOMode (AppendMode), hClose, hFlush, openFile, stderr, stdout)
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder           (Builder, fromByteString, fromWord8, toByteString, toLazyByteString)
+import           Blaze.ByteString.Builder.Char.Utf8 (fromShow)
+------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Common   (atomicModifyIORef')
-import           Snap.Internal.Http.Server.Date     (getCurrentDateTime,
-                                                     getLogDateString)
+import           Snap.Internal.Http.Server.Date     (getCurrentDateTime, getLogDateString)
 
 
 ------------------------------------------------------------------------------

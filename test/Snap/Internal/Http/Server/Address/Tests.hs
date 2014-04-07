@@ -4,15 +4,14 @@
 module Snap.Internal.Http.Server.Address.Tests (tests) where
 
 ------------------------------------------------------------------------------
-import           Network.Socket
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import           Test.HUnit                        hiding (Test, path)
+import           Network.Socket                    (Family (AF_INET, AF_INET6), SockAddr (SockAddrInet, SockAddrInet6, SockAddrUnix), iN6ADDR_ANY, iNADDR_ANY)
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Address
-import           Snap.Test.Common                  (coverShowInstance,
-                                                    coverTypeableInstance,
-                                                    expectException)
+import           Test.Framework                    (Test)
+import           Test.Framework.Providers.HUnit    (testCase)
+import           Test.HUnit                        (assertEqual)
+------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server.Address (AddressNotSupportedException (..), getAddress, getAddressImpl, getHostAddrImpl, getSockAddr, getSockAddrImpl)
+import           Snap.Test.Common                  (coverShowInstance, coverTypeableInstance, expectException)
 
 
 ------------------------------------------------------------------------------

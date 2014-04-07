@@ -1,7 +1,7 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE BangPatterns #-}
 
 ------------------------------------------------------------------------------
 -- | The Snap HTTP server is a high performance web server library written in
@@ -20,59 +20,41 @@ module Snap.Http.Server
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder          (Builder, toByteString)
 import           Control.Applicative               ((<$>), (<|>))
-import           Control.Concurrent                (forkIOWithUnmask,
-                                                    killThread, newEmptyMVar,
-                                                    newMVar, putMVar,
-                                                    takeMVar, withMVar)
-import           Control.Exception                 (SomeException, bracket,
-                                                    catch, finally, mask,
-                                                    mask_)
-import qualified Control.Exception.Lifted as L     (catch)
+import           Control.Concurrent                (forkIOWithUnmask, killThread, newEmptyMVar, newMVar, putMVar, takeMVar, withMVar)
+import           Control.Exception                 (SomeException, bracket, catch, finally, mask, mask_)
+import qualified Control.Exception.Lifted          as L
 import           Control.Monad                     (liftM, when)
 import           Control.Monad.Trans               (MonadIO)
 import           Data.ByteString.Char8             (ByteString)
 import qualified Data.ByteString.Char8             as S
-import           Data.Maybe                        (catMaybes, fromJust,
-                                                    fromMaybe)
+import           Data.Maybe                        (catMaybes, fromJust, fromMaybe)
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
 import           Network.Socket                    (Socket, sClose)
-import           Prelude                           (Bool (..), Eq (..), IO,
-                                                    Maybe (..), Monad (..),
-                                                    Ord (..), Show (..),
-                                                    String, const, error,
-                                                    mapM, mapM_, maybe,
-                                                    undefined, unzip3, ($),
-                                                    ($!), (++), (.), (||), flip,
-                                                    id)
-import           Snap.Core                         (MonadSnap (..), Request,
-                                                    Response, Snap,
-                                                    rqClientAddr, rqHeaders,
-                                                    rqMethod, rqURI,
-                                                    rqVersion, rspStatus)
+import           Prelude                           (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Ord (..), Show (..), String, const, error, flip, id, mapM, mapM_, maybe, undefined, unzip3, ($), ($!), (++), (.), (||))
 import           System.IO                         (hFlush, hPutStrLn, stderr)
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder          (Builder, toByteString)
+import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
+------------------------------------------------------------------------------
 import           Snap.Internal.Debug               (debug)
 import qualified Snap.Types.Headers                as H
 import           Snap.Util.GZip                    (withCompression)
 import           Snap.Util.Proxy                   (behindProxy)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
-import           Snap.Http.Server.Config
+import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getPort, getProxyType, getSSLBind, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
-import           Snap.Internal.Http.Server.Config
-import           Snap.Internal.Http.Server.Session (httpAcceptLoop,
-                                                    snapToServerHandler)
+import           Snap.Internal.Http.Server.Config  (emptyStartupInfo, setStartupConfig, setStartupSockets)
+import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket  as Sock
-import           Snap.Internal.Http.Server.Types   (AcceptFunc, ServerConfig,
-                                                    ServerHandler)
-import           System.FastLogger                 (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction,
-                                                    stopLogger,
-                                                    timestampedLogEntry)
+import           Snap.Internal.Http.Server.Types   (AcceptFunc, ServerConfig, ServerHandler)
+import           System.FastLogger                 (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction, stopLogger, timestampedLogEntry)
+
 
 ------------------------------------------------------------------------------
 -- | A short string describing the Snap server version
@@ -258,6 +240,7 @@ httpServe config handler0 = do
 ------------------------------------------------------------------------------
 catch500 :: MonadSnap m => Config m a -> m () -> m ()
 catch500 conf = flip L.catch $ fromJust $ getErrorHandler conf
+
 
 ------------------------------------------------------------------------------
 compress :: MonadSnap m => Config m a -> m () -> m ()

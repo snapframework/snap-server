@@ -11,44 +11,44 @@ module Test.Blackbox
   ) where
 
 --------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder
-import           Control.Concurrent
+import           Control.Concurrent                   (ThreadId, forkIO, threadDelay)
 import           Control.Exception                    (bracketOnError)
-import           Control.Monad
+import           Control.Monad                        (Monad (return), forever, liftM, mapM_, when)
 import qualified Data.ByteString.Base16               as B16
 import           Data.ByteString.Char8                (ByteString)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
-import           Data.Int
-import           Data.List
-import           Data.Monoid
+import           Data.Int                             (Int)
+import           Data.List                            (concat, concatMap, head, map, replicate, sort, (++))
+import           Data.Monoid                          (Monoid (mconcat, mempty))
 import qualified Network.Http.Client                  as HTTP
 import qualified Network.Socket                       as N
 import qualified Network.Socket.ByteString            as N
+import           Prelude                              hiding (catch, take)
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder             (fromByteString)
 #ifdef OPENSSL
 import qualified OpenSSL.Session                      as SSL
 #endif
-import           Prelude                              hiding (catch, take)
 import qualified System.IO.Streams                    as Streams
-import           System.Timeout
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import           Test.Framework.Providers.QuickCheck2
+import           System.Timeout                       (timeout)
+import           Test.Framework                       (Test, TestOptions' (topt_maximum_generated_tests), plusTestOptions)
+import           Test.Framework.Providers.HUnit       (testCase)
+import           Test.Framework.Providers.QuickCheck2 (testProperty)
 import           Test.HUnit                           hiding (Test, path)
-import           Test.QuickCheck
-import           Test.QuickCheck.Monadic              hiding (assert, run)
+import           Test.QuickCheck                      (Arbitrary (arbitrary))
+import           Test.QuickCheck.Monadic              (forAllM, monadicIO)
 import qualified Test.QuickCheck.Monadic              as QC
 import qualified Test.QuickCheck.Property             as QC
 ------------------------------------------------------------------------------
-import           Snap.Internal.Debug
-import           Snap.Internal.Http.Server.Session    (httpAcceptLoop,
-                                                       snapToServerHandler)
+import           Snap.Internal.Debug                  (debug)
+import           Snap.Internal.Http.Server.Session    (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket     as Sock
 import qualified Snap.Internal.Http.Server.Types      as Types
-import           Snap.Test.Common
-import           Test.Common.Rot13
-import           Test.Common.TestHandler
-------------------------------------------------------------------------------
+import           Snap.Test.Common                     (ditchHeaders, expectExceptionBeforeTimeout, recvAll, withSock)
+import           Test.Common.Rot13                    (rot13)
+import           Test.Common.TestHandler              (testHandler)
+
 
 ------------------------------------------------------------------------------
 tests :: Int -> [Test]

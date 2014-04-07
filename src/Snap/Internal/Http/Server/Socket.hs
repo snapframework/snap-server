@@ -8,22 +8,20 @@ module Snap.Internal.Http.Server.Socket
   , sendFileFunc
   ) where
 
-------------------------------------------------------------------------------
+import           Control.Exception                 (bracket)
 import           Data.ByteString.Char8             (ByteString)
-import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr),
-                                                    SocketType (Stream),
-                                                    accept, bindSocket, close,
-                                                    getSocketName, listen,
-                                                    setSocketOption, socket)
+import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), SocketType (Stream), accept, bindSocket, close, getSocketName, listen, setSocketOption, socket)
+import           Network.Socket                    (fdSocket)
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
-import           Snap.Internal.Http.Server.Types   (AcceptFunc (..),
-                                                    SendFileHandler)
+import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHandler)
 import qualified System.IO.Streams                 as Streams
+import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
+import           System.Posix.Types                (Fd (..))
+import           System.SendFile                   (sendFile, sendHeaders)
 #ifndef PORTABLE
 import           Control.Exception                 (bracket)
 import           Network.Socket                    (fdSocket)
-import           System.Posix.IO                   (OpenMode (..), closeFd,
-                                                    defaultFileFlags, openFd)
+import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
 import           System.Posix.Types                (Fd (..))
 import           System.SendFile                   (sendFile, sendHeaders)
 #else
@@ -31,7 +29,6 @@ import           Blaze.ByteString.Builder          (fromByteString)
 import           Network.Socket.ByteString         (sendAll)
 import qualified System.IO.Streams                 as Streams
 #endif
-------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------------------------

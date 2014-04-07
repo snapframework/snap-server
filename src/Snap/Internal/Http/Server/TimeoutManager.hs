@@ -16,22 +16,16 @@ module Snap.Internal.Http.Server.TimeoutManager
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Concurrent
+import           Control.Exception                (evaluate, finally)
+import           Control.Monad                    (Monad ((>>), (>>=), return), mapM_, void)
+import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
+import           Foreign.C.Types                  (CTime)
+import           Prelude                          (Bool, IO, Int, const, fromEnum, fromIntegral, id, max, null, otherwise, toEnum, ($), ($!), (+), (++), (-), (.), (<=), (==))
+------------------------------------------------------------------------------
+import           Control.Concurrent               (MVar, ThreadId, killThread, newEmptyMVar, putMVar, readMVar, takeMVar, threadDelay, tryPutMVar)
 import           Control.Concurrent.Extended      (forkIOLabeledWithUnmaskBs)
-import           Control.Exception
-import           Control.Monad
-import           Data.IORef                       (IORef, newIORef, readIORef,
-                                                   writeIORef)
-import           Foreign.C.Types
-import           Prelude                          (Bool, IO, Int, const,
-                                                   fromEnum, fromIntegral, id,
-                                                   max, null, otherwise,
-                                                   toEnum, ($), ($!), (+),
-                                                   (++), (-), (.), (<=), (==))
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Common (atomicModifyIORef',
-                                                   eatException)
-------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server.Common (atomicModifyIORef', eatException)
 
 
 ------------------------------------------------------------------------------

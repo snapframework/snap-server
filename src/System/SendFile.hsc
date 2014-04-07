@@ -14,10 +14,11 @@ module System.SendFile
 
 #include <sys/socket.h>
 
-import           Blaze.ByteString.Builder
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder (Builder, toByteString)
 import           Control.Concurrent       (threadWaitWrite)
 import qualified Data.ByteString.Unsafe   as S
-import           Data.Word
+import           Data.Word                (Word64)
 import           Foreign.C.Error          (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
 import           Foreign.C.Types          (CChar (..), CInt (..), CSize (..))
@@ -30,7 +31,7 @@ import           System.Posix.Types       (Fd (..))
 #else
 import           System.Posix.Types       (COff, CSsize, Fd)
 #endif
-
+------------------------------------------------------------------------------
 #if defined(LINUX)
 import qualified System.SendFile.Linux    as SF
 #elif defined(FREEBSD)

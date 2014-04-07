@@ -5,7 +5,6 @@
 module Snap.Internal.Http.Server.Parser.Tests (tests) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder
 import           Control.Monad                        (liftM)
 import           Control.Parallel.Strategies          (rdeepseq, using)
 import qualified Data.ByteString.Char8                as S
@@ -14,22 +13,21 @@ import           Data.Int                             (Int64)
 import           Data.List                            (sort)
 import qualified Data.Map                             as Map
 import           Data.Monoid                          (mconcat)
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import           Test.Framework.Providers.QuickCheck2
-import           Test.HUnit                           hiding (Test, path)
-import           Test.QuickCheck
-import           Test.QuickCheck.Monadic              hiding (assert, run)
-import qualified Test.QuickCheck.Monadic              as QC
-import           Text.Printf
+import           Text.Printf                          (printf)
 ------------------------------------------------------------------------------
-import           Snap.Internal.Debug
-import           Snap.Internal.Http.Server.Parser
-import           Snap.Internal.Http.Types
-import           Snap.Test.Common                     (coverEqInstance,
-                                                       coverShowInstance,
-                                                       coverTypeableInstance,
-                                                       expectException)
+import           Blaze.ByteString.Builder             (fromByteString, toByteString)
+import           Test.Framework                       (Test)
+import           Test.Framework.Providers.HUnit       (testCase)
+import           Test.Framework.Providers.QuickCheck2 (testProperty)
+import           Test.HUnit                           (assertEqual)
+import           Test.QuickCheck                      (Arbitrary (arbitrary))
+import           Test.QuickCheck.Monadic              (forAllM, monadicIO)
+import qualified Test.QuickCheck.Monadic              as QC
+------------------------------------------------------------------------------
+import           Snap.Internal.Debug                  (debug)
+import           Snap.Internal.Http.Server.Parser     (HttpParseException (..), IRequest (IRequest, iMethod, iRequestHeaders, iStdHeaders), getStdHost, parseCookie, parseRequest, parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
+import           Snap.Internal.Http.Types             (Cookie (Cookie), Method (CONNECT, DELETE, GET, HEAD, Method, OPTIONS, PATCH, POST, PUT, TRACE))
+import           Snap.Test.Common                     (coverEqInstance, coverShowInstance, coverTypeableInstance, expectException)
 import qualified Snap.Types.Headers                   as H
 import qualified System.IO.Streams                    as Streams
 

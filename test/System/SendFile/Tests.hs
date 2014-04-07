@@ -6,18 +6,18 @@ module System.SendFile.Tests (tests) where
 
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder       (fromByteString)
-import           Control.Concurrent.MVar
+import           Control.Concurrent.MVar        (MVar, modifyMVar, modifyMVar_, newMVar, readMVar)
 import           Control.Exception              (evaluate)
-import           Control.Monad
+import           Control.Monad                  (void)
 import qualified Data.ByteString.Char8          as S
-import           Foreign.C.Error
-import           Foreign.C.Types
-import           Foreign.Ptr
+import           Foreign.C.Error                (Errno (..), eAGAIN, eCONNRESET, eOK)
+import           Foreign.C.Types                (CChar, CInt (..), CSize)
+import           Foreign.Ptr                    (Ptr, nullPtr)
 import           Foreign.Storable               (peek)
-import           System.Posix.Types
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import           Test.HUnit                     hiding (Test, path)
+import           System.Posix.Types             (COff, CSsize, Fd)
+import           Test.Framework                 (Test)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (assertEqual)
 ------------------------------------------------------------------------------
 import           Snap.Test.Common               (expectException)
 import qualified System.SendFile                as SF
@@ -32,6 +32,8 @@ import           Foreign.Storable
 import qualified System.SendFile.Darwin         as SFI
 #endif
 
+
+------------------------------------------------------------------------------
 tests :: [Test]
 tests = [ testSendHeaders
         , testSendHeaderCrash
@@ -78,6 +80,7 @@ testSendHeaderCrash = testCase "sendfile/sendHeaders/crash" $ do
     builder       = fromByteString $ S.replicate 10 ' '
     sampleActions = [ c_set_errno eCONNRESET >> return (-1) ]
 
+
 ------------------------------------------------------------------------------
 testTrivials :: Test
 testTrivials = testCase "sendfile/trivials" $
@@ -92,6 +95,7 @@ data SendHeadersCallLog = SendHeadersCallLog {
     , _flags :: CInt
     }
   deriving (Eq, Show, Ord)
+
 
 ------------------------------------------------------------------------------
 sendHeadersMockSendFunc :: MVar [IO CSize]             -- ^ sample outputs
@@ -141,6 +145,7 @@ data SendFileCallLog = SendFileCallLog {
     , _sf_sz  :: COff
     }
   deriving (Eq, Show, Ord)
+
 
 ------------------------------------------------------------------------------
 sendFileMockSendFunc :: MVar [IO CSize]          -- ^ sample outputs
@@ -217,6 +222,7 @@ testSendFile = testCase "sendfile/sendfile-impl" $ do
     sampleActions2 = [ c_set_errno eAGAIN >> return (-1)
                      , c_set_errno eOK >> return 2
                      ]
+
 
 ------------------------------------------------------------------------------
 testSendFileZero :: Test

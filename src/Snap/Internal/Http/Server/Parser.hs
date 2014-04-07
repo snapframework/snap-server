@@ -25,22 +25,15 @@ module Snap.Internal.Http.Server.Parser
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder         (Builder)
-import           Blaze.ByteString.Builder.HTTP    (chunkedTransferEncoding,
-                                                   chunkedTransferTerminator)
 import           Control.Applicative              ((<$>))
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
-import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take,
-                                                   takeTill)
+import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take, takeTill)
 import qualified Data.ByteString.Char8            as S
-import           Data.ByteString.Internal         (ByteString (..), c2w,
-                                                   inlinePerformIO, memchr,
-                                                   w2c)
+import           Data.ByteString.Internal         (ByteString (..), c2w, inlinePerformIO, memchr, w2c)
 import qualified Data.ByteString.Unsafe           as S
-import           Data.IORef                       (newIORef, readIORef,
-                                                   writeIORef)
+import           Data.IORef                       (newIORef, readIORef, writeIORef)
 import           Data.List                        (sort)
 import           Data.Typeable                    (Typeable)
 import qualified Data.Vector                      as V
@@ -49,16 +42,16 @@ import           Foreign.C.Types                  (CChar)
 import           Foreign.ForeignPtr               (withForeignPtr)
 import           Foreign.Ptr                      (minusPtr, nullPtr, plusPtr)
 import           Foreign.Storable                 (peek, poke)
-import           Prelude                          hiding (head, take,
-                                                   takeWhile)
+import           Prelude                          hiding (take)
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder         (Builder)
+import           Blaze.ByteString.Builder.HTTP    (chunkedTransferEncoding, chunkedTransferTerminator)
 import           System.IO.Streams                (InputStream, OutputStream)
 import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)
-----------------------------------------------------------------------------
+------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
-import           Snap.Internal.Parsing            (crlf, parseCookie,
-                                                   parseUrlEncoded,
-                                                   unsafeFromNat)
+import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat)
 import           Snap.Types.Headers               (Headers)
 import qualified Snap.Types.Headers               as H
 

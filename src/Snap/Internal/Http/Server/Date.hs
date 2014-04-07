@@ -9,14 +9,14 @@ module Snap.Internal.Http.Server.Date
 
 ------------------------------------------------------------------------------
 import           Control.Exception        (mask_)
-import           Control.Monad
+import           Control.Monad            (when)
 import           Data.ByteString          (ByteString)
-import           Data.IORef
-import           Foreign.C.Types
-import           System.IO.Unsafe
-import           System.PosixCompat.Time
-
+import           Data.IORef               (IORef, newIORef, readIORef, writeIORef)
+import           Foreign.C.Types          (CTime)
 import           Snap.Internal.Http.Types (formatHttpTime, formatLogTime)
+import           System.IO.Unsafe         (unsafePerformIO)
+import           System.PosixCompat.Time  (epochTime)
+
 
 ------------------------------------------------------------------------------
 data DateState = DateState {

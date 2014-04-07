@@ -9,10 +9,11 @@ module System.SendFile.Linux
   , sendFileImpl
   , sendFileMode
   ) where
+
 ------------------------------------------------------------------------------
 import           Control.Concurrent (threadWaitWrite)
-import           Data.Int
-import           Data.Word
+import           Data.Int           (Int64)
+import           Data.Word          (Word64)
 import           Foreign.C.Error    (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
 import           Foreign.C.Types    (CInt (..), CSize (..))
@@ -27,7 +28,6 @@ import           System.Posix.Types (COff (..), CSsize (..), Fd (..))
 #else
 import           System.Posix.Types (COff, CSsize, Fd)
 #endif
-------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------------------------

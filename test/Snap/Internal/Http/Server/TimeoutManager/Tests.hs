@@ -1,19 +1,21 @@
 module Snap.Internal.Http.Server.TimeoutManager.Tests
   ( tests ) where
 
-import           Control.Concurrent                       hiding (forkIO)
+------------------------------------------------------------------------------
+import           Control.Concurrent                       (newEmptyMVar, putMVar, takeMVar, threadDelay)
 import           Control.Concurrent.Thread                (forkIO, result)
 import           Control.Monad                            (replicateM)
-import           Data.IORef
-import           Data.Maybe
-import           System.PosixCompat.Time
-import           System.Timeout
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import           Test.HUnit                               hiding (Test, path)
-
+import           Data.IORef                               (newIORef, readIORef, writeIORef)
+import           Data.Maybe                               (isJust)
 import qualified Snap.Internal.Http.Server.TimeoutManager as TM
+import           System.PosixCompat.Time                  (epochTime)
+import           System.Timeout                           (timeout)
+import           Test.Framework                           (Test)
+import           Test.Framework.Providers.HUnit           (testCase)
+import           Test.HUnit                               (assertBool, assertEqual)
 
+
+------------------------------------------------------------------------------
 tests :: [Test]
 tests = [ testOneTimeout
         , testOneTimeoutAfterInactivity
@@ -21,12 +23,14 @@ tests = [ testOneTimeout
         , testTickle ]
 
 
+------------------------------------------------------------------------------
 testOneTimeout :: Test
 testOneTimeout = testCase "timeout/oneTimeout" $ repeatedly $ do
     mgr <- TM.initialize 1 epochTime
     oneTimeout mgr
 
 
+------------------------------------------------------------------------------
 testOneTimeoutAfterInactivity :: Test
 testOneTimeoutAfterInactivity =
     testCase "timeout/oneTimeoutAfterInactivity" $ repeatedly $ do
@@ -34,12 +38,14 @@ testOneTimeoutAfterInactivity =
         threadDelay $ 3 * seconds
         oneTimeout mgr
 
+------------------------------------------------------------------------------
 repeatedly :: IO () -> IO ()
 repeatedly m = dieIfTimeout $ do
     results <- replicateM 40 (forkIO m) >>= sequence . map snd
     mapM_ result results
 
 
+------------------------------------------------------------------------------
 oneTimeout :: TM.TimeoutManager -> IO ()
 oneTimeout mgr = do
     mv  <- newEmptyMVar
@@ -49,6 +55,7 @@ oneTimeout mgr = do
     TM.stop mgr
 
 
+------------------------------------------------------------------------------
 testTickle :: Test
 testTickle = testCase "timeout/tickle" $ repeatedly $ do
     mgr <- TM.initialize 5 epochTime
@@ -67,6 +74,7 @@ testTickle = testCase "timeout/tickle" $ repeatedly $ do
     TM.stop mgr
 
 
+------------------------------------------------------------------------------
 testCancel :: Test
 testCancel = testCase "timeout/cancel" $ repeatedly $ do
     mgr <- TM.initialize 3 epochTime
