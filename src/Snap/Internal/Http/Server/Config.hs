@@ -67,36 +67,37 @@ module Snap.Internal.Http.Server.Config
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder
-import           Blaze.ByteString.Builder.Char8
 import           Control.Exception              (SomeException)
-import           Control.Monad
+import           Control.Monad                  (when)
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString.Char8          as B
 import           Data.Char                      (isAlpha)
-import           Data.Function
-import           Data.List
-import           Data.Maybe
-import           Data.Monoid
+import           Data.Function                  (on)
+import           Data.List                      (foldl')
+import           Data.Maybe                     (isJust, isNothing)
+import           Data.Monoid                    (Last (Last, getLast), Monoid (..))
 import qualified Data.Text                      as T
 import qualified Data.Text.Encoding             as T
-import           Data.Typeable
+import           Data.Typeable                  (TyCon, Typeable1 (..), mkTyCon, mkTyConApp)
 import           Network                        (Socket)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                        hiding (catch)
 #endif
-import           Snap.Core
-import           Snap.Internal.Debug            (debug)
-import           Snap.Util.Proxy
-import           System.Console.GetOpt
+import           System.Console.GetOpt          (ArgDescr (..), ArgOrder (Permute), OptDescr (..), getOpt, usageInfo)
 import           System.Environment             hiding (getEnv)
 #ifndef PORTABLE
-import           System.Posix.Env
+import           System.Posix.Env               (getEnv)
 #endif
-import           System.Exit
-import           System.IO
+import           System.Exit                    (exitFailure)
+import           System.IO                      (hPutStrLn, stderr)
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder       (Builder, fromByteString, toByteString)
+import           Blaze.ByteString.Builder.Char8 (fromShow)
 import qualified System.IO.Streams              as Streams
 ------------------------------------------------------------------------------
+import           Snap.Core                      (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
+import           Snap.Internal.Debug            (debug)
+import           Snap.Util.Proxy                (ProxyType)
 
 
 ------------------------------------------------------------------------------

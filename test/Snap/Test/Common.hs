@@ -9,26 +9,28 @@
 ------------------------------------------------------------------------------
 module Snap.Test.Common where
 
-import           Blaze.ByteString.Builder
-import           Control.DeepSeq
-import           Control.Exception.Lifted    (SomeException (..), catch,
-                                              evaluate, finally, try)
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Control
+------------------------------------------------------------------------------
+import           Control.DeepSeq             (deepseq)
+import           Control.Exception.Lifted    (SomeException (..), catch, evaluate, finally, try)
+import           Control.Monad               (liftM, replicateM)
+import           Control.Monad.IO.Class      (MonadIO (..))
+import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Data.ByteString.Char8       (ByteString)
 import qualified Data.ByteString.Char8       as S
 import qualified Data.ByteString.Lazy        as L
-import           Data.Monoid
-import           Data.Typeable
-import           Network.Socket
+import           Data.Monoid                 (Monoid (mappend, mempty))
+import           Data.Typeable               (Typeable (..))
+
 import qualified Network.Socket.ByteString   as N
 #if !(MIN_VERSION_base(4,6,0))
 import           Prelude                     hiding (catch)
 #endif
-import           System.Timeout
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder    (fromByteString, toByteString)
+import           Network.Socket              (AddrInfo (addrAddress, addrFlags), AddrInfoFlag (AI_NUMERICHOST), Family (AF_INET), Socket, SocketType (Stream), connect, defaultHints, defaultProtocol, getAddrInfo, sClose, socket)
+import           System.Timeout              (timeout)
 import           Test.HUnit                  (assertFailure)
-import           Test.QuickCheck
+import           Test.QuickCheck             (Arbitrary (arbitrary), choose)
 
 
 ------------------------------------------------------------------------------

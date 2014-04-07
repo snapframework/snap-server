@@ -10,85 +10,44 @@ module Snap.Internal.Http.Server.Session.Tests (tests) where
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                                  hiding (catch)
 #endif
-------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder                 (flush,
-                                                           fromByteString,
-                                                           toByteString)
-import           Blaze.ByteString.Builder.Char8           (fromChar)
-import           Blaze.ByteString.Builder.Internal.Buffer (allocBuffer)
-import           Control.Concurrent
-import           Control.Exception.Lifted                 (AsyncException (ThreadKilled),
-                                                           Exception,
-                                                           SomeException (..),
-                                                           bracket, catch,
-                                                           evaluate, mask,
-                                                           throwIO, try)
-import           Control.Monad                            (forM_, liftM,
-                                                           replicateM_, void,
-                                                           when, (>=>))
+import           Control.Concurrent                       (MVar, forkIO, killThread, modifyMVar_, myThreadId, newChan, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar, threadDelay, throwTo, withMVar)
+import           Control.Exception.Lifted                 (AsyncException (ThreadKilled), Exception, SomeException (..), bracket, catch, evaluate, mask, throwIO, try)
+import           Control.Monad                            (forM_, liftM, replicateM_, void, when, (>=>))
 import           Control.Monad.State.Class                (modify)
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.CaseInsensitive                     as CI
-import           Data.IORef                               (IORef, newIORef,
-                                                           readIORef,
-                                                           writeIORef)
+import           Data.IORef                               (IORef, newIORef, readIORef, writeIORef)
 import qualified Data.Map                                 as Map
 import           Data.Maybe                               (isNothing)
 import           Data.Monoid                              (mappend)
-import           Data.Time.Clock.POSIX
+import           Data.Time.Clock.POSIX                    (posixSecondsToUTCTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Word                                (Word64)
-import qualified Network.Http.Client                      as Http
-import           System.Timeout                           (timeout)
-import           Test.Framework
-import           Test.Framework.Providers.HUnit
-import qualified Test.Framework.Runners.Console           as Console
-import           Test.HUnit                               hiding (Test, path)
 ------------------------------------------------------------------------------
-import           Snap.Core
-import           Snap.Http.Server.Types                   (emptyServerConfig,
-                                                           getDefaultTimeout,
-                                                           getIsSecure,
-                                                           getLocalAddress,
-                                                           getLocalHostname,
-                                                           getLocalPort,
-                                                           getLogAccess,
-                                                           getLogError,
-                                                           getNumAcceptLoops,
-                                                           getOnDataFinished,
-                                                           getOnEscape,
-                                                           getOnException,
-                                                           getOnNewRequest,
-                                                           getOnParse, getOnUserHandlerFinished,
-                                                           getRemoteAddress,
-                                                           getRemotePort,
-                                                           getTwiddleTimeout,
-                                                           isNewConnection,
-                                                           setDefaultTimeout,
-                                                           setIsSecure,
-                                                           setLocalHostname,
-                                                           setLogAccess,
-                                                           setLogError,
-                                                           setNumAcceptLoops,
-                                                           setOnDataFinished,
-                                                           setOnEscape,
-                                                           setOnException,
-                                                           setOnNewRequest,
-                                                           setOnParse, setOnUserHandlerFinished)
-import           Snap.Internal.Http.Server.Date           (getLogDateString)
-import           Snap.Internal.Http.Server.Session
-import           Snap.Internal.Http.Server.Types
-import           Snap.Test                                (RequestBuilder)
-import qualified Snap.Test                                as T
-import           Snap.Test.Common                         (coverShowInstance, coverTypeableInstance,
-                                                           expectException)
-import           System.IO.Streams                        (InputStream,
-                                                           OutputStream)
+import           Blaze.ByteString.Builder                 (flush, fromByteString, toByteString)
+import           Blaze.ByteString.Builder.Char8           (fromChar)
+import           Blaze.ByteString.Builder.Internal.Buffer (allocBuffer)
+import qualified Network.Http.Client                      as Http
+import           System.IO.Streams                        (InputStream, OutputStream)
 import qualified System.IO.Streams                        as Streams
 import qualified System.IO.Streams.Concurrent             as Streams
 import qualified System.IO.Streams.Debug                  as Streams
+import           System.Timeout                           (timeout)
+import           Test.Framework                           (Test, testGroup)
+import           Test.Framework.Providers.HUnit           (testCase)
+import qualified Test.Framework.Runners.Console           as Console
+import           Test.HUnit                               (assertBool, assertEqual)
 ------------------------------------------------------------------------------
+import           Snap.Core                                (Cookie (Cookie, cookieName, cookieValue), Request (rqContentLength, rqCookies, rqHostName, rqLocalHostname, rqPathInfo, rqQueryString, rqURI), Snap, addResponseCookie, escapeHttp, getHeader, getRequest, getsRequest, modifyResponse, readRequestBody, rqParam, rqPostParam, rqQueryParam, sendFile, sendFilePartial, setContentLength, setHeader, setResponseBody, setResponseStatus, terminateConnection, writeBS, writeBuilder, writeLBS)
+import           Snap.Http.Server.Types                   (emptyServerConfig, getDefaultTimeout, getIsSecure, getLocalAddress, getLocalHostname, getLocalPort, getLogAccess, getLogError, getNumAcceptLoops, getOnDataFinished, getOnEscape, getOnException, getOnNewRequest, getOnParse, getOnUserHandlerFinished, getRemoteAddress, getRemotePort, getTwiddleTimeout, isNewConnection, setDefaultTimeout, setIsSecure, setLocalHostname, setLogAccess, setLogError, setNumAcceptLoops, setOnDataFinished, setOnEscape, setOnException, setOnNewRequest, setOnParse, setOnUserHandlerFinished)
+import           Snap.Internal.Http.Server.Date           (getLogDateString)
+import           Snap.Internal.Http.Server.Session        (BadRequestException (..), LengthRequiredException (..), TerminateSessionException (..), httpAcceptLoop, httpSession, snapToServerHandler)
+import           Snap.Internal.Http.Server.Types          (AcceptFunc (AcceptFunc), PerSessionData (PerSessionData, _isNewConnection), SendFileHandler, ServerConfig (_logError))
+import           Snap.Test                                (RequestBuilder)
+import qualified Snap.Test                                as T
+import           Snap.Test.Common                         (coverShowInstance, coverTypeableInstance, expectException)
+
 
 
 ------------------------------------------------------------------------------

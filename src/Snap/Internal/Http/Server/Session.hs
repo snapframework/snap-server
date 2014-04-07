@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.Session
   ( httpAcceptLoop
   , httpSession
@@ -16,96 +15,51 @@ module Snap.Internal.Http.Server.Session
   ) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder                 (Builder, flush,
-                                                           fromByteString)
-import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow)
-import           Blaze.ByteString.Builder.Internal        (Write,
-                                                           defaultBufferSize,
-                                                           exactWrite,
-                                                           fromWrite,
-                                                           getBound)
-import           Blaze.ByteString.Builder.Internal.Buffer (Buffer,
-                                                           allocBuffer)
-------------------------------------------------------------------------------
 import           Control.Applicative                      ((<$>))
 import           Control.Arrow                            (first, second)
-import           Control.Concurrent                       (MVar, ThreadId,
-                                                           forkIOWithUnmask,
-                                                           forkOnWithUnmask,
-                                                           killThread,
-                                                           myThreadId,
-                                                           newEmptyMVar,
-                                                           putMVar, readMVar,
-                                                           takeMVar)
-import           Control.Exception                        (AsyncException,
-                                                           Exception,
-                                                           Handler (..),
-                                                           IOException,
-                                                           SomeException (..))
+import           Control.Concurrent                       (MVar, ThreadId, forkIOWithUnmask, forkOnWithUnmask, killThread, myThreadId, newEmptyMVar, putMVar, readMVar, takeMVar)
+import           Control.Exception                        (AsyncException, Exception, Handler (..), IOException, SomeException (..))
 import qualified Control.Exception                        as E
-import           Control.Monad                            (unless, void, when,
-                                                           (>=>))
+import           Control.Monad                            (unless, void, when, (>=>))
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.ByteString.Unsafe                   as S
 import qualified Data.CaseInsensitive                     as CI
 import           Data.Int                                 (Int64)
-import           Data.IORef                               (IORef, newIORef,
-                                                           readIORef,
-                                                           writeIORef)
+import           Data.IORef                               (IORef, newIORef, readIORef, writeIORef)
 import           Data.List                                (foldl')
 import qualified Data.Map                                 as Map
-import           Data.Maybe                               (fromJust,
-                                                           fromMaybe,
-                                                           isNothing)
+import           Data.Maybe                               (fromJust, fromMaybe, isNothing)
 import           Data.Monoid                              (mconcat, (<>))
 import           Data.Time.Format                         (formatTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Version                             (showVersion)
 import           Data.Word                                (Word64, Word8)
 import           Foreign.Marshal.Utils                    (copyBytes)
-import           Foreign.Ptr                              (Ptr, castPtr,
-                                                           plusPtr)
+import           Foreign.Ptr                              (Ptr, castPtr, plusPtr)
 import           Foreign.Storable                         (pokeByteOff)
-import           System.IO.Streams                        (InputStream,
-                                                           OutputStream)
-import qualified System.IO.Streams                        as Streams
 import           System.Locale                            (defaultTimeLocale)
+------------------------------------------------------------------------------
+import           Blaze.ByteString.Builder                 (Builder, flush, fromByteString)
+import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow)
+import           Blaze.ByteString.Builder.Internal        (Write, defaultBufferSize, exactWrite, fromWrite, getBound)
+import           Blaze.ByteString.Builder.Internal.Buffer (Buffer, allocBuffer)
+import           System.IO.Streams                        (InputStream, OutputStream)
+import qualified System.IO.Streams                        as Streams
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                        as V
 import           Snap.Core                                (EscapeSnap (..))
-import           Snap.Internal.Http.Types                 (Cookie (..),
-                                                           HttpVersion,
-                                                           Method (..),
-                                                           Request (..),
-                                                           Response (..),
-                                                           ResponseBody (..),
-                                                           StreamProc,
-                                                           getHeader, headers,
-                                                           rspBodyToEnum)
+import           Snap.Core                                (Snap, runSnap)
+import           Snap.Internal.Http.Server.Common         (eatException)
+import           Snap.Internal.Http.Server.Date           (getCurrentDateTime, getDateString)
+import           Snap.Internal.Http.Server.Parser         (IRequest (..), getStdConnection, getStdContentLength, getStdContentType, getStdCookie, getStdHost, getStdTransferEncoding, parseCookie, parseRequest, parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
+import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
+import qualified Snap.Internal.Http.Server.TimeoutManager as TM
+import           Snap.Internal.Http.Server.Types          (AcceptFunc (..), PerSessionData (..), SendFileHandler, ServerConfig (..), ServerHandler)
+import           Snap.Internal.Http.Types                 (Cookie (..), HttpVersion, Method (..), Request (..), Response (..), ResponseBody (..), StreamProc, getHeader, headers, rspBodyToEnum)
 import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
-------------------------------------------------------------------------------
-import           Snap.Core                                (Snap, runSnap)
-import           Snap.Internal.Http.Server.Common         (eatException)
-import           Snap.Internal.Http.Server.Date           (getCurrentDateTime,
-                                                           getDateString)
-import           Snap.Internal.Http.Server.Parser         (IRequest (..),
-                                                           getStdConnection, getStdContentLength,
-                                                           getStdContentType,
-                                                           getStdCookie,
-                                                           getStdHost, getStdTransferEncoding,
-                                                           parseCookie,
-                                                           parseRequest,
-                                                           parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
-import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
-import qualified Snap.Internal.Http.Server.TimeoutManager as TM
-import           Snap.Internal.Http.Server.Types          (AcceptFunc (..), PerSessionData (..),
-                                                           SendFileHandler,
-                                                           ServerConfig (..),
-                                                           ServerHandler)
-------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------------------------
