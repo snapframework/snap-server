@@ -82,8 +82,9 @@ sendFileFunc sock !_ builder fPath offset nbytes = bracket acquire closeFd go
 
 #else
 sendFileFunc sock buffer builder fPath offset nbytes =
-    Streams.unsafeWithFileAsInputStartingAt offset fPath $ \fileInput0 -> do
-        fileInput <- Streams.takeBytes nbytes fileInput0 >>=
+    Streams.unsafeWithFileAsInputStartingAt (fromIntegral offset) fPath $
+            \fileInput0 -> do
+        fileInput <- Streams.takeBytes (fromIntegral nbytes) fileInput0 >>=
                      Streams.map fromByteString
         input     <- Streams.fromList [builder] >>=
                      Streams.appendInputStream fileInput

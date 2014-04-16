@@ -71,7 +71,6 @@ import           Control.Exception              (SomeException)
 import           Control.Monad                  (when)
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString.Char8          as B
-import           Data.Char                      (isAlpha)
 import           Data.Function                  (on)
 import           Data.List                      (foldl')
 import           Data.Maybe                     (isJust, isNothing)
@@ -86,6 +85,7 @@ import           Prelude                        hiding (catch)
 import           System.Console.GetOpt          (ArgDescr (..), ArgOrder (Permute), OptDescr (..), getOpt, usageInfo)
 import           System.Environment             hiding (getEnv)
 #ifndef PORTABLE
+import           Data.Char                      (isAlpha)
 import           System.Posix.Env               (getEnv)
 #endif
 import           System.Exit                    (exitFailure)
