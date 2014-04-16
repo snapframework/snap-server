@@ -60,6 +60,7 @@ Library
 
   other-modules:
     Paths_snap_server,
+    Control.Concurrent.Extended,
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Common,
     Snap.Internal.Http.Server.Config,
@@ -67,8 +68,8 @@ Library
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Socket,
-    Snap.Internal.Http.Server.TimeoutManager
-    Control.Concurrent.Extended
+    Snap.Internal.Http.Server.TimeoutManager,
+    Snap.Internal.Http.Server.TLS
 
   build-depends:
     attoparsec                >= 0.10     && < 0.12,
@@ -114,7 +115,8 @@ Library
 
   if flag(openssl)
     cpp-options: -DOPENSSL
-    build-depends: HsOpenSSL >= 0.10 && <0.11
+    build-depends: HsOpenSSL       >= 0.10.4 && <0.11,
+                   openssl-streams >= 1.1    && <1.2
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE
