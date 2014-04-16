@@ -36,7 +36,7 @@ Executable testsuite
     http-conduit               >= 1.8      && <1.9,
     HUnit                      >= 1.2      && <2,
     mtl                        >= 2        && <3,
-    network                    >= 2.3      && <2.5,
+    network                    >= 2.3      && <2.6,
     old-locale,
     parallel                   >= 2        && <4,
     process,
@@ -105,7 +105,7 @@ Executable pongserver
     old-locale,
     parallel                  >= 3.2     && <4,
     MonadCatchIO-transformers >= 0.2.1   && <0.4,
-    network                   >= 2.3     && <2.5,
+    network                   >= 2.3     && <2.6,
     snap-core                 >= 0.9.3   && <0.10,
     template-haskell,
     time,
@@ -169,7 +169,7 @@ Executable testserver
     HUnit                      >= 1.2      && <2,
     MonadCatchIO-transformers  >= 0.2.1    && <0.4,
     mtl                        >= 2        && <3,
-    network                    >= 2.3      && <2.5,
+    network                    >= 2.3      && <2.6,
     old-locale,
     parallel                   >= 3.2      && <4,
     snap-core                  >= 0.9.3    && <0.10,
@@ -208,5 +208,5 @@ Executable benchmark
 
   build-depends:
     base            >= 4       && < 5,
-    network         >= 2.3     && < 2.5,
+    network         >= 2.3     && < 2.6,
     criterion       >= 0.6     && < 0.7
