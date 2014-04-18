@@ -231,6 +231,9 @@ Test-suite testsuite
   else
     build-depends: unix
 
+  -- always label threads in testsuite
+  cpp-options: -DLABEL_THREADS
+
   if flag(openssl)
     cpp-options: -DOPENSSL
     build-depends: HsOpenSSL >= 0.10 && <0.11

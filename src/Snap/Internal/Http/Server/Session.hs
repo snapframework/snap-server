@@ -17,7 +17,8 @@ module Snap.Internal.Http.Server.Session
 ------------------------------------------------------------------------------
 import           Control.Applicative                      ((<$>))
 import           Control.Arrow                            (first, second)
-import           Control.Concurrent                       (MVar, ThreadId, forkIOWithUnmask, forkOnWithUnmask, killThread, myThreadId, newEmptyMVar, putMVar, readMVar, takeMVar)
+import           Control.Concurrent                       (MVar, ThreadId, killThread, myThreadId, newEmptyMVar, putMVar, readMVar, takeMVar)
+import           Control.Concurrent.Extended              (forkIOLabeledWithUnmaskBs, forkOnLabeledWithUnmaskBs)
 import           Control.Exception                        (AsyncException, Exception, Handler (..), IOException, SomeException (..))
 import qualified Control.Exception                        as E
 import           Control.Monad                            (unless, void, when, (>=>))
@@ -151,8 +152,12 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
              remotePort, readEnd,
              writeEnd, cleanup) <- runAcceptFunc acceptFunc loopRestore
                                        `E.catches` handlers
-
-            forkIOWithUnmask
+            let threadLabel = S.concat [ "snap-server: client "
+                                       , remoteAddress
+                                       , ":"
+                                       , S.pack $ show remotePort
+                                       ]
+            forkIOLabeledWithUnmaskBs threadLabel
                 $ eatException
                 . prep sendFileHandler localAddress localPort remoteAddress
                        remotePort readEnd writeEnd cleanup
@@ -198,7 +203,11 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
     newLoop cpu = E.mask_ $ do
         mv  <- newEmptyMVar
         tm  <- TM.initialize defaultTimeout getCurrentDateTime
-        tid <- forkOnWithUnmask cpu $ loop mv tm
+        let threadLabel = S.concat [ "snap-server: accept loop #"
+                                   , S.pack $ show cpu
+                                   ]
+
+        tid <- forkOnLabeledWithUnmaskBs threadLabel cpu $ loop mv tm
         return $! EventLoopCpu tid tm mv
 
     --------------------------------------------------------------------------

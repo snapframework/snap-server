@@ -21,7 +21,8 @@ module Snap.Http.Server
 
 ------------------------------------------------------------------------------
 import           Control.Applicative               ((<$>), (<|>))
-import           Control.Concurrent                (forkIOWithUnmask, killThread, newEmptyMVar, newMVar, putMVar, takeMVar, withMVar)
+import           Control.Concurrent                (killThread, newEmptyMVar, newMVar, putMVar, takeMVar, withMVar)
+import           Control.Concurrent.Extended       (forkIOLabeledWithUnmaskBs)
 import           Control.Exception                 (SomeException, bracket, catch, finally, mask, mask_)
 import qualified Control.Exception.Lifted          as L
 import           Control.Monad                     (liftM, when)
@@ -40,18 +41,18 @@ import           System.Posix.Env
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder          (Builder, toByteString)
 ------------------------------------------------------------------------------
-import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Internal.Debug               (debug)
-import qualified Snap.Types.Headers                as H
-import           Snap.Util.GZip                    (withCompression)
-import           Snap.Util.Proxy                   (behindProxy)
 import qualified Paths_snap_server                 as V
+import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
 import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
+import           Snap.Internal.Debug               (debug)
 import           Snap.Internal.Http.Server.Config  (emptyStartupInfo, setStartupConfig, setStartupSockets)
 import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket  as Sock
 import           Snap.Internal.Http.Server.Types   (AcceptFunc, ServerConfig, ServerHandler)
+import qualified Snap.Types.Headers                as H
+import           Snap.Util.GZip                    (withCompression)
+import           Snap.Util.Proxy                   (behindProxy)
 import           System.FastLogger                 (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction, stopLogger, timestampedLogEntry)
 
 
@@ -73,9 +74,10 @@ rawHttpServe h cfg loops = do
                                (const $ restore $ takeMVar mvar)
   where
     -- parents and children have a mutual suicide pact
-    runLoop mvar loop = forkIOWithUnmask $ \r ->
-                        (r $ httpAcceptLoop h cfg loop)
-                            `finally` putMVar mvar ()
+    runLoop mvar loop = forkIOLabeledWithUnmaskBs
+                          "snap-server http master thread" $
+                          \r -> (r $ httpAcceptLoop h cfg loop)
+                                  `finally` putMVar mvar ()
 
 
 ------------------------------------------------------------------------------
