@@ -8,7 +8,7 @@ module System.SendFile.Tests (tests) where
 import           Blaze.ByteString.Builder       (fromByteString)
 import           Control.Concurrent.MVar        (MVar, modifyMVar, modifyMVar_, newMVar, readMVar)
 import           Control.Exception              (evaluate)
-import           Control.Monad                  (void)
+import           Control.Monad                  (void, when)
 import qualified Data.ByteString.Char8          as S
 import           Foreign.C.Error                (Errno (..), eAGAIN, eCONNRESET, eOK)
 import           Foreign.C.Types                (CChar, CInt (..), CSize)
