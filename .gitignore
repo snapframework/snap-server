@@ -19,3 +19,5 @@ TAGS
 *.hp
 .cabal-sandbox
 cabal.sandbox.config
+test/*.log
+*.log
