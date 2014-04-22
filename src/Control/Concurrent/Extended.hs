@@ -17,7 +17,8 @@ import qualified Data.ByteString        as B
 import           GHC.Conc.Sync          (ThreadId (..))
 
 #ifdef LABEL_THREADS
-import           Control.Concurrent     (forkIOWithUnmask, forkOnWithUnmask, myThreadId)
+import           Control.Concurrent     (forkIOWithUnmask, forkOnWithUnmask,
+                                         myThreadId)
 import           GHC.Base               (labelThread#)
 import           Foreign.C.String       (CString)
 import           GHC.IO                 (IO (..))
