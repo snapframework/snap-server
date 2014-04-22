@@ -2,7 +2,9 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
+#if MIN_VERSION_base(4,7,0)
+{-# LANGUAGE DeriveDataTypeable  #-}
+#endif
 ------------------------------------------------------------------------------
 -- | This module exports the 'Config' datatype, which you can use to configure
 -- the Snap HTTP server.
@@ -77,7 +79,12 @@ import           Data.Maybe                     (isJust, isNothing)
 import           Data.Monoid                    (Last (Last, getLast), Monoid (..))
 import qualified Data.Text                      as T
 import qualified Data.Text.Encoding             as T
-import           Data.Typeable                  (TyCon, Typeable1 (..), mkTyCon, mkTyConApp)
+import           Data.Typeable                  (TyCon, Typeable1 (..), mkTyConApp)
+#if MIN_VERSION_base(4,7,0)
+import           Data.Typeable.Internal         (Typeable, mkTyCon)
+#else
+import           Data.Typeable                  (mkTyCon)
+#endif
 import           Network                        (Socket)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                        hiding (catch)
