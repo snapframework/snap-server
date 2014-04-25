@@ -50,6 +50,7 @@ import           Snap.Internal.Http.Server.Backend
 import           Snap.Internal.Http.Types
 import           Snap.Iteratee                       hiding (map)
 import qualified Snap.Iteratee                       as I
+import qualified Snap.Test                           as Test
 import           Snap.Test.Common
 import qualified Snap.Types.Headers                  as H
 
@@ -373,9 +374,9 @@ rsm = runServerMonad "localhost" (SessionInfo "127.0.0.1" 80 "127.0.0.1" 58382 F
 testHttpResponse1 :: Test
 testHttpResponse1 = testCase "server/HttpResponse1" $ do
     buf   <- allocBuffer 16384
-
+    req   <- Test.buildRequest $ return ()
     b     <- run_ $ rsm $
-             sendResponse rsp1 buf copyingStream2Stream testOnSendFile >>=
+             sendResponse req rsp1 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
     assertBool "http response" (b == text1 || b == text2)
@@ -424,8 +425,9 @@ testOnSendFile f st sz = do
 testHttpResponse2 :: Test
 testHttpResponse2 = testCase "server/HttpResponse2" $ do
     buf   <- allocBuffer 16384
+    req   <- Test.buildRequest $ return ()
     b2    <- liftM (S.concat . L.toChunks) $ run_ $ rsm $
-             sendResponse rsp2 buf copyingStream2Stream testOnSendFile >>=
+             sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                           return . snd
 
     assertBool "http prefix"
@@ -454,9 +456,9 @@ testHttpResponse2 = testCase "server/HttpResponse2" $ do
 testHttpResponse3 :: Test
 testHttpResponse3 = testCase "server/HttpResponse3" $ do
     buf   <- allocBuffer 16384
-
+    req   <- Test.buildRequest $ return ()
     b3 <- run_ $ rsm $
-          sendResponse rsp3 buf copyingStream2Stream testOnSendFile >>=
+          sendResponse req rsp3 buf copyingStream2Stream testOnSendFile >>=
                        return . snd
 
     let lns = LC.lines b3
@@ -497,9 +499,9 @@ testHttpResponse3 = testCase "server/HttpResponse3" $ do
 testHttpResponse4 :: Test
 testHttpResponse4 = testCase "server/HttpResponse4" $ do
     buf   <- allocBuffer 16384
-
+    req   <- Test.buildRequest $ return ()
     b <- run_ $ rsm $
-         sendResponse rsp1 buf copyingStream2Stream testOnSendFile >>=
+         sendResponse req rsp1 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
     assertEqual "http response" (L.concat [
@@ -516,8 +518,9 @@ testHttpResponse4 = testCase "server/HttpResponse4" $ do
 testHttpResponseCookies :: Test
 testHttpResponseCookies = testCase "server/HttpResponseCookies" $ do
     buf <- allocBuffer 16384
+    req   <- Test.buildRequest $ return ()
     b <- run_ $ rsm $
-          sendResponse rsp2 buf copyingStream2Stream testOnSendFile >>=
+          sendResponse req rsp2 buf copyingStream2Stream testOnSendFile >>=
                       return . snd
 
     let lns = LC.lines b
