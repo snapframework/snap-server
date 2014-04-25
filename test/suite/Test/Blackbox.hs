@@ -62,6 +62,7 @@ testFunctions = [ testPong
                 , testTimeoutTickle
                 , testTimeoutBadTickle
                 , testServerHeader
+                , testChunkedHead
                 ]
 
 
@@ -289,6 +290,26 @@ testSlowLoris ssl port name = testCase (name ++ "blackbox/slowloris") $
         N.sendAll sock "."
         waitabit
         loris sock
+
+
+------------------------------------------------------------------------------
+testChunkedHead :: Bool -> Int -> String -> Test
+testChunkedHead ssl port name = testCase (name ++ "blackbox/chunkedHead") $
+                                if ssl then return () else withSock port go
+  where
+    go sock = do
+        N.sendAll sock $ "HEAD /chunked HTTP/1.1\r\n\r\n"
+        s <- N.recv sock 4096
+        assertBool "no body" $ isOK s
+
+    split x l | S.null x  = reverse l
+              | otherwise = let (a, b) = S.break (== '\r') x
+                                b'     = S.drop 2 b
+                            in split b' (a : l)
+
+    isOK s = let lns  = split s []
+                 lns' = Prelude.drop 1 $ dropWhile (not . S.null) lns
+             in null lns'
 
 
 ------------------------------------------------------------------------------

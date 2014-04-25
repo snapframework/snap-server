@@ -1,27 +1,27 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Test.Common.TestHandler (testHandler) where
 
 import           Blaze.ByteString.Builder
-import           Control.Concurrent (threadDelay)
+import           Control.Concurrent         (threadDelay)
 import           Control.Monad
 import           Control.Monad.Trans
-import qualified Data.ByteString.Char8 as S
+import qualified Data.ByteString.Char8      as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.List
-import qualified Data.Map as Map
+import qualified Data.Map                   as Map
 import           Data.Maybe
 import           Data.Monoid
-import           Snap.Internal.Debug
-import           Snap.Iteratee hiding (Enumerator)
-import qualified Snap.Iteratee as I
 import           Snap.Core
+import           Snap.Internal.Debug
+import           Snap.Iteratee              hiding (Enumerator)
+import qualified Snap.Iteratee              as I
 import           Snap.Util.FileServe
 import           Snap.Util.FileUploads
 import           Snap.Util.GZip
 import           System.Directory
-import           Test.Common.Rot13 (rot13)
+import           Test.Common.Rot13          (rot13)
 
 
 
@@ -189,6 +189,10 @@ serverHeaderHandler :: Snap ()
 serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
 
 
+chunkedResponse :: Snap ()
+chunkedResponse = writeBS "chunked"
+
+
 testHandler :: Snap ()
 testHandler = withCompression $
     route [ ("pong"              , pongHandler                       )
@@ -203,4 +207,5 @@ testHandler = withCompression $
           , ("timeout/tickle"    , timeoutTickleHandler              )
           , ("timeout/badtickle" , badTimeoutTickleHandler           )
           , ("server-header"     , serverHeaderHandler               )
+          , ("chunked"           , chunkedResponse                   )
           ]

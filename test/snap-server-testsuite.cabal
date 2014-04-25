@@ -28,7 +28,9 @@ Executable testsuite
     bytestring,
     conduit                    >= 0.5      && <0.6,
     containers,
+    cprng-aes                                 <0.4,
     cryptocipher               >= 0.3.7    && <0.4,
+    crypto-api                                <0.13,
     directory,
     directory-tree,
     enumerator                 >= 0.4.15   && <0.5,
@@ -209,4 +211,4 @@ Executable benchmark
   build-depends:
     base            >= 4       && < 5,
     network         >= 2.3     && < 2.6,
-    criterion       >= 0.6     && < 0.7
+    criterion       >= 0.8     && < 0.9
