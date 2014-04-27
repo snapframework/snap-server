@@ -158,9 +158,10 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
                                        , S.pack $ show remotePort
                                        ]
             forkIOLabeledWithUnmaskBs threadLabel
-                $ eatException
-                . prep sendFileHandler localAddress localPort remoteAddress
-                       remotePort readEnd writeEnd cleanup
+                $ \restore ->
+                   eatException $
+                   prep sendFileHandler localAddress localPort remoteAddress
+                        remotePort readEnd writeEnd cleanup restore
             go
 
         prep :: SendFileHandler
