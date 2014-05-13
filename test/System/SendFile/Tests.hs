@@ -8,7 +8,6 @@ module System.SendFile.Tests (tests) where
 import           Blaze.ByteString.Builder       (fromByteString)
 import           Control.Concurrent.MVar        (MVar, modifyMVar, modifyMVar_, newMVar, readMVar)
 import           Control.Exception              (evaluate)
-import           Control.Monad                  (void, when)
 import qualified Data.ByteString.Char8          as S
 import           Foreign.C.Error                (Errno (..), eAGAIN, eCONNRESET, eOK)
 import           Foreign.C.Types                (CChar, CInt (..), CSize)
@@ -23,11 +22,14 @@ import           Snap.Test.Common               (expectException)
 import qualified System.SendFile                as SF
 
 #if defined(LINUX)
+import           Control.Monad                  (void)
 import qualified System.SendFile.Linux          as SFI
 #elif defined(FREEBSD)
+import           Control.Monad                  (void)
 import           Foreign.Storable
 import qualified System.SendFile.FreeBSD        as SFI
 #elif defined(OSX)
+import           Control.Monad                  (void, when)
 import           Foreign.Storable
 import qualified System.SendFile.Darwin         as SFI
 #endif

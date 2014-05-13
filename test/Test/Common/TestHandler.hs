@@ -7,7 +7,7 @@ module Test.Common.TestHandler (testHandler) where
 import           Control.Concurrent         (threadDelay)
 import           Control.Exception          (throwIO)
 import           Control.Monad              (liftM)
-import           Control.Monad.Trans        (MonadIO (liftIO))
+import           Control.Monad.IO.Class     (MonadIO (liftIO))
 import qualified Data.ByteString.Char8      as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import           Data.List                  (sort)
