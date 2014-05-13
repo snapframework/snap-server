@@ -23,7 +23,7 @@ import           Data.List                            (concat, concatMap, head, 
 import           Data.Monoid                          (Monoid (mconcat, mempty))
 import qualified Network.Http.Client                  as HTTP
 import qualified Network.Socket                       as N
-import qualified Network.Socket.ByteString            as N
+import qualified Network.Socket.ByteString            as NB
 import           Prelude                              hiding (catch, take)
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder             (fromByteString)
@@ -183,12 +183,12 @@ testBlockingRead ssl port name =
               m
 
     go sock = do
-        N.sendAll sock "GET /"
+        NB.sendAll sock "GET /"
         waitabit
-        N.sendAll sock "pong HTTP/1.1\r\n"
-        N.sendAll sock "Host: 127.0.0.1\r\n"
-        N.sendAll sock "Content-Length: 0\r\n"
-        N.sendAll sock "Connection: close\r\n\r\n"
+        NB.sendAll sock "pong HTTP/1.1\r\n"
+        NB.sendAll sock "Host: 127.0.0.1\r\n"
+        NB.sendAll sock "Content-Length: 0\r\n"
+        NB.sendAll sock "Connection: close\r\n\r\n"
 
         resp <- recvAll sock
 
@@ -205,17 +205,17 @@ testSlowLoris ssl port name = testCase (name ++ "blackbox/slowloris") $
 
   where
     go sock = do
-        N.sendAll sock "POST /echo HTTP/1.1\r\n"
-        N.sendAll sock "Host: 127.0.0.1\r\n"
-        N.sendAll sock "Content-Length: 2500000\r\n"
-        N.sendAll sock "Connection: close\r\n\r\n"
+        NB.sendAll sock "POST /echo HTTP/1.1\r\n"
+        NB.sendAll sock "Host: 127.0.0.1\r\n"
+        NB.sendAll sock "Content-Length: 2500000\r\n"
+        NB.sendAll sock "Connection: close\r\n\r\n"
 
         b <- expectExceptionBeforeTimeout (loris sock) 30
 
         assertBool "didn't catch slow loris attack" b
 
     loris sock = forever $ do
-        N.sendAll sock "."
+        NB.sendAll sock "."
         waitabit
 
 
@@ -274,7 +274,7 @@ testPartial ssl port name =
 
     go = do
         withSock port $ \sock ->
-            N.sendAll sock "GET /pong HTTP/1.1\r\n"
+            NB.sendAll sock "GET /pong HTTP/1.1\r\n"
 
         doc <- doPong ssl port
         assertEqual "pong response" "PONG" doc
@@ -297,9 +297,10 @@ testTimelyRedirect ssl port name =
 
     go = do
         withSock port $ \sock -> do
-            N.sendAll sock "GET /redirect HTTP/1.1\r\n"
-            resp <- recvAll sock
-            assertBool "redirect" $ S.isInfixOf "304" resp
+            NB.sendAll sock $ S.concat [ "GET /redirect HTTP/1.1\r\n"
+                                      , "Host: localhost\r\n\r\n" ]
+            resp <- NB.recv sock 100000
+            assertBool "redirect" $ S.isInfixOf "302" resp
 
 
 ------------------------------------------------------------------------------
@@ -316,10 +317,10 @@ testBigResponse ssl port name =
               m
 
     go sock = do
-        N.sendAll sock "GET /bigresponse HTTP/1.1\r\n"
-        N.sendAll sock "Host: 127.0.0.1\r\n"
-        N.sendAll sock "Content-Length: 0\r\n"
-        N.sendAll sock "Connection: close\r\n\r\n"
+        NB.sendAll sock "GET /bigresponse HTTP/1.1\r\n"
+        NB.sendAll sock "Host: 127.0.0.1\r\n"
+        NB.sendAll sock "Content-Length: 0\r\n"
+        NB.sendAll sock "Connection: close\r\n\r\n"
 
         let body = S.replicate 4000000 '.'
         resp <- recvAll sock
