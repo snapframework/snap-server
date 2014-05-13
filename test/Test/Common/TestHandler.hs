@@ -17,7 +17,7 @@ import           Data.Monoid                (Monoid (mappend, mconcat, mempty))
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder   (Builder, flush, fromByteString)
 ------------------------------------------------------------------------------
-import           Snap.Core                  (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, route, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
+import           Snap.Core                  (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, redirect, route, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
 import           Snap.Internal.Debug        ()
 import           Snap.Util.FileServe        (serveDirectory)
 import           Snap.Util.FileUploads      (PartInfo (partContentType, partFileName), allowWithMaximumSize, defaultUploadPolicy, disallow, handleFileUploads)
@@ -161,6 +161,7 @@ serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
 testHandler :: Snap ()
 testHandler = withCompression $
     route [ ("pong"              , pongHandler                       )
+          , ("redirect"          , redirect "/pong"                  )
           , ("echo"              , echoHandler                       )
           , ("rot13"             , rot13Handler                      )
           , ("echoUri"           , echoUriHandler                    )

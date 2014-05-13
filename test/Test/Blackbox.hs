@@ -73,6 +73,7 @@ testFunctions = [ testPong
                 , testTimeoutTickle
                 , testServerHeader
                 , testFileServe
+                , testTimelyRedirect
                 ]
 
 
@@ -277,6 +278,28 @@ testPartial ssl port name =
 
         doc <- doPong ssl port
         assertEqual "pong response" "PONG" doc
+
+
+------------------------------------------------------------------------------
+-- TODO: no ssl here
+-- test server's ability to trap/recover from IO errors
+testTimelyRedirect :: Bool -> Int -> String -> Test
+testTimelyRedirect ssl port name =
+    testCase (name ++ "blackbox/testTimelyRedirect") $
+    if ssl then return () else runIt
+
+  where
+    runIt = do
+        m <- timeout (5*seconds) go
+        maybe (assertFailure "timeout")
+              (const $ return ())
+              m
+
+    go = do
+        withSock port $ \sock -> do
+            N.sendAll sock "GET /redirect HTTP/1.1\r\n"
+            resp <- recvAll sock
+            assertBool "redirect" $ S.isInfixOf "304" resp
 
 
 ------------------------------------------------------------------------------
