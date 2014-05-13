@@ -300,7 +300,9 @@ testTimelyRedirect ssl port name =
             NB.sendAll sock $ S.concat [ "GET /redirect HTTP/1.1\r\n"
                                       , "Host: localhost\r\n\r\n" ]
             resp <- NB.recv sock 100000
-            assertBool "redirect" $ S.isInfixOf "302" resp
+            assertBool "wasn't code 302" $ S.isInfixOf "302" resp
+            assertBool "didn't have content length" $
+                S.isInfixOf "content-length: 0" resp
 
 
 ------------------------------------------------------------------------------
