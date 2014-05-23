@@ -1,17 +1,18 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-#if MIN_VERSION_base(4,7,0)
-{-# LANGUAGE DeriveDataTypeable  #-}
-#endif
 ------------------------------------------------------------------------------
 -- | This module exports the 'Config' datatype, which you can use to configure
 -- the Snap HTTP server.
 --
 module Snap.Internal.Http.Server.Config
+  -- NOTE: also edit Snap.Http.Server.Config if you change these
   ( ConfigLog(..)
   , Config(..)
+  , ProxyType(..)
+
   , emptyConfig
   , defaultConfig
 
@@ -73,17 +74,18 @@ import           Control.Exception              (SomeException)
 import           Control.Monad                  (when)
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString.Char8          as B
+import qualified Data.CaseInsensitive           as CI
 import           Data.Function                  (on)
 import           Data.List                      (foldl')
 import           Data.Maybe                     (isJust, isNothing)
 import           Data.Monoid                    (Last (Last, getLast), Monoid (..))
 import qualified Data.Text                      as T
 import qualified Data.Text.Encoding             as T
-import           Data.Typeable                  (TyCon, Typeable1 (..), mkTyConApp)
+import           Data.Typeable                  (TyCon, Typeable, Typeable1 (..), mkTyConApp)
 #if MIN_VERSION_base(4,7,0)
-import           Data.Typeable.Internal         (Typeable, mkTyCon)
+import           Data.Typeable.Internal         (Typeable, mkTyCon3)
 #else
-import           Data.Typeable                  (mkTyCon)
+import           Data.Typeable                  (mkTyCon3)
 #endif
 import           Network                        (Socket)
 #if !MIN_VERSION_base(4,6,0)
@@ -104,8 +106,16 @@ import qualified System.IO.Streams              as Streams
 ------------------------------------------------------------------------------
 import           Snap.Core                      (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
 import           Snap.Internal.Debug            (debug)
-import           Snap.Util.Proxy                (ProxyType)
 
+
+------------------------------------------------------------------------------
+-- | FIXME
+--
+-- Note: this type changed in snap-server 1.0.0.0.
+data ProxyType = NoProxy
+               | HaProxy
+               | X_Forwarded_For
+  deriving (Show, Typeable)
 
 ------------------------------------------------------------------------------
 -- | Data type representing the configuration of a logging target
@@ -198,12 +208,11 @@ data Config m a = Config
   deriving Typeable
 #else
 
-
 ------------------------------------------------------------------------------
 -- | The 'Typeable1' instance is here so 'Config' values can be
 -- dynamically loaded with Hint.
 configTyCon :: TyCon
-configTyCon = mkTyCon "Snap.Http.Server.Config.Config"
+configTyCon = mkTyCon3 "snap-server" "Snap.Http.Server.Config" "Config"
 {-# NOINLINE configTyCon #-}
 
 instance (Typeable1 m) => Typeable1 (Config m) where
@@ -567,11 +576,13 @@ optDescrs defaults =
              $ "do not print anything to stderr" ++
                defaultB getVerbose "verbose" "quiet"
     , Option "" ["proxy"]
-             (ReqArg (Just . setConfig setProxyType . read)
+             (ReqArg (Just . setConfig setProxyType . parseProxy . CI.mk)
                      "X_Forwarded_For")
              $ concat [ "Set --proxy=X_Forwarded_For if your snap application "
                       , "is behind an HTTP reverse proxy to ensure that "
-                      , "rqClientAddr is set properly."
+                      , "rqClientAddr is set properly.\n\n"
+                      , "Set --proxy=haproxy to use the haproxy protocol ("
+                      , "http://haproxy.1wt.eu/download/1.5/doc/proxy-protocol.txt)"
                       , defaultC getProxyType ]
     , Option "h" ["help"]
              (NoArg Nothing)
@@ -579,6 +590,16 @@ optDescrs defaults =
     ]
 
   where
+    parseProxy s | s == "NoProxy"         = NoProxy
+                 | s == "X_Forwarded_For" = X_Forwarded_For
+                 | s == "haproxy"         = HaProxy
+                 | otherwise = error $ concat [
+                         "Error (--proxy): expected one of 'NoProxy', "
+                       , "'X_Forwarded_For', or 'haproxy'. Got '"
+                       , CI.original s
+                       , "'"
+                       ]
+
     setConfig f c  = f c mempty
     conf           = defaultConfig `mappend` defaults
     defaultB f y n = maybe "" (\b -> ", default " ++ if b

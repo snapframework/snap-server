@@ -63,6 +63,7 @@ Library
     Snap.Http.Server,
     Snap.Http.Server.Config,
     Snap.Http.Server.Types,
+    Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Types,
     System.FastLogger
 
@@ -71,7 +72,6 @@ Library
     Control.Concurrent.Extended,
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Common,
-    Snap.Internal.Http.Server.Config,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,

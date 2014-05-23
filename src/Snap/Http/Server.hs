@@ -46,13 +46,14 @@ import           Snap.Core                         (MonadSnap (..), Request, Res
 import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
-import           Snap.Internal.Http.Server.Config  (emptyStartupInfo, setStartupConfig, setStartupSockets)
+import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
 import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket  as Sock
 import           Snap.Internal.Http.Server.Types   (AcceptFunc, ServerConfig, ServerHandler)
 import qualified Snap.Types.Headers                as H
 import           Snap.Util.GZip                    (withCompression)
 import           Snap.Util.Proxy                   (behindProxy)
+import qualified Snap.Util.Proxy                   as Proxy
 import           System.FastLogger                 (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction, stopLogger, timestampedLogEntry)
 
 
@@ -218,6 +219,7 @@ listeners conf = do
                          , ":"
                          , bshow p ],
                 do sock <- Sock.bindHttp b p
+                   -- TODO(greg): the haproxy wrapping needs to happen here
                    return (sock, Sock.httpAcceptFunc sock))
 
 
@@ -234,8 +236,15 @@ httpServe config handler0 = do
 
   where
     chooseProxy conf = maybe handler0
-                             (\ptype -> behindProxy ptype handler0)
+                             (\ptype -> pickProxy ptype handler0)
                              (getProxyType conf)
+
+    pickProxy NoProxy         = id
+    pickProxy X_Forwarded_For = behindProxy Proxy.X_Forwarded_For
+    pickProxy HaProxy         = const $
+                                error "HaProxy support not implemented yet."
+                                -- ^ it has to be plumbed in wrapping the http
+                                -- AcceptFunc above
 
 
 ------------------------------------------------------------------------------
