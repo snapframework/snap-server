@@ -90,7 +90,7 @@ Library
     lifted-base               >= 0.1      && < 0.3,
     mtl                       >= 2.0      && < 2.3,
     network                   >= 2.3      && < 2.6,
-    old-locale,
+    old-locale                >= 1.0      && < 1.1,
     snap-core                 >= 1.0      && < 1.1,
     text                      >= 0.11     && < 1.2,
     time                      >= 1.0      && < 1.5,
@@ -114,12 +114,12 @@ Library
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
   else
-    build-depends: unix
+    build-depends: unix                         < 2.8
 
   if flag(openssl)
     cpp-options: -DOPENSSL
-    build-depends: HsOpenSSL       >= 0.10.4 && <0.11,
-                   openssl-streams >= 1.1    && <1.2
+    build-depends: HsOpenSSL       >= 0.10.4 && < 0.11,
+                   openssl-streams >= 1.1    && < 1.2
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE
@@ -194,7 +194,7 @@ Test-suite testsuite
     monad-control              >= 0.3      && < 0.4,
     mtl                        >= 2.0      && < 2.3,
     network                    >= 2.3      && < 2.6,
-    old-locale,
+    old-locale                 >= 1.0      && < 1.1,
     snap-core                  >= 1.0      && < 1.1,
     text                       >= 0.11     && < 1.2,
     threads                    >= 0.5      && < 0.6,
@@ -229,7 +229,7 @@ Test-suite testsuite
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
   else
-    build-depends: unix
+    build-depends: unix                         < 2.8
 
   -- always label threads in testsuite
   cpp-options: -DLABEL_THREADS
@@ -282,14 +282,14 @@ Benchmark benchmark
     Snap.Internal.Http.Server.Parser
 
   build-depends:
-    attoparsec    >= 0.10    && <0.11,
-    base          >= 4       && <5,
-    blaze-builder >= 0.3.1.1 && <0.4,
-    bytestring    >= 0.9     && <0.11,
-    criterion     >= 0.6     && <0.9,
-    io-streams    >= 1.1.0.4 && <1.2,
-    snap-core     >= 1.0     && <1.1,
-    vector        >= 0.7     && <0.11
+    attoparsec    >= 0.10    && < 0.11,
+    base          >= 4       && < 5,
+    blaze-builder >= 0.3.1.1 && < 0.4,
+    bytestring    >= 0.9     && < 0.11,
+    criterion     >= 0.6     && < 0.9,
+    io-streams    >= 1.1.0.4 && < 1.2,
+    snap-core     >= 1.0     && < 1.1,
+    vector        >= 0.7     && < 0.11
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -rtsopts
@@ -333,7 +333,7 @@ Executable snap-test-pong-server
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
   else
-    build-depends: unix
+    build-depends: unix                         < 2.8
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE
@@ -364,7 +364,7 @@ Executable snap-test-pong-server
     lifted-base               >= 0.1      && < 0.3,
     mtl                       >= 2.0      && < 2.3,
     network                   >= 2.3      && < 2.6,
-    old-locale,
+    old-locale                >= 1.0      && < 1.1,
     snap-core                 >= 1.0      && < 1.1,
     text                      >= 0.11     && < 1.2,
     time                      >= 1.0      && < 1.5,
@@ -414,7 +414,7 @@ Executable snap-test-server
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
   else
-    build-depends: unix
+    build-depends: unix                         < 2.8
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE
@@ -446,7 +446,7 @@ Executable snap-test-server
     lifted-base               >= 0.1      && < 0.3,
     mtl                       >= 2.0      && < 2.3,
     network                   >= 2.3      && < 2.6,
-    old-locale,
+    old-locale                >= 1.0      && < 1.1,
     snap-core                 >= 1.0      && < 1.1,
     text                      >= 0.11     && < 1.2,
     time                      >= 1.0      && < 1.5,
