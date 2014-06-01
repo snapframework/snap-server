@@ -19,7 +19,7 @@ import           Data.ByteString.Char8       (ByteString)
 import qualified Data.ByteString.Char8       as S
 import qualified Data.ByteString.Lazy        as L
 import           Data.Monoid                 (Monoid (mappend, mempty))
-import           Data.Typeable               (Typeable (..))
+import           Data.Typeable               (Typeable, typeOf)
 
 import qualified Network.Socket.ByteString   as N
 #if !(MIN_VERSION_base(4,6,0))
