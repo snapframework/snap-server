@@ -38,10 +38,8 @@ import           Data.List                        (sort)
 import           Data.Typeable                    (Typeable)
 import qualified Data.Vector                      as V
 import qualified Data.Vector.Mutable              as MV
-import           Foreign.C.Types                  (CChar)
 import           Foreign.ForeignPtr               (withForeignPtr)
 import           Foreign.Ptr                      (minusPtr, nullPtr, plusPtr)
-import           Foreign.Storable                 (peek, poke)
 import           Prelude                          hiding (take)
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder         (Builder)
@@ -297,8 +295,8 @@ pHeaders stdHdrs input = do
         if S.null line
           then return list
           else do
-            let (!k,!v) = splitHeader line
-            dodgyInPlaceCaseFold k
+            let (!k0,!v) = splitHeader line
+            let !k = toLower k0
             vf <- pCont id
             let vs = vf []
             let !v' = S.concat (v:vs)
@@ -392,19 +390,13 @@ pGetTransferChunk = do
 
 
 ------------------------------------------------------------------------------
-dodgyInPlaceCaseFold :: ByteString -> IO ()
-dodgyInPlaceCaseFold (PS !fp !start !len) = withForeignPtr fp $ \p -> do
-    let !cs   = plusPtr p start
-    let !endP = plusPtr cs len
-    caseFold endP cs
+toLower :: ByteString -> ByteString
+toLower = S.map lower
   where
-    caseFold endP = go
-      where
-        go !ptr | endP == ptr = return $! ()
-                | otherwise   = do w8 <- (peek ptr) :: IO CChar
-                                   when (65 <= w8 && w8 <= 90) $
-                                         poke ptr $! w8 + 32
-                                   go $! plusPtr ptr 1
+    lower c0 = let !c = c2w c0
+               in if 65 <= c && c <= 90
+                    then w2c $! c + 32
+                    else c0
 
 
 ------------------------------------------------------------------------------
