@@ -80,7 +80,7 @@ Library
     Snap.Internal.Http.Server.TLS
 
   build-depends:
-    attoparsec                >= 0.10     && < 0.12,
+    attoparsec                >= 0.10     && < 0.13,
     base                      >= 4        && < 5,
     blaze-builder             >= 0.2.1.4  && < 0.4,
     bytestring                >= 0.9.1    && < 0.11,
@@ -181,7 +181,7 @@ Test-suite testsuite
     Test.Common.TestHandler
 
   build-depends:
-    attoparsec                 >= 0.10     && < 0.12,
+    attoparsec                 >= 0.10     && < 0.13,
     base                       >= 4        && < 5,
     base16-bytestring          >= 0.1      && < 0.2,
     blaze-builder              >= 0.2.1.4  && < 0.4,
@@ -282,7 +282,7 @@ Benchmark benchmark
     Snap.Internal.Http.Server.Parser
 
   build-depends:
-    attoparsec    >= 0.10    && < 0.11,
+    attoparsec    >= 0.10    && < 0.13,
     base          >= 4       && < 5,
     blaze-builder >= 0.3.1.1 && < 0.4,
     bytestring    >= 0.9     && < 0.11,
@@ -354,7 +354,7 @@ Executable snap-test-pong-server
       System.SendFile.FreeBSD
 
   build-depends:
-    attoparsec                >= 0.10     && < 0.12,
+    attoparsec                >= 0.10     && < 0.13,
     base                      >= 4        && < 5,
     blaze-builder             >= 0.2.1.4  && < 0.4,
     bytestring                >= 0.9.1    && < 0.11,
@@ -435,7 +435,7 @@ Executable snap-test-server
       System.SendFile.FreeBSD
 
   build-depends:
-    attoparsec                >= 0.10     && < 0.12,
+    attoparsec                >= 0.10     && < 0.13,
     base                      >= 4        && < 5,
     blaze-builder             >= 0.2.1.4  && < 0.4,
     bytestring                >= 0.9.1    && < 0.11,
