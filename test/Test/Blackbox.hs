@@ -74,6 +74,7 @@ testFunctions = [ testPong
                 , testServerHeader
                 , testFileServe
                 , testTimelyRedirect
+                , testChunkedHead
                 ]
 
 
@@ -255,6 +256,30 @@ testPong :: Bool -> Int -> String -> Test
 testPong ssl port name = testCase (name ++ "blackbox/pong") $ do
     doc <- doPong ssl port
     assertEqual "pong response" "PONG" doc
+
+
+testChunkedHead :: Bool -> Int -> String -> Test
+testChunkedHead ssl port name = testCase (name ++ "blackbox/chunkedHead") $
+                                if ssl then return () else withSock port go
+  where
+    go sock = do
+        NB.sendAll sock $ S.concat [ "HEAD /chunked HTTP/1.1\r\n"
+                                   , "Host: localhost\r\n"
+                                   , "\r\n"
+                                   ]
+        s <- NB.recv sock 4096
+        assertBool (concat [ "no body: received '"
+                           , S.unpack s
+                           , "'" ]) $ isOK s
+
+    split x l | S.null x  = reverse l
+              | otherwise = let (a, b) = S.break (== '\r') x
+                                b'     = S.drop 2 b
+                            in split b' (a : l)
+
+    isOK s = let lns  = split s []
+                 lns' = Prelude.drop 1 $ dropWhile (not . S.null) lns
+             in null lns'
 
 
 ------------------------------------------------------------------------------

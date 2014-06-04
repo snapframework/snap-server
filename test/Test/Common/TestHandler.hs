@@ -158,6 +158,10 @@ serverHeaderHandler :: Snap ()
 serverHeaderHandler = modifyResponse $ setHeader "Server" "foo"
 
 
+chunkedResponse :: Snap ()
+chunkedResponse = writeBS "chunked"
+
+
 testHandler :: Snap ()
 testHandler = withCompression $
     route [ ("pong"              , pongHandler                       )
@@ -174,4 +178,5 @@ testHandler = withCompression $
           , ("timeout/tickle"    , timeoutTickleHandler              )
           , ("timeout/badtickle" , badTimeoutTickleHandler           )
           , ("server-header"     , serverHeaderHandler               )
+          , ("chunked"           , chunkedResponse                   )
           ]
