@@ -57,8 +57,9 @@ import           Snap.Internal.Http.Server.Parser         (IRequest (..), getStd
 import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
 import qualified Snap.Internal.Http.Server.TimeoutManager as TM
 import           Snap.Internal.Http.Server.Types          (AcceptFunc (..), PerSessionData (..), SendFileHandler, ServerConfig (..), ServerHandler)
-import           Snap.Internal.Http.Types                 (Cookie (..), HttpVersion, Method (..), Request (..), Response (..), ResponseBody (..), StreamProc, getHeader, headers, rspBodyToEnum)
+import           Snap.Internal.Http.Types                 (Cookie (..), HttpVersion, Method (..), Request (..), Response (..), ResponseBody (..), StreamProc, getHeader, headers, rspBodyToEnum, updateHeaders)
 import           Snap.Internal.Parsing                    (unsafeFromNat)
+import           Snap.Internal.Types                      (fixupResponse)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
 
@@ -513,11 +514,12 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         !date <- getDateString
         let (!hdrs, !cc') = addDateAndServerHeaders is_1_0 date cc $
                             headers rsp0
+        let rsp = updateHeaders (const hdrs) rsp0
         writeIORef forceConnectionClose cc'
-        bytesSent <- sendResponse v rsp0 hdrs `E.catch`
+        bytesSent <- sendResponse req rsp `E.catch`
                      catchUserException hookState "sending-response" req
-        dataFinishedHook hookState req rsp0
-        logAccess req rsp0 bytesSent
+        dataFinishedHook hookState req rsp
+        logAccess req rsp bytesSent
         return $! not cc'
 
     --------------------------------------------------------------------------
@@ -567,22 +569,27 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         terminateSession e
 
     --------------------------------------------------------------------------
-    sendResponse :: HttpVersion -> Response -> Headers -> IO Word64
-    sendResponse !v !rsp !hdrs = {-# SCC "httpSession/sendResponse" #-} do
-        let !hdrs'  = renderCookies rsp hdrs
-        let !code   = rspStatus rsp
-        let body    = rspBody rsp
-        let hasNoCL = isNothing (rspContentLength rsp) && code /= 204
-                                                       && code /= 304
+    sendResponse :: Request -> Response -> IO Word64
+    sendResponse !req !rsp0 = {-# SCC "httpSession/sendResponse" #-} do
+        let !v          = rqVersion req
+        rsp            <- fixupResponse req rsp0
+        let !hdrs'      = renderCookies rsp (headers rsp)
+        let !code       = rspStatus rsp
+        let body        = rspBody rsp
+        let needChunked = rqMethod req /= HEAD
+                            && isNothing (rspContentLength rsp)
+                            && code /= 204
+                            && code /= 304
 
-        let (hdrs'', body', shouldClose) = if hasNoCL
-                                             then noCL v hdrs' body
+        let (hdrs'', body', shouldClose) = if needChunked
+                                             then noCL req hdrs' body
                                              else (hdrs', body, False)
 
         when shouldClose $ writeIORef forceConnectionClose $! True
         let hdrWrite      = mkHeaderWrite v rsp hdrs''
         let hlen          = getBound hdrWrite
         let headerBuilder = fromWrite hdrWrite
+
         nBodyBytes <- case body' of
                         Stream s ->
                             whenStream headerBuilder hlen rsp s
@@ -595,11 +602,11 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         return $! nBodyBytes - fromIntegral hlen
 
     --------------------------------------------------------------------------
-    noCL :: HttpVersion
+    noCL :: Request
          -> Headers
          -> ResponseBody
          -> (Headers, ResponseBody, Bool)
-    noCL v hdrs body =
+    noCL req hdrs body =
         if v == (1,1)
           then let origBody = rspBodyToEnum body
                    body'    = \os -> do
@@ -612,6 +619,8 @@ httpSession !buffer !serverHandler !config !sessionData = loop
             -- We've already noted that we have to close the socket earlier in
             -- runServerHandler.
             (hdrs, body, True)
+      where
+        v = rqVersion req
     {-# INLINE noCL #-}
 
     --------------------------------------------------------------------------
