@@ -132,16 +132,16 @@ data PerSessionData = PerSessionData
 
 ------------------------------------------------------------------------------
 newtype AcceptFunc = AcceptFunc {
-  runAcceptFunc :: (forall a . IO a -> IO a)     -- ^ exception restore function
-                -> IO ( SendFileHandler          -- ^ what to do on sendfile
-                      , ByteString               -- ^ local address
-                      , Int                      -- ^ local port
-                      , ByteString               -- ^ remote address
-                      , Int                      -- ^ remote port
-                      , InputStream ByteString   -- ^ socket read end
-                      , OutputStream ByteString  -- ^ socket write end
-                      , IO ()                    -- ^ cleanup action
-                      )
+  runAcceptFunc :: (forall a . IO a -> IO a)         -- exception restore function
+                    -> IO ( SendFileHandler          -- what to do on sendfile
+                          , ByteString               -- local address
+                          , Int                      -- local port
+                          , ByteString               -- remote address
+                          , Int                      -- remote port
+                          , InputStream ByteString   -- socket read end
+                          , OutputStream ByteString  -- socket write end
+                          , IO ()                    -- cleanup action
+                          )
   }
 
                              --------------------

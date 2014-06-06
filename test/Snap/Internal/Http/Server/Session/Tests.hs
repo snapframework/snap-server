@@ -117,12 +117,14 @@ testPong = testCase "session/pong" $ do
         T.setHttpVersion (1, 0)
         T.setHeader "Connection" "keep-alive"
     pong = "PONG"
+
     snap1 = writeBS pong >> modifyResponse (setContentLength 4)
     snap2 = do
         cookies <- getsRequest rqCookies
         if null cookies
           then writeBS pong
           else writeBS "wat"
+
     snap3 = do
         modifyResponse (setResponseStatus 233 "ZOMG" . setContentLength 4)
         writeBS pong
