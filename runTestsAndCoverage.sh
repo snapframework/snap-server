@@ -25,7 +25,11 @@ System.SendFile.Tests
 Test.Blackbox
 Test.Common.Rot13
 Test.Common.TestHandler
+System.IO.Streams.Network.Internal.Address
+System.IO.Streams.Network.HAProxy
 '
+
+# ^^^ not sure why I have to add the HAProxy modules here, maybe cabal sandbox?
 
 EXCL=""
 

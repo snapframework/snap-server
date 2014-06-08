@@ -6,6 +6,7 @@
 
 module Test.Blackbox
   ( tests
+  , haTests
   , ssltests
   , startTestServers
   ) where
@@ -59,6 +60,12 @@ ssltests = maybe [] httpsTests
     where httpsTests port = map (\f -> f True port sslname) testFunctions
           sslname = "ssl/"
 
+haTests :: Int -> [Test]
+haTests port = [ testHaProxy port
+               , testHaProxyLocal port
+               , testHaProxyFileServe port
+               ]
+
 testFunctions :: [Bool -> Int -> String -> Test]
 testFunctions = [ testPong
 -- FIXME: waiting on http-enumerator patch for HEAD behaviour
@@ -79,10 +86,7 @@ testFunctions = [ testPong
 
 
 ------------------------------------------------------------------------------
--- | Returns the thread the server is running in as well as the port it is
--- listening on.
-startTestSocketServer :: IO (ThreadId, Int)
-startTestSocketServer = bracketOnError getSock cleanup forkServer
+startServer config acceptFunc = bracketOnError getSock cleanup forkServer
   where
     getSock = do
 #ifdef OPENSSL
@@ -95,12 +99,19 @@ startTestSocketServer = bracketOnError getSock cleanup forkServer
     forkServer sock = do
         port <- liftM fromIntegral $ N.socketPort sock
         tid <- forkIO $ httpAcceptLoop (snapToServerHandler testHandler)
-                                       emptyServerConfig
-                                       (Sock.httpAcceptFunc sock)
+                                       config
+                                       (acceptFunc sock)
         return (tid, port)
 
     cleanup = N.close
 
+
+------------------------------------------------------------------------------
+-- | Returns the thread the server is running in as well as the port it is
+-- listening on.
+startTestSocketServer :: IO (ThreadId, Int)
+startTestSocketServer = startServer emptyServerConfig Sock.httpAcceptFunc
+  where
     logAccess !_ !_ !_             = return ()
     logError !_                    = return ()
     onStart !_                     = return ()
@@ -123,6 +134,35 @@ startTestSocketServer = bracketOnError getSock cleanup forkServer
                                            False
                                            1
 
+
+
+------------------------------------------------------------------------------
+-- | Returns the thread the server is running in as well as the port it is
+-- listening on.
+startHaProxySocketServer :: IO (ThreadId, Int)
+startHaProxySocketServer = startServer emptyServerConfig Sock.haProxyAcceptFunc
+  where
+    logAccess !_ !_ !_             = return ()
+    logError !_                    = return ()
+    onStart !_                     = return ()
+    onParse !_ !_                  = return ()
+    onUserHandlerFinished !_ !_ !_ = return ()
+    onDataFinished !_ !_ !_        = return ()
+    onExceptionHook !_ !_          = return ()
+    onEscape !_                    = return ()
+
+    emptyServerConfig = Types.ServerConfig logAccess
+                                           logError
+                                           onStart
+                                           onParse
+                                           onUserHandlerFinished
+                                           onDataFinished
+                                           onExceptionHook
+                                           onEscape
+                                           "localhost"
+                                           6
+                                           False
+                                           1
 
 ------------------------------------------------------------------------------
 waitabit :: IO ()
@@ -358,6 +398,86 @@ testBigResponse ssl port name =
 
 
 ------------------------------------------------------------------------------
+testHaProxy :: Int -> Test
+testHaProxy port = testCase "blackbox/haProxy" runIt
+
+  where
+    runIt = withSock port $ \sock -> do
+        m <- timeout (120*seconds) $ go sock
+        maybe (assertFailure "timeout")
+              (const $ return ())
+              m
+
+    go sock = do
+        NB.sendAll sock $ S.concat
+              [ "PROXY TCP4 1.2.3.4 5.6.7.8 1234 5678\r\n"
+              , "GET /remoteAddrPort HTTP/1.1\r\n"
+              , "Host: 127.0.0.1\r\n"
+              , "Content-Length: 0\r\n"
+              , "Connection: close\r\n\r\n"
+              ]
+
+        resp <- recvAll sock
+
+        let s = head $ ditchHeaders $ S.lines resp
+
+        assertEqual "haproxy response" "1.2.3.4:1234" s
+
+
+------------------------------------------------------------------------------
+testHaProxyFileServe :: Int -> Test
+testHaProxyFileServe port = testCase "blackbox/haProxyFileServe" runIt
+  where
+    runIt = withSock port $ \sock -> do
+        m <- timeout (120*seconds) $ go sock
+        maybe (assertFailure "timeout")
+              (const $ return ())
+              m
+
+    go sock = do
+        NB.sendAll sock $ S.concat
+              [ "PROXY UNKNOWN\r\n"
+              , "GET /fileserve/hello.txt HTTP/1.1\r\n"
+              , "Host: 127.0.0.1\r\n"
+              , "Content-Length: 0\r\n"
+              , "Connection: close\r\n\r\n"
+              ]
+
+        resp <- recvAll sock
+
+        let s = head $ ditchHeaders $ S.lines resp
+
+        assertEqual "haproxy response" "hello world" s
+
+
+------------------------------------------------------------------------------
+testHaProxyLocal :: Int -> Test
+testHaProxyLocal port = testCase "blackbox/haProxyLocal" runIt
+
+  where
+    runIt = withSock port $ \sock -> do
+        m <- timeout (120*seconds) $ go sock
+        maybe (assertFailure "timeout")
+              (const $ return ())
+              m
+
+    go sock = do
+        NB.sendAll sock $ S.concat
+              [ "PROXY UNKNOWN\r\n"
+              , "GET /remoteAddrPort HTTP/1.1\r\n"
+              , "Host: 127.0.0.1\r\n"
+              , "Content-Length: 0\r\n"
+              , "Connection: close\r\n\r\n"
+              ]
+
+        resp <- recvAll sock
+
+        let s = head $ ditchHeaders $ S.lines resp
+
+        assertBool "haproxy response" $ S.isPrefixOf "127.0.0.1:" s
+
+
+------------------------------------------------------------------------------
 -- This test checks two things:
 --
 -- 1. that the timeout tickling logic works
@@ -498,10 +618,13 @@ testServerHeader ssl port name =
 
 
 ------------------------------------------------------------------------------
-startTestServers :: Bool -> IO ((ThreadId, Int), Maybe (ThreadId, Int))
+startTestServers :: Bool -> IO ((ThreadId, Int),
+                                (ThreadId, Int),
+                                Maybe (ThreadId, Int))
 startTestServers _ = do
     x <- startTestSocketServer
-    return (x, Nothing)
+    y <- startHaProxySocketServer
+    return (x, y, Nothing)
 
 {-
     let cfg = setAccessLog      (ConfigFileLog "ts-access.log") .

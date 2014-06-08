@@ -17,7 +17,7 @@ import           Data.Monoid                (Monoid (mappend, mconcat, mempty))
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder   (Builder, flush, fromByteString)
 ------------------------------------------------------------------------------
-import           Snap.Core                  (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, redirect, route, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
+import           Snap.Core                  (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, redirect, route, rqClientAddr, rqClientPort, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
 import           Snap.Internal.Debug        ()
 import           Snap.Util.FileServe        (serveDirectory)
 import           Snap.Util.FileUploads      (PartInfo (partContentType, partFileName), allowWithMaximumSize, defaultUploadPolicy, disallow, handleFileUploads)
@@ -162,6 +162,16 @@ chunkedResponse :: Snap ()
 chunkedResponse = writeBS "chunked"
 
 
+remoteAddrPort :: Snap ()
+remoteAddrPort = do
+    rq <- getRequest
+    let addr = rqClientAddr rq
+    let port = rqClientPort rq
+    let out = S.concat [ addr, ":", S.pack (show port) ]
+    modifyResponse $ setContentLength $ fromIntegral $ S.length out
+    writeBS out
+
+
 testHandler :: Snap ()
 testHandler = withCompression $
     route [ ("pong"              , pongHandler                       )
@@ -169,6 +179,7 @@ testHandler = withCompression $
           , ("echo"              , echoHandler                       )
           , ("rot13"             , rot13Handler                      )
           , ("echoUri"           , echoUriHandler                    )
+          , ("remoteAddrPort"    , remoteAddrPort                    )
           , ("fileserve"         , noCompression >>
                                    serveDirectory "testserver/static")
           , ("bigresponse"       , bigResponseHandler                )

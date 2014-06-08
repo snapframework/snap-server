@@ -232,7 +232,7 @@ httpServe :: Config Snap a -> Snap () -> IO ()
 httpServe config handler0 = do
     conf <- completeConfig config
     let !handler = chooseProxy conf
-    let serve = compress conf . catch500 conf $ handler
+    let serve    = compress conf . catch500 conf $ handler
     simpleHttpServe conf serve
 
   where
@@ -241,11 +241,8 @@ httpServe config handler0 = do
                              (getProxyType conf)
 
     pickProxy NoProxy         = id
+    pickProxy HaProxy         = id  -- we handle this case elsewhere
     pickProxy X_Forwarded_For = behindProxy Proxy.X_Forwarded_For
-    pickProxy HaProxy         = const $
-                                error "HaProxy support not implemented yet."
-                                -- ^ it has to be plumbed in wrapping the http
-                                -- AcceptFunc above
 
 
 ------------------------------------------------------------------------------

@@ -12,8 +12,7 @@ import           Network                                        (withSocketsDo)
 import           OpenSSL                                        (withOpenSSL)
 #endif
 import           System.Environment
-import           Test.Framework                                 (defaultMain,
-                                                                 testGroup)
+import           Test.Framework                                 (defaultMain, testGroup)
 ------------------------------------------------------------------------------
 import qualified Snap.Internal.Http.Server.Address.Tests        as Address
 import qualified Snap.Internal.Http.Server.Parser.Tests         as Parser
@@ -34,11 +33,13 @@ main = withSocketsDo $ setupOpenSSL $ do
                   defaultMain $ tests ++ blackboxTests
               )
   where
-    cleanup (x, m) = mapM_ (killThread . fst) $ [x] ++ maybeToList m
+    cleanup (x, y, m) = mapM_ (killThread . fst) $ [x, y] ++ maybeToList m
 
-    bbox ((_, port), m) = concat [ Test.Blackbox.tests port
-                                 , Test.Blackbox.ssltests $ fmap snd m
-                                 ]
+    bbox ((_, port), (_, port2), m) =
+        concat [ Test.Blackbox.tests port
+               , Test.Blackbox.haTests port2
+               , Test.Blackbox.ssltests $ fmap snd m
+               ]
 
     tests = [ testGroup "Address" Address.tests
             , testGroup "Parser" Parser.tests
