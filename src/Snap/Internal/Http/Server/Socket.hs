@@ -9,6 +9,7 @@ module Snap.Internal.Http.Server.Socket
   ) where
 
 ------------------------------------------------------------------------------
+import           Control.Exception                 (bracketOnError)
 import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), SocketType (Stream), accept, bindSocket, close, getSocketName, listen, setSocketOption, socket)
 #ifndef PORTABLE
@@ -32,13 +33,12 @@ import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHan
 bindHttp :: ByteString -> Int -> IO Socket
 bindHttp bindAddr bindPort = do
     (family, addr) <- getSockAddr bindPort bindAddr
-    sock           <- socket family Stream 0
-
-    setSocketOption sock ReuseAddr 1
-    setSocketOption sock NoDelay 1
-    bindSocket sock addr
-    listen sock 150
-    return $! sock
+    bracketOnError (socket family N.Stream 0) N.close $ \sock -> do
+        setSocketOption sock ReuseAddr 1
+        setSocketOption sock NoDelay 1
+        bindSocket sock addr
+        listen sock 150
+        return $! sock
 
 
 ------------------------------------------------------------------------------
