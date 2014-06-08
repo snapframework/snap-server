@@ -5,13 +5,15 @@
 module Snap.Internal.Http.Server.Socket
   ( bindHttp
   , httpAcceptFunc
+  , haProxyAcceptFunc
   , sendFileFunc
   ) where
 
 ------------------------------------------------------------------------------
 import           Control.Exception                 (bracketOnError)
 import           Data.ByteString.Char8             (ByteString)
-import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), SocketType (Stream), accept, bindSocket, close, getSocketName, listen, setSocketOption, socket)
+import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, bindSocket, close, getSocketName, listen, setSocketOption, socket)
+import qualified Network.Socket                    as N
 #ifndef PORTABLE
 import           Control.Exception                 (bracket)
 import           Network.Socket                    (fdSocket)
@@ -27,6 +29,7 @@ import qualified System.IO.Streams                 as Streams
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHandler)
+import qualified System.IO.Streams.Network.HAProxy as HA
 
 
 ------------------------------------------------------------------------------
@@ -45,6 +48,28 @@ bindHttp bindAddr bindPort = do
 -- TODO(greg): move buffer size configuration into config
 bUFSIZ :: Int
 bUFSIZ = 4064
+
+
+------------------------------------------------------------------------------
+haProxyAcceptFunc :: Socket     -- ^ bound socket
+                  -> AcceptFunc
+haProxyAcceptFunc boundSocket = AcceptFunc $ \restore -> do
+    (sock, _)                <- restore $ accept boundSocket
+    (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize bUFSIZ sock
+    localPInfo               <- HA.socketToProxyInfo sock
+    pinfo                    <- HA.decodeHAProxyHeaders localPInfo readEnd
+    (localPort, localHost)   <- getAddress $ HA.getDestAddr pinfo
+    (remotePort, remoteHost) <- getAddress $ HA.getSourceAddr pinfo
+    let cleanup              =  Streams.write Nothing writeEnd >> close sock
+    return $! ( sendFileFunc sock
+              , localHost
+              , localPort
+              , remoteHost
+              , remotePort
+              , readEnd
+              , writeEnd
+              , cleanup
+              )
 
 
 ------------------------------------------------------------------------------

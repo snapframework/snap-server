@@ -219,8 +219,9 @@ listeners conf = do
                          , ":"
                          , bshow p ],
                 do sock <- Sock.bindHttp b p
-                   -- TODO(greg): the haproxy wrapping needs to happen here
-                   return (sock, Sock.httpAcceptFunc sock))
+                   if getProxyType conf == Just HaProxy
+                     then return (sock, Sock.haProxyAcceptFunc sock)
+                     else return (sock, Sock.httpAcceptFunc sock))
 
 
 ------------------------------------------------------------------------------

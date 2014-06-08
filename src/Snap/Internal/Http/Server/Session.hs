@@ -150,8 +150,8 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
 
         go = do
             (sendFileHandler, localAddress, localPort, remoteAddress,
-             remotePort, readEnd,
-             writeEnd, cleanup) <- runAcceptFunc acceptFunc loopRestore
+             remotePort, readEnd, writeEnd,
+             cleanup) <- runAcceptFunc acceptFunc loopRestore
                                        `E.catches` handlers
             let threadLabel = S.concat [ "snap-server: client "
                                        , remoteAddress

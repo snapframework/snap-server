@@ -115,7 +115,7 @@ import           Snap.Internal.Debug            (debug)
 data ProxyType = NoProxy
                | HaProxy
                | X_Forwarded_For
-  deriving (Show, Typeable)
+  deriving (Show, Eq, Typeable)
 
 ------------------------------------------------------------------------------
 -- | Data type representing the configuration of a logging target
