@@ -164,3 +164,8 @@ eatException a = (a >> return ()) `catch` handler
   where
     handler :: (MonadBaseControl IO m) => SomeException -> m ()
     handler _ = return ()
+
+
+------------------------------------------------------------------------------
+timeoutIn :: Int -> IO a -> IO a
+timeoutIn n m = timeout (n * 1000000) m >>= maybe (fail "timeout") return

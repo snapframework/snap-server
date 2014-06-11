@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PackageImports      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Blackbox
@@ -12,22 +13,23 @@ module Test.Blackbox
   ) where
 
 --------------------------------------------------------------------------------
-import           Control.Concurrent                   (ThreadId, forkIO, threadDelay)
-import           Control.Exception                    (bracketOnError)
-import           Control.Monad                        (Monad (return), forever, liftM, mapM_, when)
+import           Blaze.ByteString.Builder             (fromByteString)
+import           Control.Applicative                  ((<$>))
+import           Control.Concurrent                   (MVar, ThreadId, forkIO, forkIOWithUnmask, killThread, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar)
+import           Control.Exception                    (bracket, bracketOnError, finally, mask_)
+import           Control.Monad                        (forever, void, when)
 import qualified Data.ByteString.Base16               as B16
 import           Data.ByteString.Char8                (ByteString)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
-import           Data.Int                             (Int)
-import           Data.List                            (concat, concatMap, head, map, replicate, sort, (++))
+import           Data.List                            (sort)
 import           Data.Monoid                          (Monoid (mconcat, mempty))
 import qualified Network.Http.Client                  as HTTP
 import qualified Network.Socket                       as N
 import qualified Network.Socket.ByteString            as NB
-import           Prelude                              hiding (catch, take)
+import           Prelude                              (Bool (..), Eq (..), IO, Int, Maybe (..), Show (..), String, concat, concatMap, const, dropWhile, flip, fromIntegral, fst, head, map, mapM_, maybe, min, not, null, otherwise, replicate, return, reverse, uncurry, ($), ($!), (*), (++), (.), (^))
+import qualified Prelude
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder             (fromByteString)
 #ifdef OPENSSL
 import qualified OpenSSL.Session                      as SSL
 #endif
@@ -46,7 +48,7 @@ import           Snap.Internal.Debug                  (debug)
 import           Snap.Internal.Http.Server.Session    (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket     as Sock
 import qualified Snap.Internal.Http.Server.Types      as Types
-import           Snap.Test.Common                     (ditchHeaders, expectExceptionBeforeTimeout, recvAll, withSock)
+import           Snap.Test.Common                     (ditchHeaders, eatException, expectExceptionBeforeTimeout, recvAll, timeoutIn, withSock)
 import           Test.Common.Rot13                    (rot13)
 import           Test.Common.TestHandler              (testHandler)
 
@@ -86,6 +88,9 @@ testFunctions = [ testPong
 
 
 ------------------------------------------------------------------------------
+startServer :: Types.ServerConfig hookState
+            -> (N.Socket -> Types.AcceptFunc)
+            -> IO (ThreadId, Int)
 startServer config acceptFunc = bracketOnError getSock cleanup forkServer
   where
     getSock = do
@@ -97,7 +102,7 @@ startServer config acceptFunc = bracketOnError getSock cleanup forkServer
         Sock.bindHttp "127.0.0.1" (fromIntegral N.aNY_PORT)
 
     forkServer sock = do
-        port <- liftM fromIntegral $ N.socketPort sock
+        port <- fromIntegral <$> N.socketPort sock
         tid <- forkIO $ httpAcceptLoop (snapToServerHandler testHandler)
                                        config
                                        (acceptFunc sock)
@@ -421,6 +426,7 @@ testHaProxy port = testCase "blackbox/haProxy" runIt
 
         let s = head $ ditchHeaders $ S.lines resp
 
+        when (s /= "1.2.3.4:1234") $ S.putStrLn s
         assertEqual "haproxy response" "1.2.3.4:1234" s
 
 
@@ -455,26 +461,49 @@ testHaProxyLocal :: Int -> Test
 testHaProxyLocal port = testCase "blackbox/haProxyLocal" runIt
 
   where
-    runIt = withSock port $ \sock -> do
-        m <- timeout (120*seconds) $ go sock
-        maybe (assertFailure "timeout")
-              (const $ return ())
-              m
+    remoteAddrServer :: N.Socket
+                     -> MVar (Maybe String)
+                     -> (forall a . IO a -> IO a)
+                     -> IO ()
+    remoteAddrServer ssock mvar restore =
+      timeoutIn 10 $
+      flip finally (tryPutMVar mvar Nothing) $
+      bracket (restore $ N.accept ssock)
+              (eatException . N.close . fst)
+              (\(_, peer) -> putMVar mvar $! Just $! show peer)
 
-    go sock = do
-        NB.sendAll sock $ S.concat
-              [ "PROXY UNKNOWN\r\n"
-              , "GET /remoteAddrPort HTTP/1.1\r\n"
-              , "Host: 127.0.0.1\r\n"
-              , "Content-Length: 0\r\n"
-              , "Connection: close\r\n\r\n"
-              ]
+    slurp p input = timeoutIn 10 $ withSock p
+                      $ \sock -> do NB.sendAll sock input
+                                    recvAll sock
 
-        resp <- recvAll sock
+    determineSourceInterfaceAddr =
+        timeoutIn 10 $
+        bracket
+          (Sock.bindHttp "127.0.0.1" (fromIntegral N.aNY_PORT))
+          (eatException . N.close)
+          (\ssock -> do
+             mv      <- newEmptyMVar
+             svrPort <- fromIntegral <$> N.socketPort ssock
+             bracket (mask_ $ forkIOWithUnmask $ remoteAddrServer ssock mv)
+                     (eatException . killThread)
+                     (const $ do void $ slurp svrPort ""
+                                 (Just s) <- takeMVar mv
+                                 return $! fst $ S.breakEnd (==':') $ S.pack s))
+
+    runIt = do
+        saddr <- determineSourceInterfaceAddr
+        resp <- slurp port $ S.concat
+                  [ "PROXY UNKNOWN\r\n"
+                  , "GET /remoteAddrPort HTTP/1.1\r\n"
+                  , "Host: 127.0.0.1\r\n"
+                  , "Content-Length: 0\r\n"
+                  , "Connection: close\r\n\r\n"
+                  ]
 
         let s = head $ ditchHeaders $ S.lines resp
 
-        assertBool "haproxy response" $ S.isPrefixOf "127.0.0.1:" s
+        when (not $ S.isPrefixOf saddr s) $ S.putStrLn s
+        assertBool "haproxy response" $ S.isPrefixOf saddr s
 
 
 ------------------------------------------------------------------------------
