@@ -19,6 +19,7 @@ Paths_snap_server
 Snap.Internal.Http.Server.Address.Tests
 Snap.Internal.Http.Server.Parser.Tests
 Snap.Internal.Http.Server.Session.Tests
+Snap.Internal.Http.Server.Socket.Tests
 Snap.Internal.Http.Server.TimeoutManager.Tests
 Snap.Test.Common
 System.SendFile.Tests

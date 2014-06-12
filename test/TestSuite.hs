@@ -17,6 +17,7 @@ import           Test.Framework                                 (defaultMain, te
 import qualified Snap.Internal.Http.Server.Address.Tests        as Address
 import qualified Snap.Internal.Http.Server.Parser.Tests         as Parser
 import qualified Snap.Internal.Http.Server.Session.Tests        as Session
+import qualified Snap.Internal.Http.Server.Socket.Tests         as Socket
 import qualified Snap.Internal.Http.Server.TimeoutManager.Tests as TimeoutManager
 import qualified System.SendFile.Tests                          as SendFile
 import qualified Test.Blackbox
@@ -43,9 +44,10 @@ main = withSocketsDo $ setupOpenSSL $ do
 
     tests = [ testGroup "Address" Address.tests
             , testGroup "Parser" Parser.tests
-            , testGroup "Server" Session.tests
-            , testGroup "TimeoutManager" TimeoutManager.tests
             , testGroup "SendFile" SendFile.tests
+            , testGroup "Server" Session.tests
+            , testGroup "Socket" Socket.tests
+            , testGroup "TimeoutManager" TimeoutManager.tests
             ]
 
 

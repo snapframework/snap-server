@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Snap.Internal.Http.Server.Socket
   ( bindHttp
+  , bindHttpImpl
   , httpAcceptFunc
   , haProxyAcceptFunc
   , sendFileFunc
@@ -34,13 +35,25 @@ import qualified System.IO.Streams.Network.HAProxy as HA
 
 ------------------------------------------------------------------------------
 bindHttp :: ByteString -> Int -> IO Socket
-bindHttp bindAddr bindPort = do
+bindHttp = bindHttpImpl setSocketOption bindSocket listen
+{-# INLINE bindHttp #-}
+
+
+------------------------------------------------------------------------------
+bindHttpImpl
+    :: (Socket -> SocketOption -> Int -> IO ()) -- ^ mock setSocketOption
+    -> (Socket -> N.SockAddr -> IO ())          -- ^ bindSocket
+    -> (Socket -> Int -> IO ())                 -- ^ listen
+    -> ByteString
+    -> Int
+    -> IO Socket
+bindHttpImpl _setSocketOption _bindSocket _listen bindAddr bindPort = do
     (family, addr) <- getSockAddr bindPort bindAddr
     bracketOnError (socket family N.Stream 0) N.close $ \sock -> do
-        setSocketOption sock ReuseAddr 1
-        setSocketOption sock NoDelay 1
-        bindSocket sock addr
-        listen sock 150
+        _setSocketOption sock ReuseAddr 1
+        _setSocketOption sock NoDelay 1
+        _bindSocket sock addr
+        _listen sock 150
         return $! sock
 
 

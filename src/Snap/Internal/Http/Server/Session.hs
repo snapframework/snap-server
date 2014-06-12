@@ -512,9 +512,10 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         unless (rspTransformingRqBody rsp0) $ Streams.skipToEof (rqBody req)
 
         !date <- getDateString
+        rsp1  <- fixupResponse req rsp0
         let (!hdrs, !cc') = addDateAndServerHeaders is_1_0 date cc $
-                            headers rsp0
-        let rsp = updateHeaders (const hdrs) rsp0
+                            headers rsp1
+        let rsp = updateHeaders (const hdrs) rsp1
         writeIORef forceConnectionClose cc'
         bytesSent <- sendResponse req rsp `E.catch`
                      catchUserException hookState "sending-response" req
@@ -570,9 +571,8 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
     --------------------------------------------------------------------------
     sendResponse :: Request -> Response -> IO Word64
-    sendResponse !req !rsp0 = {-# SCC "httpSession/sendResponse" #-} do
+    sendResponse !req !rsp = {-# SCC "httpSession/sendResponse" #-} do
         let !v          = rqVersion req
-        rsp            <- fixupResponse req rsp0
         let !hdrs'      = renderCookies rsp (headers rsp)
         let !code       = rspStatus rsp
         let body        = rspBody rsp
