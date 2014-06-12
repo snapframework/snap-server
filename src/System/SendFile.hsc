@@ -77,6 +77,7 @@ sendHeadersImpl :: (Fd -> Ptr CChar -> CSize -> CInt -> IO CSize)
                 -> Fd
                 -> IO ()
 sendHeadersImpl sendFunc waitFunc headers fd =
+    sendFunc `seq` waitFunc `seq`
     S.unsafeUseAsCStringLen (toByteString headers) $
          \(cstr, clen) -> go cstr (fromIntegral clen)
   where
