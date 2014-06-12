@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 
@@ -50,12 +49,13 @@ sendFile :: Fd                  -- ^ out fd (i.e. the socket)
          -> IO ()
 sendFile out_fd in_fd = go
   where
-    go !offs !count | count <= 0 = return $! ()
-                    | otherwise  = do nsent <- fromIntegral `fmap`
-                                               SF.sendFile out_fd in_fd
-                                                           offs count
-                                      go (offs + nsent)
-                                         (count - nsent)
+    go offs count | offs `seq` count <= 0 = return $! ()
+                  | otherwise = do
+                        nsent <- fromIntegral `fmap`
+                                 SF.sendFile out_fd in_fd
+                                             offs count
+                        go (offs + nsent)
+                           (count - nsent)
 
 
 ------------------------------------------------------------------------------
@@ -76,7 +76,7 @@ sendHeadersImpl :: (Fd -> Ptr CChar -> CSize -> CInt -> IO CSize)
                 -> Builder
                 -> Fd
                 -> IO ()
-sendHeadersImpl !sendFunc !waitFunc headers fd =
+sendHeadersImpl sendFunc waitFunc headers fd =
     S.unsafeUseAsCStringLen (toByteString headers) $
          \(cstr, clen) -> go cstr (fromIntegral clen)
   where
@@ -86,14 +86,14 @@ sendHeadersImpl !sendFunc !waitFunc headers fd =
     flags = 0
 #endif
 
-    go !cstr !clen | clen <= 0 = return $! ()
-                   | otherwise = do
-                         nsent <- throwErrnoIfMinus1RetryMayBlock
-                                     "sendHeaders"
-                                     (sendFunc fd cstr clen flags)
-                                     (waitFunc fd)
-                         let cstr' = plusPtr cstr (fromIntegral nsent)
-                         go cstr' (clen - nsent)
+    go cstr clen | cstr `seq` clen <= 0 = return $! ()
+                 | otherwise = do
+                       nsent <- throwErrnoIfMinus1RetryMayBlock
+                                   "sendHeaders"
+                                   (sendFunc fd cstr clen flags)
+                                   (waitFunc fd)
+                       let cstr' = plusPtr cstr (fromIntegral nsent)
+                       go cstr' (clen - nsent)
 
 
 ------------------------------------------------------------------------------

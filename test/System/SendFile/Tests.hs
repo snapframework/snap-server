@@ -11,9 +11,7 @@ import           Control.Exception              (evaluate)
 import qualified Data.ByteString.Char8          as S
 import           Foreign.C.Error                (Errno (..), eAGAIN, eCONNRESET, eOK)
 import           Foreign.C.Types                (CChar, CInt (..), CSize)
-import           Foreign.Ptr                    (Ptr, nullPtr)
 import           Foreign.Storable               (peek)
-import           System.Posix.Types             (COff, CSsize, Fd)
 import           Test.Framework                 (Test)
 import           Test.Framework.Providers.HUnit (testCase)
 import           Test.HUnit                     (assertEqual)
@@ -23,14 +21,20 @@ import qualified System.SendFile                as SF
 
 #if defined(LINUX)
 import           Control.Monad                  (void)
+import           Foreign.Ptr                    (Ptr, nullPtr)
+import           System.Posix.Types             (COff, CSsize, Fd)
 import qualified System.SendFile.Linux          as SFI
 #elif defined(FREEBSD)
 import           Control.Monad                  (void)
+import           Foreign.Ptr                    (Ptr)
 import           Foreign.Storable
+import           System.Posix.Types             (COff, Fd)
 import qualified System.SendFile.FreeBSD        as SFI
 #elif defined(OSX)
 import           Control.Monad                  (void, when)
-import           Foreign.Storable
+import           Foreign.Ptr                    (Ptr)
+import           Foreign.Storable               (poke)
+import           System.Posix.Types             (COff, Fd)
 import qualified System.SendFile.Darwin         as SFI
 #endif
 
