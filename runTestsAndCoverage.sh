@@ -5,7 +5,7 @@ set -e
 export LC_ALL=C
 export LANG=C
 
-rm -f testsuite.tix
+rm -Rf testsuite.tix
 
 ./dist/build/testsuite/testsuite -j4 -a1000 $*
 
@@ -33,7 +33,7 @@ for m in $EXCLUDES; do
     EXCL="$EXCL --exclude=$m"
 done
 
-hpc markup $EXCL --destdir=$DIR testsuite >/dev/null 2>&1
+hpc markup $EXCL --destdir=$DIR testsuite
 
 rm -f testsuite.tix
 

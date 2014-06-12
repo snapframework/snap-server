@@ -523,7 +523,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         return $! not cc'
 
     --------------------------------------------------------------------------
-    addDateAndServerHeaders !is1_0 date !cc !hdrs =
+    addDateAndServerHeaders !is1_0 !date !cc !hdrs =
         {-# SCC "addDateAndServerHeaders" #-}
         let (!hdrs', !newcc) = go [("date",date)] False cc
                                  $ H.unsafeToCaseFoldedList hdrs

@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -15,19 +14,23 @@ module Test.Blackbox
 --------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder             (fromByteString)
 import           Control.Applicative                  ((<$>))
+import           Control.Arrow                        (first)
 import           Control.Concurrent                   (MVar, ThreadId, forkIO, forkIOWithUnmask, killThread, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar)
 import           Control.Exception                    (bracket, bracketOnError, finally, mask_)
-import           Control.Monad                        (forever, void, when)
+import           Control.Monad                        (forM_, forever, void, when)
 import qualified Data.ByteString.Base16               as B16
 import           Data.ByteString.Char8                (ByteString)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
+import           Data.CaseInsensitive                 (CI)
+import qualified Data.CaseInsensitive                 as CI
 import           Data.List                            (sort)
 import           Data.Monoid                          (Monoid (mconcat, mempty))
 import qualified Network.Http.Client                  as HTTP
+import qualified Network.Http.Types                   as HTTP
 import qualified Network.Socket                       as N
 import qualified Network.Socket.ByteString            as NB
-import           Prelude                              (Bool (..), Eq (..), IO, Int, Maybe (..), Show (..), String, concat, concatMap, const, dropWhile, flip, fromIntegral, fst, head, map, mapM_, maybe, min, not, null, otherwise, replicate, return, reverse, uncurry, ($), ($!), (*), (++), (.), (^))
+import           Prelude                              (Bool (..), Eq (..), IO, Int, Maybe (..), Show (..), String, concat, concatMap, const, dropWhile, elem, flip, fromIntegral, fst, head, map, mapM_, maybe, min, not, null, otherwise, putStrLn, replicate, return, reverse, uncurry, ($), ($!), (*), (++), (.), (^))
 import qualified Prelude
 ------------------------------------------------------------------------------
 #ifdef OPENSSL
@@ -80,6 +83,7 @@ testFunctions = [ testPong
                 , testPartial
                 , testFileUpload
                 , testTimeoutTickle
+                , testHasDateHeader
                 , testServerHeader
                 , testFileServe
                 , testTimelyRedirect
@@ -182,6 +186,17 @@ seconds = (10::Int) ^ (6::Int)
 ------------------------------------------------------------------------------
 fetch :: ByteString -> IO ByteString
 fetch url = HTTP.get url HTTP.concatHandler'
+
+
+------------------------------------------------------------------------------
+fetchWithHeaders :: ByteString
+                 -> IO (ByteString, [(CI ByteString, ByteString)])
+fetchWithHeaders url = HTTP.get url h
+  where
+    h resp is = do
+        let hdrs = map (first CI.mk) $ HTTP.retrieveHeaders $ HTTP.getHeaders resp
+        body <- HTTP.concatHandler' resp is
+        return (body, hdrs)
 
 
 ------------------------------------------------------------------------------
@@ -303,6 +318,22 @@ testPong ssl port name = testCase (name ++ "blackbox/pong") $ do
     assertEqual "pong response" "PONG" doc
 
 
+------------------------------------------------------------------------------
+testHasDateHeader :: Bool -> Int -> String -> Test
+testHasDateHeader ssl port name = testCase (name ++ "blackbox/hasDateHdr") $ do
+    let !url = (if ssl then "https" else "http") ++ "://127.0.0.1:" ++ show port
+                   ++ "/pong"
+    (rsp, hdrs) <- fetchWithHeaders $ S.pack url
+
+    let hasDate = "date" `elem` map fst hdrs
+    when (not hasDate) $ do
+        putStrLn "server not sending dates:"
+        forM_ hdrs $ \(k,v) -> S.putStrLn $ S.concat [CI.original k, ": ", v]
+    assertBool "has date" hasDate
+    assertEqual "pong response" "PONG" rsp
+
+
+------------------------------------------------------------------------------
 testChunkedHead :: Bool -> Int -> String -> Test
 testChunkedHead ssl port name = testCase (name ++ "blackbox/chunkedHead") $
                                 if ssl then return () else withSock port go
