@@ -304,6 +304,7 @@ instance Monoid (Config m a) where
         , startupHook    = ov startupHook
         }
       where
+        ov :: (Config m a -> Maybe b) -> Maybe b
         ov f = getLast $! (mappend `on` (Last . f)) a b
 
 
