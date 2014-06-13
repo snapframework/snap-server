@@ -516,7 +516,7 @@ toString = T.unpack . T.decodeUtf8
 ------------------------------------------------------------------------------
 -- | Returns a description of the snap command line options suitable for use
 -- with "System.Console.GetOpt".
-optDescrs :: MonadSnap m =>
+optDescrs :: forall m a . MonadSnap m =>
              Config m a         -- ^ the configuration defaults.
           -> [OptDescr (Maybe (Config m a))]
 optDescrs defaults =
@@ -603,10 +603,16 @@ optDescrs defaults =
 
     setConfig f c  = f c mempty
     conf           = defaultConfig `mappend` defaults
+
+    defaultB :: (Config m a -> Maybe Bool) -> String -> String -> String
     defaultB f y n = maybe "" (\b -> ", default " ++ if b
                                                        then y
                                                        else n) $ f conf
+
+    defaultC :: (Show b) => (Config m a -> Maybe b) -> String
     defaultC f     = maybe "" ((", default " ++) . show) $ f conf
+
+    defaultO :: (Show b) => (Config m a -> Maybe b) -> String
     defaultO f     = maybe ", default off" ((", default " ++) . show) $ f conf
 
 
