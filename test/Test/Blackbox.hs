@@ -103,7 +103,7 @@ startServer config acceptFunc = bracketOnError getSock cleanup forkServer
             SSL.contextSetVerificationMode ctx SSL.VerifyNone
             return ctx
 #endif
-        Sock.bindHttp "127.0.0.1" (fromIntegral N.aNY_PORT)
+        Sock.bindSocket "127.0.0.1" (fromIntegral N.aNY_PORT)
 
     forkServer sock = do
         port <- fromIntegral <$> N.socketPort sock
@@ -510,7 +510,7 @@ testHaProxyLocal port = testCase "blackbox/haProxyLocal" runIt
     determineSourceInterfaceAddr =
         timeoutIn 10 $
         bracket
-          (Sock.bindHttp "127.0.0.1" (fromIntegral N.aNY_PORT))
+          (Sock.bindSocket "127.0.0.1" (fromIntegral N.aNY_PORT))
           (eatException . N.close)
           (\ssock -> do
              mv      <- newEmptyMVar

@@ -26,12 +26,15 @@ tests = [ testSockClosedOnListenException
 testSockClosedOnListenException :: Test
 testSockClosedOnListenException = testCase "socket/closedOnListenException" $ do
     ref <- newIORef Nothing
-    expectException $ Sock.bindHttpImpl (sso ref) bs ls "127.0.0.1" 4444
+    expectException $ Sock.bindSocketImpl (sso ref) bs ls "127.0.0.1" 4444
     (Just sock) <- readIORef ref
     let (N.MkSocket _ _ _ _ mvar) = sock
     readMVar mvar >>= assertEqual "socket closed" N.Closed
 
   where
-    sso ref sock _ _ = writeIORef ref (Just sock) >> fail "set socket option"
+    sso ref sock _ _ = do
+        let (N.MkSocket _ _ _ _ mvar) = sock
+        readMVar mvar >>= assertEqual "socket not connected" N.NotConnected
+        writeIORef ref (Just sock) >> fail "set socket option"
     bs _ _ = fail "bindsocket"
     ls _ _ = fail "listen"

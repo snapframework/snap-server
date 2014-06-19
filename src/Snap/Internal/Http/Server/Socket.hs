@@ -3,8 +3,8 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Snap.Internal.Http.Server.Socket
-  ( bindHttp
-  , bindHttpImpl
+  ( bindSocket
+  , bindSocketImpl
   , httpAcceptFunc
   , haProxyAcceptFunc
   , sendFileFunc
@@ -13,7 +13,7 @@ module Snap.Internal.Http.Server.Socket
 ------------------------------------------------------------------------------
 import           Control.Exception                 (bracketOnError)
 import           Data.ByteString.Char8             (ByteString)
-import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, bindSocket, close, getSocketName, listen, setSocketOption, socket)
+import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, listen, setSocketOption, socket)
 import qualified Network.Socket                    as N
 #ifndef PORTABLE
 import           Control.Exception                 (bracket)
@@ -34,20 +34,20 @@ import qualified System.IO.Streams.Network.HAProxy as HA
 
 
 ------------------------------------------------------------------------------
-bindHttp :: ByteString -> Int -> IO Socket
-bindHttp = bindHttpImpl setSocketOption bindSocket listen
-{-# INLINE bindHttp #-}
+bindSocket :: ByteString -> Int -> IO Socket
+bindSocket = bindSocketImpl setSocketOption N.bindSocket listen
+{-# INLINE bindSocket #-}
 
 
 ------------------------------------------------------------------------------
-bindHttpImpl
+bindSocketImpl
     :: (Socket -> SocketOption -> Int -> IO ()) -- ^ mock setSocketOption
     -> (Socket -> N.SockAddr -> IO ())          -- ^ bindSocket
     -> (Socket -> Int -> IO ())                 -- ^ listen
     -> ByteString
     -> Int
     -> IO Socket
-bindHttpImpl _setSocketOption _bindSocket _listen bindAddr bindPort = do
+bindSocketImpl _setSocketOption _bindSocket _listen bindAddr bindPort = do
     (family, addr) <- getSockAddr bindPort bindAddr
     bracketOnError (socket family N.Stream 0) N.close $ \sock -> do
         _setSocketOption sock ReuseAddr 1

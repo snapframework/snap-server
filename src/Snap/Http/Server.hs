@@ -218,7 +218,7 @@ listeners conf = do
                          , b
                          , ":"
                          , bshow p ],
-                do sock <- Sock.bindHttp b p
+                do sock <- Sock.bindSocket b p
                    if getProxyType conf == Just HaProxy
                      then return (sock, Sock.haProxyAcceptFunc sock)
                      else return (sock, Sock.httpAcceptFunc sock))
