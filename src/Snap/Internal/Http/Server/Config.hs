@@ -466,7 +466,8 @@ data StartupInfo m a = StartupInfo
 emptyStartupInfo :: StartupInfo m a
 emptyStartupInfo = StartupInfo emptyConfig []
 
--- | The the 'Socket's opened by the server. There will be two 'Socket's for SSL connections, and one otherwise.
+-- | The 'Socket's opened by the server. There will be two 'Socket's for SSL
+-- connections, and one otherwise.
 getStartupSockets :: StartupInfo m a -> [Socket]
 getStartupSockets = startupHookSockets
 

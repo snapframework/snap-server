@@ -43,12 +43,13 @@ import           Blaze.ByteString.Builder          (Builder, toByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLPort, getStartupHook, getVerbose)
+import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLKey, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
 import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
 import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket  as Sock
+import qualified Snap.Internal.Http.Server.TLS     as TLS
 import           Snap.Internal.Http.Server.Types   (AcceptFunc, ServerConfig, ServerHandler)
 import qualified Snap.Types.Headers                as H
 import           Snap.Util.GZip                    (withCompression)
@@ -196,7 +197,7 @@ simpleHttpServe config handler = do
 
 ------------------------------------------------------------------------------
 listeners :: Config m a -> IO [(ByteString, Socket, AcceptFunc)]
-listeners conf = do
+listeners conf = TLS.withTLS $ do
   let fs = catMaybes [httpListener, httpsListener]
   mapM (\(str, mkAfunc) -> do (sock, afunc) <- mkAfunc
                               return $! (str, sock, afunc)) fs
@@ -204,13 +205,15 @@ listeners conf = do
     httpsListener = do
         b    <- getSSLBind conf
         p    <- getSSLPort conf
-        -- cert <- getSSLCert conf
-        -- key  <- getSSLKey conf
+        cert <- getSSLCert conf
+        key  <- getSSLKey conf
         return (S.concat [ "https://"
                          , b
                          , ":"
                          , bshow p ],
-                error "not implemented")
+                do sockCtx@(sock, _) <- TLS.bindHttps b p cert key
+                   return (sock, TLS.httpsAcceptFunc sockCtx)
+                )
     httpListener = do
         p <- getPort conf
         b <- getBind conf

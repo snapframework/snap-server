@@ -10,6 +10,9 @@ module Snap.Internal.Http.Server.Session.Tests (tests) where
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                                  hiding (catch)
 #endif
+import           Blaze.ByteString.Builder                 (flush, fromByteString, toByteString)
+import           Blaze.ByteString.Builder.Char8           (fromChar)
+import           Blaze.ByteString.Builder.Internal.Buffer (allocBuffer)
 import           Control.Concurrent                       (MVar, forkIO, killThread, modifyMVar_, myThreadId, newChan, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar, threadDelay, throwTo, withMVar)
 import           Control.Exception.Lifted                 (AsyncException (ThreadKilled), Exception, SomeException (..), bracket, catch, evaluate, mask, throwIO, try)
 import           Control.Monad                            (forM_, liftM, replicateM_, void, when, (>=>))
@@ -24,11 +27,8 @@ import           Data.Monoid                              (mappend)
 import           Data.Time.Clock.POSIX                    (posixSecondsToUTCTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Word                                (Word64)
-------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder                 (flush, fromByteString, toByteString)
-import           Blaze.ByteString.Builder.Char8           (fromChar)
-import           Blaze.ByteString.Builder.Internal.Buffer (allocBuffer)
 import qualified Network.Http.Client                      as Http
+import qualified Network.Socket                           as N
 import           System.IO.Streams                        (InputStream, OutputStream)
 import qualified System.IO.Streams                        as Streams
 import qualified System.IO.Streams.Concurrent             as Streams
@@ -43,6 +43,7 @@ import           Snap.Core                                (Cookie (Cookie, cooki
 import           Snap.Http.Server.Types                   (emptyServerConfig, getDefaultTimeout, getIsSecure, getLocalAddress, getLocalHostname, getLocalPort, getLogAccess, getLogError, getNumAcceptLoops, getOnDataFinished, getOnEscape, getOnException, getOnNewRequest, getOnParse, getOnUserHandlerFinished, getRemoteAddress, getRemotePort, getTwiddleTimeout, isNewConnection, setDefaultTimeout, setIsSecure, setLocalHostname, setLogAccess, setLogError, setNumAcceptLoops, setOnDataFinished, setOnEscape, setOnException, setOnNewRequest, setOnParse, setOnUserHandlerFinished)
 import           Snap.Internal.Http.Server.Date           (getLogDateString)
 import           Snap.Internal.Http.Server.Session        (BadRequestException (..), LengthRequiredException (..), TerminateSessionException (..), httpAcceptLoop, httpSession, snapToServerHandler)
+import qualified Snap.Internal.Http.Server.TLS            as TLS
 import           Snap.Internal.Http.Server.Types          (AcceptFunc (AcceptFunc), PerSessionData (PerSessionData, _isNewConnection), SendFileHandler, ServerConfig (_logError))
 import           Snap.Test                                (RequestBuilder)
 import qualified Snap.Test                                as T
@@ -78,7 +79,23 @@ tests = [ testPong
         , testSendFile
         , testBasicAcceptLoop
         , testTrivials
+#ifdef OPENSSL
+        , testTLSKeyMismatch
+#endif
         ]
+
+
+------------------------------------------------------------------------------
+#ifdef OPENSSL
+testTLSKeyMismatch :: Test
+testTLSKeyMismatch = testCase "session/tls-key-mismatch" $ do
+    expectException $ bracket (TLS.bindHttps "127.0.0.1"
+                                    (fromIntegral N.aNY_PORT)
+                                    "test/cert.pem"
+                                    "test/bad_key.pem")
+                              (N.close . fst)
+                              (const $ return ())
+#endif
 
 
 ------------------------------------------------------------------------------
@@ -566,9 +583,11 @@ testTrivials = testCase "session/trivials" $ do
                       $ SomeException BadRequestException
     coverShowInstance LengthRequiredException
     coverShowInstance BadRequestException
+    coverShowInstance $ TLS.TLSException "ok"
     coverTypeableInstance (undefined :: TerminateSessionException)
     coverTypeableInstance (undefined :: BadRequestException)
     coverTypeableInstance (undefined :: LengthRequiredException)
+    coverTypeableInstance (undefined :: TLS.TLSException)
 
     expectException (getOnNewRequest emptyServerConfig undefined >>= evaluate)
     is <- Streams.fromList []

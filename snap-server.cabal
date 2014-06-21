@@ -25,7 +25,10 @@ extra-source-files:
   LICENSE,
   README.md,
   README.SNAP.md,
+  test/bad_key.pem,
+  test/cert.pem,
   test/dummy.txt,
+  test/key.pem,
   testserver/static/hello.txt
 
 
@@ -169,6 +172,7 @@ Test-suite testsuite
     Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Socket,
     Snap.Internal.Http.Server.TimeoutManager,
+    Snap.Internal.Http.Server.TLS
     Snap.Internal.Http.Server.Types,
     System.FastLogger,
 
@@ -240,7 +244,8 @@ Test-suite testsuite
 
   if flag(openssl)
     cpp-options: -DOPENSSL
-    build-depends: HsOpenSSL >= 0.10 && <0.11
+    build-depends: HsOpenSSL       >= 0.10.4 && < 0.11,
+                   openssl-streams >= 1.1    && < 1.2
 
   if os(linux) && !flag(portable)
     cpp-options: -DLINUX -DHAS_SENDFILE
@@ -333,6 +338,7 @@ Executable snap-test-pong-server
     Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Socket,
     Snap.Internal.Http.Server.TimeoutManager,
+    Snap.Internal.Http.Server.TLS,
     Snap.Internal.Http.Server.Types
 
   if flag(portable) || os(windows)
@@ -357,6 +363,11 @@ Executable snap-test-pong-server
     other-modules:
       System.SendFile,
       System.SendFile.FreeBSD
+
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL       >= 0.10.4 && < 0.11,
+                   openssl-streams >= 1.1    && < 1.2
 
   build-depends:
     attoparsec         >= 0.10    && < 0.13,
@@ -403,6 +414,11 @@ Executable snap-test-server
   if !flag(build-testserver)
     buildable: False
 
+  if flag(openssl)
+    cpp-options: -DOPENSSL
+    build-depends: HsOpenSSL       >= 0.10.4 && < 0.11,
+                   openssl-streams >= 1.1    && < 1.2
+
   default-language: Haskell2010
 
   other-modules:
@@ -415,6 +431,7 @@ Executable snap-test-server
     Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Socket,
     Snap.Internal.Http.Server.TimeoutManager,
+    Snap.Internal.Http.Server.TLS,
     Snap.Internal.Http.Server.Types
 
   if flag(portable) || os(windows)

@@ -4,15 +4,10 @@
 
 module Main where
 
-import           Blaze.ByteString.Builder          (fromByteString,
-                                                    toByteString)
+import           Blaze.ByteString.Builder          (fromByteString, toByteString)
 import           Control.Applicative               ((<$>))
-import           Control.Concurrent                (MVar, ThreadId,
-                                                    forkIOWithUnmask,
-                                                    killThread, newEmptyMVar,
-                                                    putMVar, takeMVar)
-import           Control.Exception                 (SomeException,
-                                                    bracketOnError, evaluate)
+import           Control.Concurrent                (MVar, ThreadId, forkIOWithUnmask, killThread, newEmptyMVar, putMVar, takeMVar)
+import           Control.Exception                 (SomeException, bracketOnError, evaluate)
 import qualified Control.Exception                 as E
 import qualified Data.ByteString.Char8             as S
 import qualified Network.Socket                    as N
@@ -20,8 +15,7 @@ import           Snap.Core
 import           System.Environment                (getArgs)
 import qualified System.IO.Streams                 as Streams
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Session (httpAcceptLoop,
-                                                    snapToServerHandler)
+import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket  as Sock
 import qualified Snap.Internal.Http.Server.Types   as Types
 
@@ -32,7 +26,7 @@ startTestSocketServer :: Int -> Snap a -> IO (ThreadId, MVar ())
 startTestSocketServer portNum userHandler =
     bracketOnError getSock cleanup forkServer
   where
-    getSock = Sock.bindHttp "127.0.0.1" (fromIntegral portNum)
+    getSock = Sock.bindSocket "127.0.0.1" (fromIntegral portNum)
 
     forkServer sock = do
         port <- fromIntegral <$> N.socketPort sock

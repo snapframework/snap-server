@@ -8,11 +8,10 @@ import qualified Control.Exception                              as E
 import           Control.Monad                                  (liftM)
 import           Data.Maybe                                     (maybeToList)
 import           Network                                        (withSocketsDo)
-#ifdef OPENSSL
-import           OpenSSL                                        (withOpenSSL)
-#endif
 import           System.Environment
 import           Test.Framework                                 (defaultMain, testGroup)
+------------------------------------------------------------------------------
+import qualified Snap.Internal.Http.Server.TLS                  as TLS
 ------------------------------------------------------------------------------
 import qualified Snap.Internal.Http.Server.Address.Tests        as Address
 import qualified Snap.Internal.Http.Server.Parser.Tests         as Parser
@@ -25,9 +24,8 @@ import qualified Test.Blackbox
 
 ------------------------------------------------------------------------------
 main :: IO ()
-main = withSocketsDo $ setupOpenSSL $ do
-    let doSSL = False
-    E.bracket (Test.Blackbox.startTestServers doSSL)
+main = withSocketsDo $ TLS.withTLS $ do
+    E.bracket (Test.Blackbox.startTestServers)
               cleanup
               (\tinfos -> do
                   let blackboxTests = bbox tinfos
@@ -37,10 +35,12 @@ main = withSocketsDo $ setupOpenSSL $ do
     cleanup (x, y, m) = mapM_ (killThread . fst) $ [x, y] ++ maybeToList m
 
     bbox ((_, port), (_, port2), m) =
-        concat [ Test.Blackbox.tests port
-               , Test.Blackbox.haTests port2
-               , Test.Blackbox.ssltests $ fmap snd m
-               ]
+        [ testGroup "Blackbox" $
+          concat [ Test.Blackbox.tests port
+                 , Test.Blackbox.haTests port2
+                 , Test.Blackbox.ssltests $ fmap snd m
+                 ]
+        ]
 
     tests = [ testGroup "Address" Address.tests
             , testGroup "Parser" Parser.tests
@@ -52,14 +52,11 @@ main = withSocketsDo $ setupOpenSSL $ do
 
 
 ------------------------------------------------------------------------------
-setupOpenSSL :: IO () -> IO ()
 sslPort :: Int -> Maybe Int
 
 #ifdef OPENSSL
-setupOpenSSL = withOpenSSL
 sslPort sp = Just (sp + 100)
 #else
-setupOpenSSL = id
 sslPort _ = Nothing
 #endif
 

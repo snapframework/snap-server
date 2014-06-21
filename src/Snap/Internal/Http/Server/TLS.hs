@@ -5,7 +5,7 @@
 
 ------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.TLS
-  ( TLSException
+  ( TLSException(..)
   , withTLS
   , bindHttps
   , httpsAcceptFunc
@@ -13,7 +13,7 @@ module Snap.Internal.Http.Server.TLS
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception                 (Exception, throwIO)
+import           Control.Exception                 (Exception, bracketOnError, throwIO)
 import           Data.ByteString.Char8             (ByteString)
 import           Data.Typeable                     (Typeable)
 import           Network.Socket                    (Socket)
@@ -24,10 +24,11 @@ import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
-import           Prelude                           (FilePath, IO, Int, Maybe (..), Monad (..), Show, String, fromIntegral, id, not, ($), ($!), (++))
+import           Prelude                           (FilePath, IO, Int, Maybe (..), Monad (..), Show, String, flip, fromIntegral, fst, id, not, ($), ($!), (++), (.))
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import qualified System.IO.Streams                 as Streams
 import qualified System.IO.Streams.SSL             as SStreams
+
 #else
 import           Prelude                           (FilePath, IO, Int, Show, String, id, ($))
 #endif
@@ -80,22 +81,27 @@ bindHttps :: ByteString
           -> FilePath
           -> FilePath
           -> IO (Socket, SSLContext)
-bindHttps bindAddress bindPort cert key = do
-    (family, addr) <- getSockAddr bindPort bindAddress
-    sock           <- Socket.socket family Socket.Stream 0
+bindHttps bindAddress bindPort cert key =
+    bracketOnError
+        (do (family, addr) <- getSockAddr bindPort bindAddress
+            sock <- Socket.socket family Socket.Stream 0
+            return (sock, addr)
+            )
+        (Socket.close . fst)
+        $ \(sock, addr) -> do
+             Socket.setSocketOption sock Socket.ReuseAddr 1
+             Socket.bindSocket sock addr
+             Socket.listen sock 150
 
-    Socket.setSocketOption sock Socket.ReuseAddr 1
-    Socket.bindSocket sock addr
-    Socket.listen sock 150
+             ctx <- SSL.context
+             SSL.contextSetPrivateKeyFile  ctx key
+             SSL.contextSetCertificateFile ctx cert
+             SSL.contextSetDefaultCiphers  ctx
 
-    ctx <- SSL.context
-    SSL.contextSetPrivateKeyFile  ctx key
-    SSL.contextSetCertificateFile ctx cert
-    SSL.contextSetDefaultCiphers  ctx
-
-    certOK <- SSL.contextCheckPrivateKey ctx
-    when (not certOK) $ throwIO $ TLSException certificateError
-    return (sock, ctx)
+             certOK <- SSL.contextCheckPrivateKey ctx
+             when (not certOK) $ do
+                 throwIO $ TLSException $! certificateError
+             return (sock, ctx)
 
   where
     certificateError = "OpenSSL says that the certificate " ++
@@ -116,7 +122,7 @@ httpsAcceptFunc (boundSocket, ctx) = AcceptFunc $ \restore -> do
     (readEnd, writeEnd) <- SStreams.sslToStreams ssl
 
     let cleanup = do Streams.write Nothing writeEnd
-                     SSL.shutdown ssl SSL.Unidirectional
+                     SSL.shutdown ssl $! SSL.Unidirectional
                      Socket.close sock
 
     return $! ( sendFileFunc ssl
@@ -131,12 +137,12 @@ httpsAcceptFunc (boundSocket, ctx) = AcceptFunc $ \restore -> do
 
 ------------------------------------------------------------------------------
 sendFileFunc :: SSL -> SendFileHandler
-sendFileFunc ssl buffer builder fPath offset nbytes =
+sendFileFunc ssl buffer builder fPath offset nbytes = do
     Streams.unsafeWithFileAsInputStartingAt (fromIntegral offset) fPath $ \fileInput0 -> do
         fileInput <- Streams.takeBytes (fromIntegral nbytes) fileInput0 >>=
                      Streams.map fromByteString
         input     <- Streams.fromList [builder] >>=
-                     Streams.appendInputStream fileInput
+                     flip Streams.appendInputStream fileInput
         output    <- Streams.makeOutputStream sendChunk >>=
                      Streams.unsafeBuilderStream (return buffer)
         Streams.connect input output

@@ -30,7 +30,7 @@ import qualified Network.Http.Client                  as HTTP
 import qualified Network.Http.Types                   as HTTP
 import qualified Network.Socket                       as N
 import qualified Network.Socket.ByteString            as NB
-import           Prelude                              (Bool (..), Eq (..), IO, Int, Maybe (..), Show (..), String, concat, concatMap, const, dropWhile, elem, flip, fromIntegral, fst, head, map, mapM_, maybe, min, not, null, otherwise, putStrLn, replicate, return, reverse, uncurry, ($), ($!), (*), (++), (.), (^))
+import           Prelude                              (Bool (..), Eq (..), IO, Int, Maybe (..), Show (..), String, concat, concatMap, const, dropWhile, elem, flip, fromIntegral, fst, head, id, map, mapM_, maybe, min, not, null, otherwise, putStrLn, replicate, return, reverse, uncurry, ($), ($!), (*), (++), (.), (^))
 import qualified Prelude
 ------------------------------------------------------------------------------
 #ifdef OPENSSL
@@ -50,6 +50,7 @@ import qualified Test.QuickCheck.Property             as QC
 import           Snap.Internal.Debug                  (debug)
 import           Snap.Internal.Http.Server.Session    (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket     as Sock
+import qualified Snap.Internal.Http.Server.TLS        as TLS
 import qualified Snap.Internal.Http.Server.Types      as Types
 import           Snap.Test.Common                     (ditchHeaders, eatException, expectExceptionBeforeTimeout, recvAll, timeoutIn, withSock)
 import           Test.Common.Rot13                    (rot13)
@@ -90,37 +91,52 @@ testFunctions = [ testPong
                 , testChunkedHead
                 ]
 
-
 ------------------------------------------------------------------------------
 startServer :: Types.ServerConfig hookState
-            -> (N.Socket -> Types.AcceptFunc)
+            -> IO a
+            -> (a -> N.Socket)
+            -> (a -> Types.AcceptFunc)
             -> IO (ThreadId, Int)
-startServer config acceptFunc = bracketOnError getSock cleanup forkServer
+startServer config bind projSock afunc =
+    bracketOnError bind (N.close . projSock) forkServer
   where
-    getSock = do
+    forkServer a = do
+        port <- fromIntegral <$> N.socketPort (projSock a)
+        tid <- forkIO $ httpAcceptLoop (snapToServerHandler testHandler)
+                                       config
+                                       (afunc a)
+        return (tid, port)
+
+
+------------------------------------------------------------------------------
+-- | Returns the thread the server is running in as well as the port it is
+-- listening on.
+data TestServerType = NormalTest | ProxyTest | SSLTest
+  deriving (Show)
+
+startTestSocketServer :: TestServerType -> IO (ThreadId, Int)
+startTestSocketServer serverType = do
+  putStrLn $ "Blackbox: starting " ++ show serverType ++ " server"
+  case serverType of
+    NormalTest -> startServer emptyServerConfig bindSock id Sock.httpAcceptFunc
+    ProxyTest  -> startServer emptyServerConfig bindSock id Sock.haProxyAcceptFunc
+    SSLTest    -> startServer emptyServerConfig bindSSL fst TLS.httpsAcceptFunc
+  where
+    bindSSL = do
+        sockCtx <- TLS.bindHttps "127.0.0.1"
+                                 (fromIntegral N.aNY_PORT)
+                                 "test/cert.pem"
+                                 "test/key.pem"
 #ifdef OPENSSL
+        -- Set client code not to verify
         HTTP.modifyContextSSL $ \ctx -> do
             SSL.contextSetVerificationMode ctx SSL.VerifyNone
             return ctx
 #endif
-        Sock.bindSocket "127.0.0.1" (fromIntegral N.aNY_PORT)
+        return sockCtx
 
-    forkServer sock = do
-        port <- fromIntegral <$> N.socketPort sock
-        tid <- forkIO $ httpAcceptLoop (snapToServerHandler testHandler)
-                                       config
-                                       (acceptFunc sock)
-        return (tid, port)
+    bindSock = Sock.bindSocket "127.0.0.1" (fromIntegral N.aNY_PORT)
 
-    cleanup = N.close
-
-
-------------------------------------------------------------------------------
--- | Returns the thread the server is running in as well as the port it is
--- listening on.
-startTestSocketServer :: IO (ThreadId, Int)
-startTestSocketServer = startServer emptyServerConfig Sock.httpAcceptFunc
-  where
     logAccess !_ !_ !_             = return ()
     logError !_                    = return ()
     onStart !_                     = return ()
@@ -143,35 +159,6 @@ startTestSocketServer = startServer emptyServerConfig Sock.httpAcceptFunc
                                            False
                                            1
 
-
-
-------------------------------------------------------------------------------
--- | Returns the thread the server is running in as well as the port it is
--- listening on.
-startHaProxySocketServer :: IO (ThreadId, Int)
-startHaProxySocketServer = startServer emptyServerConfig Sock.haProxyAcceptFunc
-  where
-    logAccess !_ !_ !_             = return ()
-    logError !_                    = return ()
-    onStart !_                     = return ()
-    onParse !_ !_                  = return ()
-    onUserHandlerFinished !_ !_ !_ = return ()
-    onDataFinished !_ !_ !_        = return ()
-    onExceptionHook !_ !_          = return ()
-    onEscape !_                    = return ()
-
-    emptyServerConfig = Types.ServerConfig logAccess
-                                           logError
-                                           onStart
-                                           onParse
-                                           onUserHandlerFinished
-                                           onDataFinished
-                                           onExceptionHook
-                                           onEscape
-                                           "localhost"
-                                           6
-                                           False
-                                           1
 
 ------------------------------------------------------------------------------
 waitabit :: IO ()
@@ -678,40 +665,15 @@ testServerHeader ssl port name =
 
 
 ------------------------------------------------------------------------------
-startTestServers :: Bool -> IO ((ThreadId, Int),
-                                (ThreadId, Int),
-                                Maybe (ThreadId, Int))
-startTestServers _ = do
-    x <- startTestSocketServer
-    y <- startHaProxySocketServer
+startTestServers :: IO ((ThreadId, Int),
+                        (ThreadId, Int),
+                        Maybe (ThreadId, Int))
+startTestServers = do
+    x <- startTestSocketServer NormalTest
+    y <- startTestSocketServer ProxyTest
+#ifdef OPENSSL
+    z <- startTestSocketServer SSLTest
+    return (x, y, Just z)
+#else
     return (x, y, Nothing)
-
-{-
-    let cfg = setAccessLog      (ConfigFileLog "ts-access.log") .
-              setErrorLog       (ConfigFileLog "ts-error.log")  .
-              setBind           "*"                             .
-              setPort           port                            .
-              setDefaultTimeout 10                              .
-              setVerbose        False                           $
-              defaultConfig
-
-    let cfg' = maybe cfg
-                     (\p ->
-                      setSSLPort   p                                   .
-                      setSSLBind   "*"                                 .
-                      setSSLCert   "cert.pem"                          .
-                      setSSLKey    "key.pem"                           .
-                      setAccessLog (ConfigFileLog "ts-access-ssl.log") .
-                      setErrorLog  (ConfigFileLog "ts-error-ssl.log")  $
-                      cfg)
-                     sslport
-
-    mvar <- newEmptyMVar
-    tid  <- forkIO $ do
-                (httpServe cfg' testHandler)
-                  `catch` \(_::SomeException) -> return ()
-                putMVar mvar ()
-    threadDelay $ 4*seconds
-
-    return (tid,mvar)
--}
+#endif
