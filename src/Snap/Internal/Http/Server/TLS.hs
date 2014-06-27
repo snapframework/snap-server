@@ -13,12 +13,12 @@ module Snap.Internal.Http.Server.TLS
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception                 (Exception, bracketOnError, throwIO)
 import           Data.ByteString.Char8             (ByteString)
 import           Data.Typeable                     (Typeable)
 import           Network.Socket                    (Socket)
 #ifdef OPENSSL
 import           Blaze.ByteString.Builder          (fromByteString)
+import           Control.Exception                 (Exception, bracketOnError, throwIO)
 import           Control.Monad                     (when)
 import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
@@ -30,6 +30,7 @@ import qualified System.IO.Streams                 as Streams
 import qualified System.IO.Streams.SSL             as SStreams
 
 #else
+import           Control.Exception                 (Exception, throwIO)
 import           Prelude                           (FilePath, IO, Int, Show, String, id, ($))
 #endif
 ------------------------------------------------------------------------------
@@ -56,7 +57,7 @@ barf = throwIO $
 
 
 ------------------------------------------------------------------------------
-bindHttps :: ByteString -> Int -> FilePath -> FilePath -> IO Socket
+bindHttps :: ByteString -> Int -> FilePath -> FilePath -> IO (Socket, SSLContext)
 bindHttps _ _ _ _ = barf
 
 

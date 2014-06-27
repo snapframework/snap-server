@@ -211,8 +211,8 @@ listeners conf = TLS.withTLS $ do
                          , b
                          , ":"
                          , bshow p ],
-                do sockCtx@(sock, _) <- TLS.bindHttps b p cert key
-                   return (sock, TLS.httpsAcceptFunc sockCtx)
+                do (sock, ctx) <- TLS.bindHttps b p cert key
+                   return (sock, TLS.httpsAcceptFunc sock ctx)
                 )
     httpListener = do
         p <- getPort conf

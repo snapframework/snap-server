@@ -33,7 +33,9 @@ import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take, ta
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (ByteString (..), c2w, inlinePerformIO, memchr, w2c)
 import qualified Data.ByteString.Unsafe           as S
+#if !MIN_VERSION_io_streams(1,2,0)
 import           Data.IORef                       (newIORef, readIORef, writeIORef)
+#endif
 import           Data.List                        (sort)
 import           Data.Typeable                    (Typeable)
 import qualified Data.Vector                      as V
@@ -348,6 +350,15 @@ readChunkedTransferEncoding input =
 ------------------------------------------------------------------------------
 writeChunkedTransferEncoding :: OutputStream Builder
                              -> IO (OutputStream Builder)
+#if MIN_VERSION_io_streams(1,2,0)
+writeChunkedTransferEncoding os = Streams.makeOutputStream f
+  where
+    f Nothing = do
+        Streams.write (Just chunkedTransferTerminator) os
+        Streams.write Nothing os
+    f x = Streams.write (chunkedTransferEncoding `fmap` x) os
+
+#else
 writeChunkedTransferEncoding os = do
     -- make sure we only send the terminator once.
     eof <- newIORef True
@@ -358,6 +369,7 @@ writeChunkedTransferEncoding os = do
         Streams.write (Just chunkedTransferTerminator) os
         Streams.write Nothing os)
     f _ x = Streams.write (chunkedTransferEncoding `fmap` x) os
+#endif
 
 
                              ---------------------

@@ -120,7 +120,8 @@ startTestSocketServer serverType = do
   case serverType of
     NormalTest -> startServer emptyServerConfig bindSock id Sock.httpAcceptFunc
     ProxyTest  -> startServer emptyServerConfig bindSock id Sock.haProxyAcceptFunc
-    SSLTest    -> startServer emptyServerConfig bindSSL fst TLS.httpsAcceptFunc
+    SSLTest    -> startServer emptyServerConfig bindSSL fst
+                              (uncurry TLS.httpsAcceptFunc)
   where
     bindSSL = do
         sockCtx <- TLS.bindHttps "127.0.0.1"

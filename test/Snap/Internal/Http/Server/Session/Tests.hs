@@ -28,7 +28,6 @@ import           Data.Time.Clock.POSIX                    (posixSecondsToUTCTime
 import           Data.Typeable                            (Typeable)
 import           Data.Word                                (Word64)
 import qualified Network.Http.Client                      as Http
-import qualified Network.Socket                           as N
 import           System.IO.Streams                        (InputStream, OutputStream)
 import qualified System.IO.Streams                        as Streams
 import qualified System.IO.Streams.Concurrent             as Streams
@@ -48,7 +47,9 @@ import           Snap.Internal.Http.Server.Types          (AcceptFunc (AcceptFun
 import           Snap.Test                                (RequestBuilder)
 import qualified Snap.Test                                as T
 import           Snap.Test.Common                         (coverShowInstance, coverTypeableInstance, expectException)
-
+#ifdef OPENSSL
+import qualified Network.Socket                           as N
+#endif
 
 
 ------------------------------------------------------------------------------
@@ -81,6 +82,8 @@ tests = [ testPong
         , testTrivials
 #ifdef OPENSSL
         , testTLSKeyMismatch
+#else
+        , testCoverTLSStubs
 #endif
         ]
 
@@ -95,6 +98,15 @@ testTLSKeyMismatch = testCase "session/tls-key-mismatch" $ do
                                     "test/bad_key.pem")
                               (N.close . fst)
                               (const $ return ())
+#else
+testCoverTLSStubs :: Test
+testCoverTLSStubs = testCase "session/tls-stubs" $ do
+    expectException $ TLS.bindHttps "127.0.0.1" 9999
+                        "test/cert.pem" "test/key.pem"
+    let (AcceptFunc afunc) = TLS.httpsAcceptFunc undefined undefined
+    expectException $ mask $ \restore -> afunc restore
+    let u = undefined
+    expectException $ TLS.sendFileFunc u u u u u u u
 #endif
 
 
