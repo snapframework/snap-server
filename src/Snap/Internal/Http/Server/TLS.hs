@@ -110,9 +110,10 @@ bindHttps bindAddress bindPort cert key =
 
 
 ------------------------------------------------------------------------------
-httpsAcceptFunc :: (Socket, SSLContext)
+httpsAcceptFunc :: Socket
+                -> SSLContext
                 -> AcceptFunc
-httpsAcceptFunc (boundSocket, ctx) = AcceptFunc $ \restore -> do
+httpsAcceptFunc boundSocket ctx = AcceptFunc $ \restore -> do
     (sock, remoteAddr)       <- restore (Socket.accept boundSocket)
     localAddr                <- Socket.getSocketName sock
     (localPort, localHost)   <- getAddress localAddr
