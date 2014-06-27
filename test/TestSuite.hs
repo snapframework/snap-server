@@ -18,7 +18,9 @@ import qualified Snap.Internal.Http.Server.Parser.Tests         as Parser
 import qualified Snap.Internal.Http.Server.Session.Tests        as Session
 import qualified Snap.Internal.Http.Server.Socket.Tests         as Socket
 import qualified Snap.Internal.Http.Server.TimeoutManager.Tests as TimeoutManager
+#ifdef HAS_SENDFILE
 import qualified System.SendFile.Tests                          as SendFile
+#endif
 import qualified Test.Blackbox
 
 
@@ -44,7 +46,9 @@ main = withSocketsDo $ TLS.withTLS $ do
 
     tests = [ testGroup "Address" Address.tests
             , testGroup "Parser" Parser.tests
+#ifdef HAS_SENDFILE
             , testGroup "SendFile" SendFile.tests
+#endif
             , testGroup "Server" Session.tests
             , testGroup "Socket" Socket.tests
             , testGroup "TimeoutManager" TimeoutManager.tests

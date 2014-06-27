@@ -15,7 +15,7 @@ import           Control.Exception                 (bracketOnError)
 import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, listen, setSocketOption, socket)
 import qualified Network.Socket                    as N
-#ifndef PORTABLE
+#ifdef HAS_SENDFILE
 import           Control.Exception                 (bracket)
 import           Network.Socket                    (fdSocket)
 import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
@@ -109,7 +109,7 @@ httpAcceptFunc boundSocket = AcceptFunc $ \restore -> do
 
 ------------------------------------------------------------------------------
 sendFileFunc :: Socket -> SendFileHandler
-#ifndef PORTABLE
+#ifdef HAS_SENDFILE
 sendFileFunc sock !_ builder fPath offset nbytes = bracket acquire closeFd go
   where
     sockFd    = Fd (fdSocket sock)
