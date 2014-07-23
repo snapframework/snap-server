@@ -92,7 +92,7 @@ transferEncodingChunked = f . L.toChunks
 
 
 ------------------------------------------------------------------------------
--- | ensure that running the 'readChunkedTransferEncoding' iteratee against
+-- | ensure that running 'readChunkedTransferEncoding' against
 -- 'transferEncodingChunked' returns the original string
 testChunked :: Test
 testChunked = testProperty "parser/chunkedTransferEncoding" $
@@ -128,7 +128,7 @@ testWriteChunkedTransferEncoding = testCase "parser/writeChunked" $ do
 
 
 ------------------------------------------------------------------------------
--- | ensure that running the 'readChunkedTransferEncoding' iteratee against
+-- | ensure that running 'readChunkedTransferEncoding' against
 -- 'transferEncodingChunked' returns the original string
 testChunkDoS :: Test
 testChunkDoS = testCase "parser/chunkedTransferEncoding/DoS" $ do
