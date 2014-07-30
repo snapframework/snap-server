@@ -17,6 +17,7 @@ module Snap.Internal.Http.Server.TimeoutManager
 
 ------------------------------------------------------------------------------
 import           Control.Exception                (evaluate, finally)
+import qualified Control.Exception                as E
 import           Control.Monad                    (Monad ((>>), (>>=), return), mapM_, void)
 import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
 import           Foreign.C.Types                  (CTime)
@@ -66,6 +67,7 @@ data TimeoutManager = TimeoutManager {
     , _connections    :: !(IORef [TimeoutHandle])
     , _morePlease     :: !(MVar ())
     , _managerThread  :: !(MVar ThreadId)
+    , _finished       :: !(MVar ())
     }
 
 
@@ -78,8 +80,9 @@ initialize defaultTimeout getTime = do
     conns <- newIORef []
     mp    <- newEmptyMVar
     mthr  <- newEmptyMVar
+    fin   <- newEmptyMVar
 
-    let tm = TimeoutManager defaultTimeout getTime conns mp mthr
+    let tm = TimeoutManager defaultTimeout getTime conns mp mthr fin
 
     thr <- forkIOLabeledWithUnmaskBs "snap-server: timeout manager" $
              managerThread tm
@@ -163,10 +166,13 @@ cancel h = _killAction h >> writeIORef (_state h) canceled
 
 ------------------------------------------------------------------------------
 managerThread :: TimeoutManager -> (forall a. IO a -> IO a) -> IO ()
-managerThread tm restore = loop `finally`
-                           (readIORef connections >>= destroyAll)
+managerThread tm restore = loop `finally` cleanup
   where
+    cleanup = E.mask_ $ do
+      eatException (readIORef connections >>= destroyAll)
+      eatException (putMVar finished ())
     --------------------------------------------------------------------------
+    finished    = _finished tm
     connections = _connections tm
     getTime     = _getTime tm
     morePlease  = _morePlease tm
