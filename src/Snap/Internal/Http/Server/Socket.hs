@@ -22,7 +22,7 @@ import           System.Posix.IO                   (OpenMode (..), closeFd, defa
 import           System.Posix.Types                (Fd (..))
 import           System.SendFile                   (sendFile, sendHeaders)
 #else
-import           Blaze.ByteString.Builder          (fromByteString)
+import           Blaze.ByteString.Builder          (flush, fromByteString)
 import           Network.Socket.ByteString         (sendAll)
 #endif
 ------------------------------------------------------------------------------
@@ -125,10 +125,11 @@ sendFileFunc sock buffer builder fPath offset nbytes =
         fileInput <- Streams.takeBytes (fromIntegral nbytes) fileInput0 >>=
                      Streams.map fromByteString
         input     <- Streams.fromList [builder] >>=
-                     Streams.appendInputStream fileInput
+                     flip Streams.appendInputStream fileInput
         output    <- Streams.makeOutputStream sendChunk >>=
                      Streams.unsafeBuilderStream (return buffer)
-        Streams.connect input output
+        Streams.supply input output
+        Streams.write (Just flush) output
 
   where
     sendChunk (Just s) = sendAll sock s
