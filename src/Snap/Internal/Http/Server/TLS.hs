@@ -6,7 +6,7 @@
 
 ------------------------------------------------------------------------------
 module Snap.Internal.Http.Server.TLS
-  ( TLSException
+  ( TLSException (..)
   , initTLS
   , stopTLS
   , bindHttps
@@ -22,10 +22,10 @@ import           Control.Exception
 import           Data.ByteString.Char8 (ByteString)
 import           Data.Dynamic
 import           Foreign.C
+import qualified Data.ByteString.Char8 as S
 ------------------------------------------------------------------------------
 #ifdef OPENSSL
 import           Control.Monad
-import qualified Data.ByteString.Char8 as S
 import qualified Network.Socket as Socket
 import           Network.Socket hiding ( accept
                                        , shutdown
@@ -46,15 +46,23 @@ import           Snap.Internal.Http.Server.Backend
 
 
 ------------------------------------------------------------------------------
-data TLSException = TLSException String
+data TLSException = TLSException S.ByteString
   deriving (Show, Typeable)
 instance Exception TLSException
 
 
 #ifndef OPENSSL
 ------------------------------------------------------------------------------
+sslNotSupportedException :: TLSException
+sslNotSupportedException = TLSException $ S.concat [
+    "This version of snap-server was not built with SSL "
+  , "support.\n"
+  , "Please compile snap-server with -fopenssl to enable it."
+  ]
+
+------------------------------------------------------------------------------
 initTLS :: IO ()
-initTLS = throwIO $ TLSException "TLS is not supported"
+initTLS = throwIO sslNotSupportedException
 
 
 ------------------------------------------------------------------------------
@@ -63,8 +71,8 @@ stopTLS = return ()
 
 
 ------------------------------------------------------------------------------
-bindHttps :: ByteString -> Int -> FilePath -> FilePath -> IO ListenSocket
-bindHttps _ _ _ _ = throwIO $ TLSException "TLS is not supported"
+bindHttps :: ByteString -> Int -> FilePath -> Bool -> FilePath -> IO ListenSocket
+bindHttps _ _ _ _ _ = throwIO sslNotSupportedException
 
 
 ------------------------------------------------------------------------------
@@ -74,7 +82,7 @@ freePort _ = return ()
 
 ------------------------------------------------------------------------------
 createSession :: ListenSocket -> Int -> CInt -> IO () -> IO NetworkSession
-createSession _ _ _ _ = throwIO $ TLSException "TLS is not supported"
+createSession _ _ _ _ = throwIO sslNotSupportedException
 
 
 ------------------------------------------------------------------------------
@@ -89,7 +97,7 @@ send _ _ _ _ = return ()
 
 ------------------------------------------------------------------------------
 recv :: IO b -> NetworkSession -> IO (Maybe ByteString)
-recv _ _ = throwIO $ TLSException "TLS is not supported"
+recv _ _ = throwIO sslNotSupportedException
 
 
 #else
@@ -107,9 +115,10 @@ stopTLS = return ()
 bindHttps :: ByteString
           -> Int
           -> FilePath
+          -> Bool
           -> FilePath
           -> IO ListenSocket
-bindHttps bindAddress bindPort cert key = do
+bindHttps bindAddress bindPort cert chainCert key = do
     (family, addr) <- getSockAddr bindPort bindAddress
     sock           <- Socket.socket family Socket.Stream 0
 
@@ -119,7 +128,9 @@ bindHttps bindAddress bindPort cert key = do
 
     ctx <- context
     contextSetPrivateKeyFile  ctx key
-    contextSetCertificateFile ctx cert
+    if chainCert
+      then contextSetCertificateChainFile ctx cert
+      else contextSetCertificateFile ctx cert
     contextSetDefaultCiphers  ctx
 
     certOK <- contextCheckPrivateKey ctx
@@ -127,8 +138,8 @@ bindHttps bindAddress bindPort cert key = do
     return $! ListenHttps sock ctx
 
   where
-    certificateError = "OpenSSL says that the certificate " ++
-                       "doesn't match the private key!"
+    certificateError =
+      "OpenSSL says that the certificate doesn't match the private key!"
 
 
 ------------------------------------------------------------------------------

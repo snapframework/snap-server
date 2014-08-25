@@ -119,11 +119,12 @@ listeners :: Config m a -> [Int.ListenPort]
 listeners conf = catMaybes [ httpListener, httpsListener ]
   where
     httpsListener = do
-        b    <- getSSLBind conf
-        p    <- getSSLPort conf
-        cert <- getSSLCert conf
-        key  <- getSSLKey conf
-        return $! Int.HttpsPort b p cert key
+        b         <- getSSLBind conf
+        p         <- getSSLPort conf
+        cert      <- getSSLCert conf
+        chainCert <- getSSLChainCert conf
+        key       <- getSSLKey conf
+        return $! Int.HttpsPort b p cert chainCert key
 
     httpListener = do
         p <- getPort conf
