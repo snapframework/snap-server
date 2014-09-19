@@ -87,6 +87,7 @@ data Config m a = Config
     , sslport        :: Maybe Int
     , sslbind        :: Maybe ByteString
     , sslcert        :: Maybe FilePath
+    , sslchaincert   :: Maybe Bool
     , sslkey         :: Maybe FilePath
     , compression    :: Maybe Bool
     , verbose        :: Maybe Bool
@@ -125,6 +126,7 @@ instance Show (Config m a) where
                      , "sslport: "        ++ _sslport
                      , "sslbind: "        ++ _sslbind
                      , "sslcert: "        ++ _sslcert
+                     , "sslchaincert: "   ++ _sslchaincert
                      , "sslkey: "         ++ _sslkey
                      , "compression: "    ++ _compression
                      , "verbose: "        ++ _verbose
@@ -143,6 +145,7 @@ instance Show (Config m a) where
         _sslport        = show $ sslport        c
         _sslbind        = show $ sslbind        c
         _sslcert        = show $ sslcert        c
+        _sslchaincert   = show $ sslchaincert   c
         _sslkey         = show $ sslkey         c
         _compression    = show $ compression    c
         _verbose        = show $ verbose        c
@@ -170,6 +173,7 @@ instance Monoid (Config m a) where
         , sslport        = Nothing
         , sslbind        = Nothing
         , sslcert        = Nothing
+        , sslchaincert   = Nothing
         , sslkey         = Nothing
         , compression    = Nothing
         , verbose        = Nothing
@@ -191,6 +195,7 @@ instance Monoid (Config m a) where
         , sslport        = ov sslport
         , sslbind        = ov sslbind
         , sslcert        = ov sslcert
+        , sslchaincert   = ov sslchaincert
         , sslkey         = ov sslkey
         , compression    = ov compression
         , verbose        = ov verbose
@@ -219,6 +224,7 @@ defaultConfig = mempty
     , bind           = Just "0.0.0.0"
     , sslbind        = Just "0.0.0.0"
     , sslcert        = Just "cert.pem"
+    , sslchaincert   = Just False
     , sslkey         = Just "key.pem"
     , defaultTimeout = Just 60
     }
@@ -265,6 +271,10 @@ getSSLBind = sslbind
 -- | Path to the SSL certificate file
 getSSLCert        :: Config m a -> Maybe FilePath
 getSSLCert = sslcert
+
+-- | Path to the SSL certificate file
+getSSLChainCert   :: Config m a -> Maybe Bool
+getSSLChainCert = sslchaincert
 
 -- | Path to the SSL key file
 getSSLKey         :: Config m a -> Maybe FilePath
@@ -329,6 +339,9 @@ setSSLBind x c = c { sslbind = Just x }
 
 setSSLCert        :: FilePath                -> Config m a -> Config m a
 setSSLCert x c = c { sslcert = Just x }
+
+setSSLChainCert   :: Bool                    -> Config m a -> Config m a
+setSSLChainCert x c = c { sslchaincert = Just x }
 
 setSSLKey         :: FilePath                -> Config m a -> Config m a
 setSSLKey x c = c { sslkey = Just x }
@@ -443,6 +456,12 @@ optDescrs defaults =
     , Option [] ["ssl-cert"]
              (ReqArg (\s -> Just $ mempty { sslcert = Just s}) "PATH")
              $ "path to ssl certificate in PEM format" ++ defaultO sslcert
+    , Option [] ["ssl-chain-cert"]
+             (NoArg $ Just $ setConfig setSSLChainCert True)
+             $ "certificate file contains complete certificate chain" ++ defaultB sslchaincert "site certificate only" "complete certificate chain"
+    , Option [] ["no-ssl-chain-cert"]
+             (NoArg $ Just $ setConfig setSSLChainCert False)
+             $ "certificate file contains only the site certificate" ++ defaultB sslchaincert "site certificate only" "complete certificate chain"
     , Option [] ["ssl-key"]
              (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey

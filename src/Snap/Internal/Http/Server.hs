@@ -95,15 +95,15 @@ type ServerMonad = StateT ServerState (Iteratee ByteString IO)
 data ListenPort =
     -- (bind address, port)
     HttpPort  ByteString Int |
-    -- (bind address, port, path to certificate, path to key)
-    HttpsPort ByteString Int FilePath FilePath
+    -- (bind address, port, path to certificate, whether certificate is a complete chain, path to key)
+    HttpsPort ByteString Int FilePath Bool FilePath
 
 ------------------------------------------------------------------------------
 instance Show ListenPort where
     show (HttpPort  b p    ) =
         concat [ "http://" , SC.unpack b, ":", show p, "/" ]
 
-    show (HttpsPort b p _ _) =
+    show (HttpsPort b p _ _ _) =
         concat [ "https://", SC.unpack b, ":", show p, "/" ]
 
 
@@ -166,13 +166,7 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
                     , Handler otherException ]
 
     --------------------------------------------------------------------------
-    sslException (e :: TLS.TLSException) = do
-        let msg = SC.concat [
-                    "This version of snap-server was not built with SSL "
-                  , "support.\n"
-                  , "Please compile snap-server with -fopenssl to enable it."
-                  ]
-
+    sslException (e@(TLS.TLSException msg)) = do
         logE elog' msg
         SC.hPutStrLn stderr msg
         throw e
@@ -196,7 +190,7 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
         logE elog $ S.concat [ "Server.httpServe: START, binding to "
                              , bshow ports ]
 
-        let isHttps p = case p of { (HttpsPort _ _ _ _) -> True; _ -> False;}
+        let isHttps p = case p of { (HttpsPort _ _ _ _ _) -> True; _ -> False;}
         let initHttps = foldr (\p b -> b || isHttps p) False ports
 
         if initHttps
@@ -219,8 +213,8 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
 
     --------------------------------------------------------------------------
     bindPort (HttpPort  baddr port         ) = bindHttp  baddr port
-    bindPort (HttpsPort baddr port cert key) =
-        TLS.bindHttps baddr port cert key
+    bindPort (HttpsPort baddr port cert chainCert key) =
+        TLS.bindHttps baddr port cert chainCert key
 
 
 ------------------------------------------------------------------------------
