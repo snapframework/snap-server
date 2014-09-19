@@ -127,6 +127,7 @@ startTestSocketServer serverType = do
         sockCtx <- TLS.bindHttps "127.0.0.1"
                                  (fromIntegral N.aNY_PORT)
                                  "test/cert.pem"
+                                 False
                                  "test/key.pem"
 #ifdef OPENSSL
         -- Set client code not to verify

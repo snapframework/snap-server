@@ -14,6 +14,7 @@ module Snap.Internal.Http.Server.TLS
 
 ------------------------------------------------------------------------------
 import           Data.ByteString.Char8             (ByteString)
+import qualified Data.ByteString.Char8             as S
 import           Data.Typeable                     (Typeable)
 import           Network.Socket                    (Socket)
 #ifdef OPENSSL
@@ -24,20 +25,20 @@ import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
-import           Prelude                           (FilePath, IO, Int, Maybe (..), Monad (..), Show, String, flip, fromIntegral, fst, id, not, ($), ($!), (++), (.))
+import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, String, flip, fromIntegral, fst, id, not, ($), ($!), (++), (.))
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import qualified System.IO.Streams                 as Streams
 import qualified System.IO.Streams.SSL             as SStreams
 
 #else
 import           Control.Exception                 (Exception, throwIO)
-import           Prelude                           (FilePath, IO, Int, Show, String, id, ($))
+import           Prelude                           (Bool, FilePath, IO, Int, Show, String, id, ($))
 #endif
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHandler)
 ------------------------------------------------------------------------------
 
-data TLSException = TLSException String
+data TLSException = TLSException S.ByteString
   deriving (Show, Typeable)
 instance Exception TLSException
 
@@ -46,19 +47,28 @@ type SSLContext = ()
 type SSL = ()
 
 ------------------------------------------------------------------------------
+sslNotSupportedException :: TLSException
+sslNotSupportedException = TLSException $ S.concat [
+    "This version of snap-server was not built with SSL "
+  , "support.\n"
+  , "Please compile snap-server with -fopenssl to enable it."
+  ]
+
+
+------------------------------------------------------------------------------
 withTLS :: IO a -> IO a
 withTLS = id
 
 
 ------------------------------------------------------------------------------
 barf :: IO a
-barf = throwIO $
-       TLSException "TLS is not supported, build snap-server with -fopenssl"
+barf = throwIO sslNotSupportedException
 
 
 ------------------------------------------------------------------------------
-bindHttps :: ByteString -> Int -> FilePath -> FilePath -> IO (Socket, SSLContext)
-bindHttps _ _ _ _ = barf
+bindHttps :: ByteString -> Int -> FilePath -> Bool -> FilePath
+          -> IO (Socket, SSLContext)
+bindHttps _ _ _ _ _ = barf
 
 
 ------------------------------------------------------------------------------
@@ -70,6 +80,7 @@ httpsAcceptFunc _ _ = AcceptFunc $ \restore -> restore barf
 sendFileFunc :: SSL -> Socket -> SendFileHandler
 sendFileFunc _ _ _ _ _ _ _ = barf
 
+
 #else
 ------------------------------------------------------------------------------
 withTLS :: IO a -> IO a
@@ -80,6 +91,7 @@ withTLS = withOpenSSL
 bindHttps :: ByteString
           -> Int
           -> FilePath
+          -> Bool
           -> FilePath
           -> IO (Socket, SSLContext)
 bindHttps bindAddress bindPort cert key =
@@ -96,17 +108,17 @@ bindHttps bindAddress bindPort cert key =
 
              ctx <- SSL.context
              SSL.contextSetPrivateKeyFile  ctx key
-             SSL.contextSetCertificateFile ctx cert
-             SSL.contextSetDefaultCiphers  ctx
+             if chainCert
+               then SSL.contextSetCertificateChainFile ctx cert
+               else SSL.contextSetCertificateFile ctx cert
 
              certOK <- SSL.contextCheckPrivateKey ctx
              when (not certOK) $ do
-                 throwIO $ TLSException $! certificateError
+                 throwIO $ TLSException certificateError
              return (sock, ctx)
-
   where
-    certificateError = "OpenSSL says that the certificate " ++
-                       "doesn't match the private key!"
+    certificateError =
+      "OpenSSL says that the certificate doesn't match the private key!"
 
 
 ------------------------------------------------------------------------------

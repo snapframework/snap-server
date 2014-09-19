@@ -43,7 +43,7 @@ import           Blaze.ByteString.Builder          (Builder, toByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLKey, getSSLPort, getStartupHook, getVerbose)
+import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
 import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
@@ -206,12 +206,13 @@ listeners conf = TLS.withTLS $ do
         b    <- getSSLBind conf
         p    <- getSSLPort conf
         cert <- getSSLCert conf
+        chainCert <- getSSLChainCert conf
         key  <- getSSLKey conf
         return (S.concat [ "https://"
                          , b
                          , ":"
                          , bshow p ],
-                do (sock, ctx) <- TLS.bindHttps b p cert key
+                do (sock, ctx) <- TLS.bindHttps b p cert chainCert key
                    return (sock, TLS.httpsAcceptFunc sock ctx)
                 )
     httpListener = do
