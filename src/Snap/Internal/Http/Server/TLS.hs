@@ -94,7 +94,7 @@ bindHttps :: ByteString
           -> Bool
           -> FilePath
           -> IO (Socket, SSLContext)
-bindHttps bindAddress bindPort cert key =
+bindHttps bindAddress bindPort cert chainCert key =
     bracketOnError
         (do (family, addr) <- getSockAddr bindPort bindAddress
             sock <- Socket.socket family Socket.Stream 0
