@@ -99,11 +99,20 @@ testTLSKeyMismatch = testCase "session/tls-key-mismatch" $ do
                                     "test/bad_key.pem")
                               (N.close . fst)
                               (const $ return ())
+    expectException $ bracket (TLS.bindHttps "127.0.0.1"
+                                    (fromIntegral N.aNY_PORT)
+                                    "test/cert.pem"
+                                    True
+                                    "test/bad_key.pem")
+                              (N.close . fst)
+                              (const $ return ())
 #else
 testCoverTLSStubs :: Test
 testCoverTLSStubs = testCase "session/tls-stubs" $ do
     expectException $ TLS.bindHttps "127.0.0.1" 9999
                         "test/cert.pem" False "test/key.pem"
+    expectException $ TLS.bindHttps "127.0.0.1" 9999
+                        "test/cert.pem" True "test/key.pem"
     let (AcceptFunc afunc) = TLS.httpsAcceptFunc undefined undefined
     expectException $ mask $ \restore -> afunc restore
     let u = undefined

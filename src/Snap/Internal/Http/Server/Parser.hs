@@ -29,7 +29,7 @@ import           Control.Applicative              ((<$>))
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
-import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, take, takeTill)
+import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, skipWhile, take)
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (ByteString (..), c2w, inlinePerformIO, memchr, w2c)
 import qualified Data.ByteString.Unsafe           as S
@@ -51,7 +51,7 @@ import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
-import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat)
+import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat, (<?>))
 import           Snap.Types.Headers               (Headers)
 import qualified Snap.Types.Headers               as H
 
@@ -385,20 +385,22 @@ mAX_CHUNK_SIZE = (2::Int)^(18::Int)
 
 ------------------------------------------------------------------------------
 pGetTransferChunk :: Parser (Maybe ByteString)
-pGetTransferChunk = do
-    !hex <- hexadecimal
-    void (takeTill (== '\r'))
-    void crlf
-    if hex >= mAX_CHUNK_SIZE
-      then return $! E.throw $! HttpParseException $!
-           "pGetTransferChunk: chunk of size " ++ show hex ++ " too long."
-      else if hex <= 0
-        then crlf >> return Nothing
-        else do
-            -- now safe to take this many bytes.
-            !x <- take hex
-            void crlf
-            return $! Just x
+pGetTransferChunk = parser <?> "pGetTransferChunk"
+  where
+    parser = do
+        !hex <- hexadecimal <?> "hexadecimal"
+        skipWhile (/= '\r') <?> "skipToEOL"
+        void crlf <?> "linefeed"
+        if hex >= mAX_CHUNK_SIZE
+          then return $! E.throw $! HttpParseException $!
+               "pGetTransferChunk: chunk of size " ++ show hex ++ " too long."
+          else if hex <= 0
+            then (crlf >> return Nothing) <?> "terminal crlf after 0 length"
+            else do
+                -- now safe to take this many bytes.
+                !x <- take hex <?> "reading data chunk"
+                void crlf <?> "linefeed after data chunk"
+                return $! Just x
 
 
 ------------------------------------------------------------------------------

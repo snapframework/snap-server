@@ -21,7 +21,7 @@ import qualified Control.Exception                as E
 import           Control.Monad                    (Monad ((>>), (>>=), return), mapM_, void)
 import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
 import           Foreign.C.Types                  (CTime)
-import           Prelude                          (Bool, IO, Int, const, fromEnum, fromIntegral, id, max, null, otherwise, toEnum, ($), ($!), (+), (++), (-), (.), (<=), (==))
+import           Prelude                          (Bool, IO, Int, const, fromEnum, fromIntegral, id, max, null, otherwise, toEnum, ($), ($!), (+), (-), (.), (<=), (==))
 ------------------------------------------------------------------------------
 import           Control.Concurrent               (MVar, ThreadId, killThread, newEmptyMVar, putMVar, readMVar, takeMVar, threadDelay, tryPutMVar)
 import           Control.Concurrent.Extended      (forkIOLabeledWithUnmaskBs)
@@ -170,7 +170,7 @@ managerThread tm restore = loop `finally` cleanup
   where
     cleanup = E.mask_ $ do
       eatException (readIORef connections >>= destroyAll)
-      eatException (putMVar finished ())
+      eatException (putMVar finished $! ())
     --------------------------------------------------------------------------
     finished    = _finished tm
     connections = _connections tm

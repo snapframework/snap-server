@@ -160,7 +160,7 @@ sendFileFunc ssl buffer builder fPath offset nbytes = do
         output    <- Streams.makeOutputStream sendChunk >>=
                      Streams.unsafeBuilderStream (return buffer)
         Streams.supply input output
-        Streams.write (Just flush) output
+        Streams.write Nothing output
 
   where
     sendChunk (Just s) = SSL.write ssl s
