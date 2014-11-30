@@ -96,16 +96,20 @@ startServer :: Types.ServerConfig hookState
             -> IO a
             -> (a -> N.Socket)
             -> (a -> Types.AcceptFunc)
-            -> IO (ThreadId, Int)
+            -> IO (ThreadId, Int, MVar ())
 startServer config bind projSock afunc =
     bracketOnError bind (N.close . projSock) forkServer
   where
     forkServer a = do
+        mv <- newEmptyMVar
         port <- fromIntegral <$> N.socketPort (projSock a)
-        tid <- forkIO $ httpAcceptLoop (snapToServerHandler testHandler)
-                                       config
-                                       (afunc a)
-        return (tid, port)
+        tid <- forkIO $
+               eatException $
+               (httpAcceptLoop (snapToServerHandler testHandler)
+                               config
+                               (afunc a)
+                  `finally` putMVar mv ())
+        return (tid, port, mv)
 
 
 ------------------------------------------------------------------------------
@@ -114,7 +118,7 @@ startServer config bind projSock afunc =
 data TestServerType = NormalTest | ProxyTest | SSLTest
   deriving (Show)
 
-startTestSocketServer :: TestServerType -> IO (ThreadId, Int)
+startTestSocketServer :: TestServerType -> IO (ThreadId, Int, MVar ())
 startTestSocketServer serverType = do
   putStrLn $ "Blackbox: starting " ++ show serverType ++ " server"
   case serverType of
@@ -667,9 +671,9 @@ testServerHeader ssl port name =
 
 
 ------------------------------------------------------------------------------
-startTestServers :: IO ((ThreadId, Int),
-                        (ThreadId, Int),
-                        Maybe (ThreadId, Int))
+startTestServers :: IO ((ThreadId, Int, MVar ()),
+                        (ThreadId, Int, MVar ()),
+                        Maybe (ThreadId, Int, MVar ()))
 startTestServers = do
     x <- startTestSocketServer NormalTest
     y <- startTestSocketServer ProxyTest

@@ -3,7 +3,7 @@
 
 module Main where
 
-import           Control.Concurrent                             (killThread)
+import           Control.Concurrent                             (killThread, takeMVar)
 import qualified Control.Exception                              as E
 import           Control.Monad                                  (liftM)
 import           Data.Maybe                                     (maybeToList)
@@ -34,13 +34,16 @@ main = withSocketsDo $ TLS.withTLS $ do
                   defaultMain $ tests ++ blackboxTests
               )
   where
-    cleanup (x, y, m) = mapM_ (killThread . fst) $ [x, y] ++ maybeToList m
+    cleanup (x, y, m) = do
+        let backends = [x, y] ++ maybeToList m
+        mapM_ (killThread . (\(a, _, _) -> a)) backends
+        mapM_ (takeMVar . (\(_, _, a) -> a)) backends
 
-    bbox ((_, port), (_, port2), m) =
+    bbox ((_, port, _), (_, port2, _), m) =
         [ testGroup "Blackbox" $
           concat [ Test.Blackbox.tests port
                  , Test.Blackbox.haTests port2
-                 , Test.Blackbox.ssltests $ fmap snd m
+                 , Test.Blackbox.ssltests $ fmap (\(_,x,_) -> x) m
                  ]
         ]
 
