@@ -18,6 +18,7 @@ import qualified Snap.Internal.Http.Server.Parser.Tests         as Parser
 import qualified Snap.Internal.Http.Server.Session.Tests        as Session
 import qualified Snap.Internal.Http.Server.Socket.Tests         as Socket
 import qualified Snap.Internal.Http.Server.TimeoutManager.Tests as TimeoutManager
+import           Snap.Test.Common                               (eatException)
 #ifdef HAS_SENDFILE
 import qualified System.SendFile.Tests                          as SendFile
 #endif
@@ -26,7 +27,7 @@ import qualified Test.Blackbox
 
 ------------------------------------------------------------------------------
 main :: IO ()
-main = withSocketsDo $ TLS.withTLS $ do
+main = withSocketsDo $ TLS.withTLS $ eatException $ do
     E.bracket (Test.Blackbox.startTestServers)
               cleanup
               (\tinfos -> do
