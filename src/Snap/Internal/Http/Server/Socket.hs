@@ -11,7 +11,7 @@ module Snap.Internal.Http.Server.Socket
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception                 (bracketOnError)
+import           Control.Exception                 (bracketOnError, finally)
 import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, listen, setSocketOption, socket)
 import qualified Network.Socket                    as N
@@ -67,44 +67,51 @@ bUFSIZ = 4064
 haProxyAcceptFunc :: Socket     -- ^ bound socket
                   -> AcceptFunc
 haProxyAcceptFunc boundSocket = AcceptFunc $ \restore -> do
-    (sock, _)                <- restore $ accept boundSocket
-    (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize bUFSIZ sock
-    localPInfo               <- HA.socketToProxyInfo sock
-    pinfo                    <- HA.decodeHAProxyHeaders localPInfo readEnd
-    (localPort, localHost)   <- getAddress $ HA.getDestAddr pinfo
-    (remotePort, remoteHost) <- getAddress $ HA.getSourceAddr pinfo
-    let cleanup              =  Streams.write Nothing writeEnd >> close sock
-    return $! ( sendFileFunc sock
-              , localHost
-              , localPort
-              , remoteHost
-              , remotePort
-              , readEnd
-              , writeEnd
-              , cleanup
-              )
+    bracketOnError (restore $ accept boundSocket)
+                   (close . fst)
+                   $ \(sock, _) -> do
+        (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize
+                                        bUFSIZ sock
+        localPInfo               <- HA.socketToProxyInfo sock
+        pinfo                    <- HA.decodeHAProxyHeaders localPInfo readEnd
+        (localPort, localHost)   <- getAddress $ HA.getDestAddr pinfo
+        (remotePort, remoteHost) <- getAddress $ HA.getSourceAddr pinfo
+        let cleanup              =  Streams.write Nothing writeEnd
+                                        `finally` close sock
+        return $! ( sendFileFunc sock
+                  , localHost
+                  , localPort
+                  , remoteHost
+                  , remotePort
+                  , readEnd
+                  , writeEnd
+                  , cleanup
+                  )
 
 
 ------------------------------------------------------------------------------
 httpAcceptFunc :: Socket                     -- ^ bound socket
                -> AcceptFunc
 httpAcceptFunc boundSocket = AcceptFunc $ \restore -> do
-    (sock, remoteAddr)       <- restore $ accept boundSocket
-    localAddr                <- getSocketName sock
-    (localPort, localHost)   <- getAddress localAddr
-    (remotePort, remoteHost) <- getAddress remoteAddr
-    (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize bUFSIZ
-                                                                      sock
-    let cleanup              =  Streams.write Nothing writeEnd >> close sock
-    return $! ( sendFileFunc sock
-              , localHost
-              , localPort
-              , remoteHost
-              , remotePort
-              , readEnd
-              , writeEnd
-              , cleanup
-              )
+    bracketOnError (restore $ accept boundSocket)
+                   (close . fst)
+                   $ \(sock, remoteAddr) -> do
+        localAddr                <- getSocketName sock
+        (localPort, localHost)   <- getAddress localAddr
+        (remotePort, remoteHost) <- getAddress remoteAddr
+        (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize bUFSIZ
+                                                                          sock
+        let cleanup              =  Streams.write Nothing writeEnd
+                                      `finally` close sock
+        return $! ( sendFileFunc sock
+                  , localHost
+                  , localPort
+                  , remoteHost
+                  , remotePort
+                  , readEnd
+                  , writeEnd
+                  , cleanup
+                  )
 
 
 ------------------------------------------------------------------------------

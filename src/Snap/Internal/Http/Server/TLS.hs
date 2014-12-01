@@ -19,7 +19,7 @@ import           Data.Typeable                     (Typeable)
 import           Network.Socket                    (Socket)
 #ifdef OPENSSL
 import           Blaze.ByteString.Builder          (flush, fromByteString)
-import           Control.Exception                 (Exception, bracketOnError, throwIO)
+import           Control.Exception                 (Exception, bracketOnError, finally, throwIO)
 import           Control.Monad                     (when)
 import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
@@ -126,28 +126,31 @@ httpsAcceptFunc :: Socket
                 -> SSLContext
                 -> AcceptFunc
 httpsAcceptFunc boundSocket ctx = AcceptFunc $ \restore -> do
-    (sock, remoteAddr)       <- restore (Socket.accept boundSocket)
-    localAddr                <- Socket.getSocketName sock
-    (localPort, localHost)   <- getAddress localAddr
-    (remotePort, remoteHost) <- getAddress remoteAddr
-    ssl                      <- restore (SSL.connection ctx sock)
+    bracketOnError (restore (Socket.accept boundSocket))
+                   (Socket.close . fst)
+                   $ \(sock, remoteAddr) -> do
+        localAddr                <- Socket.getSocketName sock
+        (localPort, localHost)   <- getAddress localAddr
+        (remotePort, remoteHost) <- getAddress remoteAddr
+        ssl                      <- restore (SSL.connection ctx sock)
 
-    restore (SSL.accept ssl)
-    (readEnd, writeEnd) <- SStreams.sslToStreams ssl
+        restore (SSL.accept ssl)
+        (readEnd, writeEnd) <- SStreams.sslToStreams ssl
 
-    let cleanup = do Streams.write Nothing writeEnd
-                     SSL.shutdown ssl $! SSL.Unidirectional
-                     Socket.close sock
+        let cleanup = (do Streams.write Nothing writeEnd
+                          SSL.shutdown ssl $! SSL.Unidirectional)
+                        `finally` Socket.close sock
 
-    return $! ( sendFileFunc ssl
-              , localHost
-              , localPort
-              , remoteHost
-              , remotePort
-              , readEnd
-              , writeEnd
-              , cleanup
-              )
+        return $! ( sendFileFunc ssl
+                  , localHost
+                  , localPort
+                  , remoteHost
+                  , remotePort
+                  , readEnd
+                  , writeEnd
+                  , cleanup
+                  )
+
 
 ------------------------------------------------------------------------------
 sendFileFunc :: SSL -> SendFileHandler
