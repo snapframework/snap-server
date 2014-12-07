@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP          #-}
 {-# LANGUAGE RankNTypes   #-}
 
 module Snap.Internal.Http.Server.Thread
@@ -12,13 +13,25 @@ module Snap.Internal.Http.Server.Thread
   ) where
 
 import           Control.Applicative         ((<$>))
-import           Control.Concurrent          (MVar, ThreadId, killThread, newEmptyMVar, putMVar, readMVar, tryReadMVar)
+import           Control.Concurrent          (MVar, ThreadId, killThread, newEmptyMVar, putMVar, readMVar)
+#if MIN_VERSION_base(4,7,0)
+import           Control.Concurrent          (tryReadMVar)
+#else
+import           Control.Concurrent          (tryTakeMVar)
+#endif
 import           Control.Concurrent.Extended (forkIOLabeledWithUnmaskBs, forkOnLabeledWithUnmaskBs)
 import qualified Control.Exception           as E
 import           Control.Monad               (void)
 import qualified Data.ByteString.Char8       as B
 import           GHC.Exts                    (inline)
 
+#if !MIN_VERSION_base(4,7,0)
+tryReadMVar :: MVar a -> IO (Maybe a)
+tryReadMVar mv = do
+    m <- tryTakeMVar mv
+    maybe (return Nothing) (putMVar mv) m
+    return m
+#endif
 
 ------------------------------------------------------------------------------
 data SnapThread = SnapThread {
@@ -88,4 +101,3 @@ wrapAction mv action restore = (action restore >> inline exit) `E.catch` onEx
     onEx !_ = inline exit
 
     exit = E.uninterruptibleMask_ (putMVar mv $! ())
-
