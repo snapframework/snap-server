@@ -142,10 +142,8 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
       where
         ----------------------------------------------------------------------
         handlers =
-            [ Handler $ \(e :: IOException)    -> logException e >> go
-            , Handler $ \(e :: AsyncException) -> loopRestore (E.throwIO $! e)
-            , Handler $ \(e :: SomeException)  -> do logException e
-                                                     loopRestore (E.throwIO e)
+            [ Handler $ \(e :: AsyncException) -> loopRestore (E.throwIO $! e)
+            , Handler $ \(e :: SomeException)  -> logException e >> go
             ]
 
         go = do
