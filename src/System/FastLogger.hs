@@ -32,12 +32,13 @@ import qualified Data.Text.Encoding                 as T
 import           Data.Word                          (Word64)
 import           Prelude                            (Eq (..), FilePath, IO, Int, Maybe, Monad (..), Num (..), Ord (..), Show (..), String, mapM_, maybe, ($), ($!), (++), (.), (||))
 import           System.IO                          (IOMode (AppendMode), hClose, hFlush, openFile, stderr, stdout)
+import           System.PosixCompat.Time            (epochTime)
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder           (Builder, fromByteString, fromWord8, toByteString, toLazyByteString)
 import           Blaze.ByteString.Builder.Char.Utf8 (fromShow)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Common   (atomicModifyIORef')
-import           Snap.Internal.Http.Server.Date     (getCurrentDateTime, getLogDateString)
+import           Snap.Internal.Http.Server.Date     (getLogDateString)
 
 
 ------------------------------------------------------------------------------
@@ -228,7 +229,7 @@ loggingThread (Logger queue notifier filePath _ errAct) unmask = do
     initialize = do
         lh   <- openIt
         href <- newIORef lh
-        t    <- getCurrentDateTime
+        t    <- epochTime
         tref <- newIORef t
         return (href, tref)
 
@@ -253,7 +254,7 @@ loggingThread (Logger queue notifier filePath _ errAct) unmask = do
                 mapM_ errAct $ L.toChunks msgs
 
         -- close the file every 15 minutes (for log rotation)
-        t   <- getCurrentDateTime
+        t   <- epochTime
         old <- readIORef lastOpened
 
         when (t-old > 900) $ do
