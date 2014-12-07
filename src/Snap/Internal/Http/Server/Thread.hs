@@ -18,6 +18,8 @@ import           Control.Concurrent          (MVar, ThreadId, killThread, newEmp
 import           Control.Concurrent          (tryReadMVar)
 #else
 import           Control.Concurrent          (tryTakeMVar)
+import           Control.Monad               (when)
+import           Data.Maybe                  (fromJust, isJust)
 #endif
 import           Control.Concurrent.Extended (forkIOLabeledWithUnmaskBs, forkOnLabeledWithUnmaskBs)
 import qualified Control.Exception           as E
@@ -29,7 +31,7 @@ import           GHC.Exts                    (inline)
 tryReadMVar :: MVar a -> IO (Maybe a)
 tryReadMVar mv = do
     m <- tryTakeMVar mv
-    maybe (return Nothing) (putMVar mv) m
+    when (isJust m) $ putMVar mv (fromJust m)
     return m
 #endif
 
