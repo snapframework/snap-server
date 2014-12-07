@@ -8,7 +8,7 @@ module Snap.Internal.Http.Server.Common
 
 import           Control.Exception (SomeException, catch)
 import           Control.Monad     (void)
-import           Prelude           (IO, return, seq, ($!))
+import           Prelude           (IO, return, ($!))
 
 #if MIN_VERSION_base(4,6,0)
 ------------------------------------------------------------------------------
@@ -17,6 +17,7 @@ import           Data.IORef        (atomicModifyIORef')
 #else
 ------------------------------------------------------------------------------
 import           Data.IORef        (IORef, atomicModifyIORef)
+import           Prelude           (seq)
 
 
 ------------------------------------------------------------------------------

@@ -17,9 +17,8 @@ module Snap.Internal.Http.Server.Session
 ------------------------------------------------------------------------------
 import           Control.Applicative                      ((<$>))
 import           Control.Arrow                            (first, second)
-import           Control.Concurrent                       (MVar, ThreadId, killThread, myThreadId, newEmptyMVar, putMVar, readMVar, takeMVar)
-import           Control.Concurrent.Extended              (forkIOLabeledWithUnmaskBs, forkOnLabeledWithUnmaskBs)
-import           Control.Exception                        (AsyncException, Exception, Handler (..), IOException, SomeException (..))
+import           Control.Concurrent                       (MVar, newEmptyMVar, putMVar, readMVar)
+import           Control.Exception                        (AsyncException, Exception, Handler (..), SomeException (..))
 import qualified Control.Exception                        as E
 import           Control.Monad                            (unless, void, when, (>=>))
 import           Data.ByteString.Char8                    (ByteString)
@@ -51,9 +50,12 @@ import qualified System.IO.Streams                        as Streams
 import qualified Paths_snap_server                        as V
 import           Snap.Core                                (EscapeSnap (..))
 import           Snap.Core                                (Snap, runSnap)
+import           Snap.Internal.Http.Server.Clock          (getClockTime)
 import           Snap.Internal.Http.Server.Common         (eatException)
-import           Snap.Internal.Http.Server.Date           (getCurrentDateTime, getDateString)
+import           Snap.Internal.Http.Server.Date           (getDateString)
 import           Snap.Internal.Http.Server.Parser         (IRequest (..), getStdConnection, getStdContentLength, getStdContentType, getStdCookie, getStdHost, getStdTransferEncoding, parseCookie, parseRequest, parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
+import           Snap.Internal.Http.Server.Thread         (SnapThread)
+import qualified Snap.Internal.Http.Server.Thread         as Thread
 import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
 import qualified Snap.Internal.Http.Server.TimeoutManager as TM
 import           Snap.Internal.Http.Server.Types          (AcceptFunc (..), PerSessionData (..), SendFileHandler, ServerConfig (..), ServerHandler)
@@ -62,6 +64,7 @@ import           Snap.Internal.Parsing                    (unsafeFromNat)
 import           Snap.Internal.Types                      (fixupResponse)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
+import           System.IO.Unsafe                         (unsafePerformIO)
 
 
 ------------------------------------------------------------------------------
@@ -98,9 +101,8 @@ mAX_HEADERS_SIZE = 256 * 1024
 --    * A TimeoutManager
 --    * An mvar to signal when the timeout thread is shutdown
 data EventLoopCpu = EventLoopCpu
-    { _acceptThread   :: ThreadId
+    { _acceptThread   :: SnapThread
     , _timeoutManager :: TimeoutManager
-    , _exitMVar       :: !(MVar ())
     }
 
 
@@ -134,11 +136,10 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
                          (mapM_ waitLoop)
 
     --------------------------------------------------------------------------
-    loop :: MVar ()
-         -> TimeoutManager
+    loop :: TimeoutManager
          -> (forall a. IO a -> IO a)
          -> IO ()
-    loop mv tm loopRestore = eatException go `E.finally` putMVar mv ()
+    loop tm loopRestore = eatException go
       where
         ----------------------------------------------------------------------
         handlers =
@@ -156,14 +157,16 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
                                        , ":"
                                        , S.pack $ show remotePort
                                        ]
-            forkIOLabeledWithUnmaskBs threadLabel
-                $ \restore ->
-                   eatException $
-                   prep sendFileHandler localAddress localPort remoteAddress
-                        remotePort readEnd writeEnd cleanup restore
+            thMVar <- newEmptyMVar
+            th <- TM.register tm threadLabel $ \restore ->
+                    eatException $
+                    prep thMVar sendFileHandler localAddress localPort remoteAddress
+                         remotePort readEnd writeEnd cleanup restore
+            putMVar thMVar th
             go
 
-        prep :: SendFileHandler
+        prep :: MVar TM.TimeoutThread
+             -> SendFileHandler
              -> ByteString
              -> Int
              -> ByteString
@@ -173,14 +176,14 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
              -> IO ()
              -> (forall a . IO a -> IO a)
              -> IO ()
-        prep sendFileHandler localAddress localPort remoteAddress remotePort
-             readEnd writeEnd cleanup restore =
+        prep thMVar sendFileHandler localAddress localPort remoteAddress
+             remotePort readEnd writeEnd cleanup restore =
           do
             connClose <- newIORef False
             newConn   <- newIORef True
-            tid       <- myThreadId
-            tmHandle  <- TM.register (killThread tid) tm
-            let twiddleTimeout = TM.modify tmHandle
+            let twiddleTimeout = unsafePerformIO $ do
+                    th <- readMVar thMVar
+                    return $ TM.modify th
 
             let !psd = PerSessionData connClose
                                       twiddleTimeout
@@ -201,27 +204,25 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
 
     --------------------------------------------------------------------------
     newLoop cpu = E.mask_ $ do
-        mv  <- newEmptyMVar
-        tm  <- TM.initialize defaultTimeout getCurrentDateTime
+        -- TODO(greg): move constant into config
+        tm  <- TM.initialize (fromIntegral defaultTimeout) 2.0 getClockTime
         let threadLabel = S.concat [ "snap-server: accept loop #"
                                    , S.pack $ show cpu
                                    ]
 
-        tid <- forkOnLabeledWithUnmaskBs threadLabel cpu $ loop mv tm
-        return $! EventLoopCpu tid tm mv
+        tid <- Thread.forkOn threadLabel cpu $ loop tm
+        return $! EventLoopCpu tid tm
 
     --------------------------------------------------------------------------
-    waitLoop (EventLoopCpu _ _ mv) = readMVar mv
+    waitLoop (EventLoopCpu tid _) = Thread.wait tid
 
     --------------------------------------------------------------------------
-    killLoop ev = E.mask_ $ do
-        killThread tid
+    killLoop ev = E.uninterruptibleMask_ $ do
+        Thread.cancelAndWait tid
         TM.stop tm
-        takeMVar mv >>= E.evaluate
       where
         tid = _acceptThread ev
         tm  = _timeoutManager ev
-        mv  = _exitMVar ev
 
 ------------------------------------------------------------------------------
 httpSession :: forall hookState .

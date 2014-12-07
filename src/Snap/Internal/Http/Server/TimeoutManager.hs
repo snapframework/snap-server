@@ -1,11 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server.TimeoutManager
   ( TimeoutManager
-  , TimeoutHandle
+  , TimeoutThread
   , initialize
   , stop
   , register
@@ -18,19 +19,21 @@ module Snap.Internal.Http.Server.TimeoutManager
 ------------------------------------------------------------------------------
 import           Control.Exception                (evaluate, finally)
 import qualified Control.Exception                as E
-import           Control.Monad                    (Monad ((>>), (>>=), return), mapM_, void)
+import           Control.Monad                    (Monad ((>>=), return), mapM_, void)
+import qualified Data.ByteString.Char8            as S
 import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
-import           Foreign.C.Types                  (CTime)
-import           Prelude                          (Bool, IO, Int, const, fromEnum, fromIntegral, id, max, null, otherwise, toEnum, ($), ($!), (+), (-), (.), (<=), (==))
+import           Prelude                          (Bool, IO, Int, Show (..), const, fromIntegral, max, max, min, null, otherwise, round, ($), ($!), (+), (++), (-), (.), (<=), (==))
 ------------------------------------------------------------------------------
-import           Control.Concurrent               (MVar, ThreadId, killThread, newEmptyMVar, putMVar, readMVar, takeMVar, threadDelay, tryPutMVar)
-import           Control.Concurrent.Extended      (forkIOLabeledWithUnmaskBs)
+import           Control.Concurrent               (MVar, newEmptyMVar, putMVar, readMVar, takeMVar, tryPutMVar)
 ------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server.Clock  (ClockTime)
+import qualified Snap.Internal.Http.Server.Clock  as Clock
 import           Snap.Internal.Http.Server.Common (atomicModifyIORef', eatException)
+import qualified Snap.Internal.Http.Server.Thread as T
 
 
 ------------------------------------------------------------------------------
-type State = CTime
+type State = ClockTime
 
 canceled :: State
 canceled = 0
@@ -40,52 +43,54 @@ isCanceled = (== 0)
 
 
 ------------------------------------------------------------------------------
-data TimeoutHandle = TimeoutHandle {
-      _killAction :: IO ()
-    , _state      :: IORef State
-    , _hGetTime   :: IO CTime
+data TimeoutThread = TimeoutThread {
+      _thread     :: !T.SnapThread
+    , _state      :: !(IORef State)
+    , _hGetTime   :: !(IO ClockTime)
     }
+
+instance Show TimeoutThread where
+    show = show . _thread
 
 
 ------------------------------------------------------------------------------
 -- | Given a 'State' value and the current time, apply the given modification
 -- function to the amount of time remaining.
 --
-smap :: CTime -> (Int -> Int) -> State -> State
-smap now f deadline | isCanceled deadline = canceled
+smap :: ClockTime -> (ClockTime -> ClockTime) -> State -> State
+smap now f deadline | isCanceled deadline = deadline
                     | otherwise = t'
   where
-    remaining    = fromEnum $ max 0 (deadline - now)
+    remaining    = max 0 (deadline - now)
     newremaining = f remaining
-    t'           = now + fromIntegral newremaining
+    t'           = now + newremaining
 
 
 ------------------------------------------------------------------------------
 data TimeoutManager = TimeoutManager {
-      _defaultTimeout :: !Int
-    , _getTime        :: !(IO CTime)
-    , _connections    :: !(IORef [TimeoutHandle])
+      _defaultTimeout :: !ClockTime
+    , _pollInterval   :: !ClockTime
+    , _getTime        :: !(IO ClockTime)
+    , _threads        :: !(IORef [TimeoutThread])
     , _morePlease     :: !(MVar ())
-    , _managerThread  :: !(MVar ThreadId)
-    , _finished       :: !(MVar ())
+    , _managerThread  :: !(MVar T.SnapThread)
     }
 
 
 ------------------------------------------------------------------------------
 -- | Create a new TimeoutManager.
-initialize :: Int               -- ^ default timeout
-           -> IO CTime          -- ^ function to get current time
+initialize :: ClockTime         -- ^ default timeout
+           -> ClockTime         -- ^ poll interval
+           -> IO ClockTime      -- ^ function to get current time
            -> IO TimeoutManager
-initialize defaultTimeout getTime = do
+initialize defaultTimeout interval getTime = E.uninterruptibleMask_ $ do
     conns <- newIORef []
     mp    <- newEmptyMVar
     mthr  <- newEmptyMVar
-    fin   <- newEmptyMVar
 
-    let tm = TimeoutManager defaultTimeout getTime conns mp mthr fin
+    let tm = TimeoutManager defaultTimeout interval getTime conns mp mthr
 
-    thr <- forkIOLabeledWithUnmaskBs "snap-server: timeout manager" $
-             managerThread tm
+    thr <- T.fork "snap-server: timeout manager" $ managerThread tm
     putMVar mthr thr
     return tm
 
@@ -93,36 +98,36 @@ initialize defaultTimeout getTime = do
 ------------------------------------------------------------------------------
 -- | Stop a TimeoutManager.
 stop :: TimeoutManager -> IO ()
-stop tm = readMVar (_managerThread tm) >>= killThread
+stop tm = readMVar (_managerThread tm) >>= T.cancelAndWait
 
 
 ------------------------------------------------------------------------------
 wakeup :: TimeoutManager -> IO ()
-wakeup tm = void $ tryPutMVar morePlease $! ()
-  where
-    morePlease     = _morePlease tm
+wakeup tm = void $ tryPutMVar (_morePlease tm) $! ()
 
 
 ------------------------------------------------------------------------------
--- | Register a new connection with the TimeoutManager.
-register :: IO ()
-         -- ^ action to run when the timeout deadline is exceeded.
-         -> TimeoutManager   -- ^ manager to register with.
-         -> IO TimeoutHandle
-register killAction tm = do
+-- | Register a new thread with the TimeoutManager.
+register :: TimeoutManager                        -- ^ manager to register
+                                                  --   with
+         -> S.ByteString                          -- ^ thread label
+         -> ((forall a . IO a -> IO a) -> IO ())  -- ^ thread action to run
+         -> IO TimeoutThread
+register tm label action = do
     now <- getTime
-    let !state = now + toEnum defaultTimeout
+    let !state = now + defaultTimeout
     stateRef <- newIORef state
-
-    let !h = TimeoutHandle killAction stateRef getTime
-    !_ <- atomicModifyIORef' connections $ \x -> (h:x, ())
-
+    th <- E.uninterruptibleMask_ $ do
+        t <- T.fork label action
+        let h = TimeoutThread t stateRef getTime
+        atomicModifyIORef' threads (\x -> (h:x, ())) >>= evaluate
+        return $! h
     wakeup tm
-    return h
+    return th
 
   where
     getTime        = _getTime tm
-    connections    = _connections tm
+    threads        = _threads tm
     defaultTimeout = _defaultTimeout tm
 
 
@@ -130,28 +135,29 @@ register killAction tm = do
 -- | Tickle the timeout on a connection to be at least N seconds into the
 -- future. If the existing timeout is set for M seconds from now, where M > N,
 -- then the timeout is unaffected.
-tickle :: TimeoutHandle -> Int -> IO ()
+tickle :: TimeoutThread -> Int -> IO ()
 tickle th = modify th . max
 {-# INLINE tickle #-}
 
 
 ------------------------------------------------------------------------------
 -- | Set the timeout on a connection to be N seconds into the future.
-set :: TimeoutHandle -> Int -> IO ()
+set :: TimeoutThread -> Int -> IO ()
 set th = modify th . const
 {-# INLINE set #-}
 
 
 ------------------------------------------------------------------------------
 -- | Modify the timeout with the given function.
-modify :: TimeoutHandle -> (Int -> Int) -> IO ()
+modify :: TimeoutThread -> (Int -> Int) -> IO ()
 modify th f = do
     now   <- getTime
     state <- readIORef stateRef
-    let !state' = smap now f state
+    let !state' = smap now f' state
     writeIORef stateRef state'
 
   where
+    f' !x    = fromIntegral $! f (round x)
     getTime  = _hGetTime th
     stateRef = _state th
 {-# INLINE modify #-}
@@ -159,57 +165,65 @@ modify th f = do
 
 ------------------------------------------------------------------------------
 -- | Cancel a timeout.
-cancel :: TimeoutHandle -> IO ()
-cancel h = _killAction h >> writeIORef (_state h) canceled
+cancel :: TimeoutThread -> IO ()
+cancel h = E.uninterruptibleMask_ $ do
+    T.cancel $ _thread h
+    writeIORef (_state h) canceled
 {-# INLINE cancel #-}
 
 
 ------------------------------------------------------------------------------
 managerThread :: TimeoutManager -> (forall a. IO a -> IO a) -> IO ()
-managerThread tm restore = loop `finally` cleanup
+managerThread tm restore = restore loop `finally` cleanup
   where
-    cleanup = E.mask_ $ do
-      eatException (readIORef connections >>= destroyAll)
-      eatException (putMVar finished $! ())
+    cleanup = E.uninterruptibleMask_ $
+              eatException (readIORef threads >>= destroyAll)
+
     --------------------------------------------------------------------------
-    finished    = _finished tm
-    connections = _connections tm
-    getTime     = _getTime tm
-    morePlease  = _morePlease tm
-    waitABit    = threadDelay 1000000
+    getTime      = _getTime tm
+    morePlease   = _morePlease tm
+    pollInterval = _pollInterval tm
+    threads      = _threads tm
 
     --------------------------------------------------------------------------
     loop = do
-        now   <- restore (waitABit >> getTime)
-        handles <- atomicModifyIORef' connections (\x -> ([], x))
-        if null handles
-          then restore $ takeMVar morePlease
-          else do
-            (keeps, discards) <- processHandles now handles
-            atomicModifyIORef' connections (\x -> (keeps x, ())) >>= evaluate
-            mapM_ (eatException . _killAction) $ discards []
+        now <- getTime
+        nextWakeup <- E.uninterruptibleMask $ \restore' -> do
+            handles <- atomicModifyIORef' threads (\x -> ([], x))
+            if null handles
+              then do restore' $ takeMVar morePlease
+                      return now
+              else do
+                (handles', next) <- processHandles now handles
+                atomicModifyIORef' threads (\x -> (handles' ++ x, ()))
+                    >>= evaluate
+                return $! next
+        now' <- getTime
+        Clock.sleepFor $ max 0 (nextWakeup - now')
         loop
 
     --------------------------------------------------------------------------
-    processHandles now handles = go handles id id
+    processHandles now handles = go handles [] (now + pollInterval)
       where
-        go [] !keeps !discards = return $! (keeps, discards)
+        go [] !kept !nextWakeup = return $! (kept, nextWakeup)
 
-        go (x:xs) !keeps !discards = do
-            !state    <- readIORef $ _state x
-            (!k',!d') <- if isCanceled state
-                           then return (keeps, discards)
-                           else if state <= now
-                                  then return (keeps, discards . (x:))
-                                  else return (keeps . (x:), discards)
-            go xs k' d'
+        go (x:xs) !kept !nextWakeup = do
+            !state <- readIORef $ _state x
+            (!kept', !next) <-
+                if isCanceled state
+                  then do b <- T.isFinished (_thread x)
+                          return $! if b
+                                      then (kept, nextWakeup)
+                                      else ((x:kept), nextWakeup)
+                  else do t <- if state <= now
+                                 then do T.cancel (_thread x)
+                                         writeIORef (_state x) canceled
+                                         return nextWakeup
+                                 else return (min nextWakeup state)
+                          return ((x:kept), t)
+            go xs kept' next
 
     --------------------------------------------------------------------------
-    destroyAll = mapM_ diediedie
-
-    --------------------------------------------------------------------------
-    diediedie x = do
-        state <- readIORef $ _state x
-        if isCanceled state
-          then return $! ()
-          else _killAction x
+    destroyAll xs = do
+        mapM_ (T.cancel . _thread) xs
+        mapM_ (T.wait . _thread) xs

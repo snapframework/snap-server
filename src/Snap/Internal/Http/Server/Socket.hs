@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Snap.Internal.Http.Server.Socket
   ( bindSocket
@@ -8,6 +9,7 @@ module Snap.Internal.Http.Server.Socket
   , httpAcceptFunc
   , haProxyAcceptFunc
   , sendFileFunc
+  , acceptAndInitialize
   ) where
 
 ------------------------------------------------------------------------------
@@ -64,12 +66,22 @@ bUFSIZ = 4064
 
 
 ------------------------------------------------------------------------------
-haProxyAcceptFunc :: Socket     -- ^ bound socket
-                  -> AcceptFunc
-haProxyAcceptFunc boundSocket = AcceptFunc $ \restore -> do
+acceptAndInitialize :: Socket        -- ^ bound socket
+                    -> (forall b . IO b -> IO b)
+                    -> ((Socket, N.SockAddr) -> IO a)
+                    -> IO a
+acceptAndInitialize boundSocket restore f =
     bracketOnError (restore $ accept boundSocket)
                    (close . fst)
-                   $ \(sock, _) -> do
+                   f
+
+
+------------------------------------------------------------------------------
+haProxyAcceptFunc :: Socket     -- ^ bound socket
+                  -> AcceptFunc
+haProxyAcceptFunc boundSocket =
+    AcceptFunc $ \restore ->
+    acceptAndInitialize boundSocket restore $ \(sock, _) -> do
         (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize
                                         bUFSIZ sock
         localPInfo               <- HA.socketToProxyInfo sock
@@ -92,10 +104,9 @@ haProxyAcceptFunc boundSocket = AcceptFunc $ \restore -> do
 ------------------------------------------------------------------------------
 httpAcceptFunc :: Socket                     -- ^ bound socket
                -> AcceptFunc
-httpAcceptFunc boundSocket = AcceptFunc $ \restore -> do
-    bracketOnError (restore $ accept boundSocket)
-                   (close . fst)
-                   $ \(sock, remoteAddr) -> do
+httpAcceptFunc boundSocket =
+    AcceptFunc $ \restore ->
+    acceptAndInitialize boundSocket restore $ \(sock, remoteAddr) -> do
         localAddr                <- getSocketName sock
         (localPort, localHost)   <- getAddress localAddr
         (remotePort, remoteHost) <- getAddress remoteAddr

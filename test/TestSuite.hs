@@ -27,13 +27,13 @@ import qualified Test.Blackbox
 
 ------------------------------------------------------------------------------
 main :: IO ()
-main = withSocketsDo $ TLS.withTLS $ eatException $ do
-    E.bracket (Test.Blackbox.startTestServers)
-              cleanup
-              (\tinfos -> do
-                  let blackboxTests = bbox tinfos
-                  defaultMain $ tests ++ blackboxTests
-              )
+main = withSocketsDo $ TLS.withTLS $ eatException $
+       E.bracket (Test.Blackbox.startTestServers)
+                 cleanup
+                 (\tinfos -> do
+                     let blackboxTests = bbox tinfos
+                     defaultMain $ tests ++ blackboxTests
+                 )
   where
     cleanup (x, y, m) = do
         let backends = [x, y] ++ maybeToList m

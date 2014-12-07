@@ -4,7 +4,6 @@
 module Snap.Internal.Http.Server.Date
   ( getDateString
   , getLogDateString
-  , getCurrentDateTime
   ) where
 
 ------------------------------------------------------------------------------
@@ -80,8 +79,3 @@ getLogDateString :: IO ByteString
 getLogDateString = mask_ $ do
     ensureFreshDate
     readIORef $ _cachedLogString dateState
-
-
-------------------------------------------------------------------------------
-getCurrentDateTime :: IO CTime
-getCurrentDateTime = epochTime

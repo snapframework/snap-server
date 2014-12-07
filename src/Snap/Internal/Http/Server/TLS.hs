@@ -27,6 +27,7 @@ import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
 import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, String, flip, fromIntegral, fst, id, not, ($), ($!), (++), (.))
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
+import           Snap.Internal.Http.Server.Socket  (acceptAndInitialize)
 import qualified System.IO.Streams                 as Streams
 import qualified System.IO.Streams.SSL             as SStreams
 
@@ -95,6 +96,7 @@ bindHttps :: ByteString
           -> FilePath
           -> IO (Socket, SSLContext)
 bindHttps bindAddress bindPort cert chainCert key =
+    withTLS $
     bracketOnError
         (do (family, addr) <- getSockAddr bindPort bindAddress
             sock <- Socket.socket family Socket.Stream 0
@@ -107,7 +109,7 @@ bindHttps bindAddress bindPort cert chainCert key =
              Socket.listen sock 150
 
              ctx <- SSL.context
-             SSL.contextSetPrivateKeyFile  ctx key
+             SSL.contextSetPrivateKeyFile ctx key
              if chainCert
                then SSL.contextSetCertificateChainFile ctx cert
                else SSL.contextSetCertificateFile ctx cert
@@ -125,10 +127,9 @@ bindHttps bindAddress bindPort cert chainCert key =
 httpsAcceptFunc :: Socket
                 -> SSLContext
                 -> AcceptFunc
-httpsAcceptFunc boundSocket ctx = AcceptFunc $ \restore -> do
-    bracketOnError (restore (Socket.accept boundSocket))
-                   (Socket.close . fst)
-                   $ \(sock, remoteAddr) -> do
+httpsAcceptFunc boundSocket ctx =
+    AcceptFunc $ \restore ->
+    acceptAndInitialize boundSocket restore $ \(sock, remoteAddr) -> do
         localAddr                <- Socket.getSocketName sock
         (localPort, localHost)   <- getAddress localAddr
         (remotePort, remoteHost) <- getAddress remoteAddr

@@ -912,9 +912,6 @@ runAcceptLoop :: [T.RequestBuilder IO ()]
               -> Snap a
               -> IO [Result]
 runAcceptLoop requests snap = dieIfTimeout $ do
-    (_, errs) <- run afuncError
-    assertBool ("errs: " ++ show errs) $ not $ null errs
-
     -- make sure we don't log error on ThreadKilled.
     (_, errs') <- run afuncSuicide
     assertBool ("errs': " ++ show errs') $ null errs'
@@ -951,15 +948,6 @@ runAcceptLoop requests snap = dieIfTimeout $ do
                                            void (evaluate s)
                                            return (xs ++ [s])
                   }
-
-    --------------------------------------------------------------------------
-    afuncError :: InputStream ByteString
-               -> MVar [Result]
-               -> MVar ()
-               -> AcceptFunc
-    afuncError _ _ lock = AcceptFunc $ \restore ->
-                          restore $ withMVar lock $ \_ ->
-                          error "error"
 
     --------------------------------------------------------------------------
     afuncSuicide :: InputStream ByteString
