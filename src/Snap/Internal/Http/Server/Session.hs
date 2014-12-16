@@ -61,7 +61,7 @@ import qualified Snap.Internal.Http.Server.TimeoutManager as TM
 import           Snap.Internal.Http.Server.Types          (AcceptFunc (..), PerSessionData (..), SendFileHandler, ServerConfig (..), ServerHandler)
 import           Snap.Internal.Http.Types                 (Cookie (..), HttpVersion, Method (..), Request (..), Response (..), ResponseBody (..), StreamProc, getHeader, headers, rspBodyToEnum, updateHeaders)
 import           Snap.Internal.Parsing                    (unsafeFromNat)
-import           Snap.Internal.Types                      (fixupResponse)
+import           Snap.Internal.Core                       (fixupResponse)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
 import           System.IO.Unsafe                         (unsafePerformIO)
