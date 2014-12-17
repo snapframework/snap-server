@@ -46,7 +46,9 @@ import           Network.Socket                          (Socket, withSocketsDo)
 import           Prelude                                 hiding (catch)
 #endif
 import           System.IO
+#if !MIN_VERSION_time(1,5,0)
 import           System.Locale
+#endif
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
 import           Snap.Internal.Exceptions                (EscapeHttpException (..))
@@ -71,7 +73,6 @@ import           Snap.Types.Headers                      (Headers)
 import qualified Snap.Types.Headers                      as H
 
 import qualified Paths_snap_server                       as V
-
 
 ------------------------------------------------------------------------------
 -- | The handler has to return the request object because we have to clear the
