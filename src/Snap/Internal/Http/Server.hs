@@ -46,7 +46,9 @@ import           Network.Socket                          (Socket, withSocketsDo)
 import           Prelude                                 hiding (catch)
 #endif
 import           System.IO
+#if !MIN_VERSION_time(1,5,0)
 import           System.Locale
+#endif
 ------------------------------------------------------------------------------
 import           Snap.Internal.Debug
 import           Snap.Internal.Exceptions                (EscapeHttpException (..))
