@@ -515,7 +515,7 @@ optDescrs defaults =
     conf           = defaultConfig `mappend` defaults
     defaultB f y n = maybe "" (\b -> ", default " ++ if b
                                                        then y
-                                                       else n) $ f conf
+                                                       else n) $ f conf :: String
     defaultC f     = maybe "" ((", default " ++) . show) $ f conf
     defaultO f     = maybe ", default off" ((", default " ++) . show) $ f conf
 

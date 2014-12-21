@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
