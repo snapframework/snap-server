@@ -38,7 +38,11 @@ import           Data.Word                                (Word64, Word8)
 import           Foreign.Marshal.Utils                    (copyBytes)
 import           Foreign.Ptr                              (Ptr, castPtr, plusPtr)
 import           Foreign.Storable                         (pokeByteOff)
+#if MIN_VERSION_time(1,5,0)
+import           Data.Time.Format                         (defaultTimeLocale)
+#else
 import           System.Locale                            (defaultTimeLocale)
+#endif
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder                 (Builder, flush, fromByteString)
 import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow)
