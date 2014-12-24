@@ -627,9 +627,9 @@ optDescrs defaults =
     conf           = defaultConfig `mappend` defaults
 
     defaultB :: (Config m a -> Maybe Bool) -> String -> String -> String
-    defaultB f y n = maybe "" (\b -> ", default " ++ if b
-                                                       then y
-                                                       else n) $ f conf
+    defaultB f y n = (maybe "" (\b -> ", default " ++ if b
+                                                        then y
+                                                        else n) $ f conf) :: String
 
     defaultC :: (Show b) => (Config m a -> Maybe b) -> String
     defaultC f     = maybe "" ((", default " ++) . show) $ f conf
