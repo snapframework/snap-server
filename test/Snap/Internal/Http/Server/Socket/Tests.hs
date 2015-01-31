@@ -14,7 +14,6 @@ import           Test.Framework                   (Test)
 import           Test.Framework.Providers.HUnit   (testCase)
 import           Test.HUnit                       (assertEqual)
 ------------------------------------------------------------------------------
-import qualified Snap.Internal.Http.Server.Clock  as Clock
 import qualified Snap.Internal.Http.Server.Socket as Sock
 import           Snap.Test.Common                 (eatException, expectException, withSock)
 
@@ -47,26 +46,28 @@ testSockClosedOnListenException = testCase "socket/closedOnListenException" $ do
 ------------------------------------------------------------------------------
 testAcceptFailure :: Test
 testAcceptFailure = testCase "socket/acceptAndInitialize" $ do
-    mvar <- newEmptyMVar
+    sockmvar <- newEmptyMVar
+    donemvar <- newEmptyMVar
     E.bracket (Sock.bindSocket "127.0.0.1" $ fromIntegral N.aNY_PORT)
               (N.close)
               (\s -> do
                    p <- fromIntegral <$> N.socketPort s
-                   forkIO $ server s mvar
+                   forkIO $ server s sockmvar donemvar
                    E.bracket (forkIO $ client p)
                              (killThread)
                              (\_ -> do
-                                csock <- takeMVar mvar
-                                Clock.sleepFor 0.05
+                                csock <- takeMVar sockmvar
+                                takeMVar donemvar
                                 N.isConnected csock >>=
                                     assertEqual "closed" False
                              )
               )
   where
-    server sock mvar =
-        eatException $
-        E.mask $ \restore ->
-        Sock.acceptAndInitialize sock restore $ \(csock, _) -> do
-            putMVar mvar csock
-            fail "error"
+    server sock sockmvar donemvar = serve `E.finally` putMVar donemvar ()
+      where
+        serve = eatException $ E.mask $ \restore ->
+                Sock.acceptAndInitialize sock restore $ \(csock, _) -> do
+                  putMVar sockmvar csock
+                  fail "error"
+
     client port = withSock port (const $ return ())
