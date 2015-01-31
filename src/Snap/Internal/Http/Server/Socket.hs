@@ -81,10 +81,10 @@ haProxyAcceptFunc :: Socket     -- ^ bound socket
                   -> AcceptFunc
 haProxyAcceptFunc boundSocket =
     AcceptFunc $ \restore ->
-    acceptAndInitialize boundSocket restore $ \(sock, _) -> do
+    acceptAndInitialize boundSocket restore $ \(sock, saddr) -> do
         (readEnd, writeEnd)      <- Streams.socketToStreamsWithBufferSize
                                         bUFSIZ sock
-        localPInfo               <- HA.socketToProxyInfo sock
+        localPInfo               <- HA.socketToProxyInfo sock saddr
         pinfo                    <- HA.decodeHAProxyHeaders localPInfo readEnd
         (localPort, localHost)   <- getAddress $ HA.getDestAddr pinfo
         (remotePort, remoteHost) <- getAddress $ HA.getSourceAddr pinfo
