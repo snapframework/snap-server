@@ -18,14 +18,14 @@ import qualified Data.ByteString.Char8             as S
 import           Data.Typeable                     (Typeable)
 import           Network.Socket                    (Socket)
 #ifdef OPENSSL
-import           Blaze.ByteString.Builder          (flush, fromByteString)
+import           Blaze.ByteString.Builder          (fromByteString)
 import           Control.Exception                 (Exception, bracketOnError, finally, throwIO)
 import           Control.Monad                     (when)
 import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
-import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, String, flip, fromIntegral, fst, id, not, ($), ($!), (++), (.))
+import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, flip, fromIntegral, fst, not, ($), ($!), (.))
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Socket  (acceptAndInitialize)
 import qualified System.IO.Streams                 as Streams
@@ -33,7 +33,7 @@ import qualified System.IO.Streams.SSL             as SStreams
 
 #else
 import           Control.Exception                 (Exception, throwIO)
-import           Prelude                           (Bool, FilePath, IO, Int, Show, String, id, ($))
+import           Prelude                           (Bool, FilePath, IO, Int, Show, id, ($))
 #endif
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHandler)

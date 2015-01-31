@@ -30,7 +30,7 @@ import           Data.Monoid                        (mappend, mconcat, mempty)
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
 import           Data.Word                          (Word64)
-import           Prelude                            (Eq (..), FilePath, IO, Int, Maybe, Monad (..), Num (..), Ord (..), Show (..), String, mapM_, maybe, ($), ($!), (++), (.), (||))
+import           Prelude                            (Eq (..), FilePath, IO, Int, Maybe, Monad (..), Num (..), Ord (..), Show (..), mapM_, maybe, ($), ($!), (++), (.), (||))
 import           System.IO                          (IOMode (AppendMode), hClose, hFlush, openFile, stderr, stdout)
 import           System.PosixCompat.Time            (epochTime)
 ------------------------------------------------------------------------------

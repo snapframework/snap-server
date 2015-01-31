@@ -33,7 +33,7 @@ import           Data.Maybe                        (catMaybes, fromJust, fromMay
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
 import           Network.Socket                    (Socket, sClose)
-import           Prelude                           (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Ord (..), Show (..), String, const, error, flip, id, mapM, mapM_, maybe, undefined, unzip3, ($), ($!), (++), (.), (||))
+import           Prelude                           (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, id, mapM, mapM_, maybe, unzip3, ($), ($!), (++), (.))
 import           System.IO                         (hFlush, hPutStrLn, stderr)
 #ifndef PORTABLE
 import           System.Posix.Env
