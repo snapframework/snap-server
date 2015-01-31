@@ -16,7 +16,7 @@ import           Test.HUnit                       (assertEqual)
 ------------------------------------------------------------------------------
 import qualified Snap.Internal.Http.Server.Clock  as Clock
 import qualified Snap.Internal.Http.Server.Socket as Sock
-import           Snap.Test.Common                 (expectException, withSock)
+import           Snap.Test.Common                 (eatException, expectException, withSock)
 
 
 ------------------------------------------------------------------------------
@@ -64,6 +64,7 @@ testAcceptFailure = testCase "socket/acceptAndInitialize" $ do
               )
   where
     server sock mvar =
+        eatException $
         E.mask $ \restore ->
         Sock.acceptAndInitialize sock restore $ \(csock, _) -> do
             putMVar mvar csock
