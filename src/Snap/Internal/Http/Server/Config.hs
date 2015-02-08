@@ -601,10 +601,10 @@ optDescrs defaults =
     , Option "" ["proxy"]
              (ReqArg (Just . setConfig setProxyType . parseProxy . CI.mk)
                      "X_Forwarded_For")
-             $ concat [ "Set --proxy=X_Forwarded_For if your snap application "
-                      , "is behind an HTTP reverse proxy to ensure that "
-                      , "rqClientAddr is set properly.\n\n"
-                      , "Set --proxy=haproxy to use the haproxy protocol ("
+             $ concat [ "Set --proxy=X_Forwarded_For if your snap application \n"
+                      , "is behind an HTTP reverse proxy to ensure that \n"
+                      , "rqClientAddr is set properly.\n"
+                      , "Set --proxy=haproxy to use the haproxy protocol\n("
                       , "http://haproxy.1wt.eu/download/1.5/doc/proxy-protocol.txt)"
                       , defaultC getProxyType ]
     , Option "h" ["help"]
