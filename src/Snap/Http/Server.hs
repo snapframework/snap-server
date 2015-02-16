@@ -21,7 +21,7 @@ module Snap.Http.Server
 
 ------------------------------------------------------------------------------
 import           Control.Applicative               ((<$>), (<|>))
-import           Control.Concurrent                (killThread, newEmptyMVar, newMVar, putMVar, takeMVar, withMVar)
+import           Control.Concurrent                (killThread, newEmptyMVar, newMVar, putMVar, readMVar, withMVar)
 import           Control.Concurrent.Extended       (forkIOLabeledWithUnmaskBs)
 import           Control.Exception                 (SomeException, bracket, catch, finally, mask, mask_)
 import qualified Control.Exception.Lifted          as L
@@ -33,7 +33,7 @@ import           Data.Maybe                        (catMaybes, fromJust, fromMay
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
 import           Network.Socket                    (Socket, sClose)
-import           Prelude                           (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, id, mapM, mapM_, maybe, unzip3, ($), ($!), (++), (.))
+import           Prelude                           (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, fst, id, mapM, mapM_, maybe, snd, unzip3, zip, ($), ($!), (++), (.))
 import           System.IO                         (hFlush, hPutStrLn, stderr)
 #ifndef PORTABLE
 import           System.Posix.Env
@@ -70,17 +70,19 @@ rawHttpServe :: ServerHandler s  -- ^ server handler
              -> [AcceptFunc]     -- ^ listening server backends
              -> IO ()
 rawHttpServe h cfg loops = do
-    mvar <- newEmptyMVar
-    mask $ \restore -> bracket (mapM (runLoop mvar) loops)
-                               (mapM killThread)
-                               (const $ restore $ takeMVar mvar)
+    mvars <- mapM (const newEmptyMVar) loops
+    mask $ \restore -> bracket (mapM runLoop $ mvars `zip` loops)
+                               (\mvTids -> do
+                                   mapM_ (killThread . snd) mvTids
+                                   mapM_ (readMVar . fst) mvTids)
+                               (const $ restore $ mapM_ readMVar mvars)
   where
     -- parents and children have a mutual suicide pact
-    runLoop mvar loop = forkIOLabeledWithUnmaskBs
-                          "snap-server http master thread" $
-                          \r -> (r $ httpAcceptLoop h cfg loop)
-                                  `finally` putMVar mvar ()
-
+    runLoop (mvar, loop) = do
+        tid <- forkIOLabeledWithUnmaskBs
+               "snap-server http master thread" $
+               \r -> (r $ httpAcceptLoop h cfg loop) `finally` putMVar mvar ()
+        return (mvar, tid)
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP requests using the given handler. This function never
