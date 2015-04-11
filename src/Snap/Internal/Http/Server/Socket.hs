@@ -24,7 +24,8 @@ import           System.Posix.IO                   (OpenMode (..), closeFd, defa
 import           System.Posix.Types                (Fd (..))
 import           System.SendFile                   (sendFile, sendHeaders)
 #else
-import           Blaze.ByteString.Builder          (byteString, flush)
+import           Data.ByteString.Builder           (byteString)
+import           Data.ByteString.Builder.Extra     (flush)
 import           Network.Socket.ByteString         (sendAll)
 #endif
 ------------------------------------------------------------------------------

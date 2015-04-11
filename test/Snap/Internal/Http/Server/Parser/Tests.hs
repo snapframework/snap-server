@@ -15,7 +15,7 @@ import qualified Data.Map                             as Map
 import           Data.Monoid                          (mconcat)
 import           Text.Printf                          (printf)
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder             (fromByteString, toByteString)
+import           Data.ByteString.Builder              (byteString, toLazyByteString)
 import           Test.Framework                       (Test)
 import           Test.Framework.Providers.HUnit       (testCase)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
@@ -121,9 +121,9 @@ testWriteChunkedTransferEncoding :: Test
 testWriteChunkedTransferEncoding = testCase "parser/writeChunked" $ do
     (os, getList) <- Streams.listOutputStream
     os' <- writeChunkedTransferEncoding os
-    Streams.fromList [fromByteString "ok"] >>= Streams.connectTo os'
+    Streams.fromList [byteString "ok"] >>= Streams.connectTo os'
     Streams.write Nothing os'
-    s <- liftM (toByteString . mconcat) getList
+    s <- liftM (toLazyByteString . mconcat) getList
     assertEqual "chunked" "002\r\nok\r\n0\r\n\r\n" s
 
 

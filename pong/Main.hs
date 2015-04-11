@@ -4,12 +4,13 @@
 
 module Main where
 
-import           Blaze.ByteString.Builder          (fromByteString, toByteString)
 import           Control.Applicative               ((<$>))
 import           Control.Concurrent                (MVar, ThreadId, forkIOWithUnmask, killThread, newEmptyMVar, putMVar, takeMVar)
 import           Control.Exception                 (SomeException, bracketOnError, evaluate)
 import qualified Control.Exception                 as E
+import           Data.ByteString.Builder           (byteString, toLazyByteString)
 import qualified Data.ByteString.Char8             as S
+import qualified Data.ByteString.Lazy.Char8        as L
 import qualified Network.Socket                    as N
 import           Snap.Core
 import           System.Environment                (getArgs)
@@ -44,7 +45,7 @@ startTestSocketServer portNum userHandler =
     cleanup = N.close
 
     logAccess _ _ _             = return ()
-    _logError !e                = S.putStrLn $ toByteString e
+    _logError !e                = L.putStrLn $ toLazyByteString e
     onStart _                   = return ()
     onParse _ _                 = return ()
     onUserHandlerFinished _ _ _ = return ()

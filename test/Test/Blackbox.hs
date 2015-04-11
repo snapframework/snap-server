@@ -12,13 +12,13 @@ module Test.Blackbox
   ) where
 
 --------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder             (fromByteString)
 import           Control.Applicative                  ((<$>))
 import           Control.Arrow                        (first)
 import           Control.Concurrent                   (MVar, ThreadId, forkIO, forkIOWithUnmask, killThread, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar)
 import           Control.Exception                    (bracket, bracketOnError, finally, mask_)
 import           Control.Monad                        (forM_, forever, void, when)
 import qualified Data.ByteString.Base16               as B16
+import           Data.ByteString.Builder              (byteString)
 import           Data.ByteString.Char8                (ByteString)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
@@ -285,7 +285,7 @@ testRot13 ssl port name =
                   ++ "://127.0.0.1:" ++ show port ++ "/rot13"
 
         doc <- QC.run $ HTTP.post (S.pack uri) "text/plain"
-                                  (Streams.write (Just $ fromByteString txt))
+                                  (Streams.write (Just $ byteString txt))
                                   HTTP.concatHandler'
         QC.assert $ txt == rot13 doc
 
@@ -622,7 +622,7 @@ testFileUpload ssl port name =
 
             HTTP.sendRequest conn req (Streams.write $ Just
                                                      $ mconcat
-                                                     $ map fromByteString
+                                                     $ map byteString
                                                      $ L.toChunks
                                                      $ body kvps)
             HTTP.receiveResponse conn HTTP.concatHandler'
@@ -654,7 +654,7 @@ testEcho ssl port name =
                   ++ "://127.0.0.1:" ++ show port ++ "/echo"
 
         doc <- QC.run $ HTTP.post (S.pack uri) "text/plain"
-                                  (Streams.write (Just $ fromByteString txt))
+                                  (Streams.write (Just $ byteString txt))
                                   HTTP.concatHandler'
         QC.assert $ txt == doc
 

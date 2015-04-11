@@ -5,9 +5,9 @@
 module System.SendFile.Tests (tests) where
 
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder       (fromByteString)
 import           Control.Concurrent.MVar        (MVar, modifyMVar, modifyMVar_, newMVar, readMVar)
 import           Control.Exception              (evaluate)
+import           Data.ByteString.Builder        (byteString)
 import qualified Data.ByteString.Char8          as S
 import           Foreign.C.Error                (Errno (..), eAGAIN, eCONNRESET, eOK)
 import           Foreign.C.Types                (CChar, CInt (..), CSize)
@@ -65,7 +65,7 @@ testSendHeaders = testCase "sendfile/sendHeaders" $ do
     readMVar nWaits >>= assertEqual "sendHeaders3" 1
 
   where
-    builder       = fromByteString $ S.replicate 10 ' '
+    builder       = byteString $ S.replicate 10 ' '
     sampleActions = [ c_set_errno eAGAIN >> return (-1)
                     , return 2
                     , return 8
@@ -83,7 +83,7 @@ testSendHeaderCrash = testCase "sendfile/sendHeaders/crash" $ do
         SF.sendHeadersImpl (sendHeadersMockSendFunc sampleData callLog) bumpWaits
                            builder 100
   where
-    builder       = fromByteString $ S.replicate 10 ' '
+    builder       = byteString $ S.replicate 10 ' '
     sampleActions = [ c_set_errno eCONNRESET >> return (-1) ]
 
 

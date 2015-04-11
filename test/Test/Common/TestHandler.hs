@@ -4,28 +4,28 @@
 module Test.Common.TestHandler (testHandler) where
 
 ------------------------------------------------------------------------------
-import           Control.Concurrent         (threadDelay)
-import           Control.Exception          (throwIO)
-import           Control.Monad              (liftM)
-import           Control.Monad.IO.Class     (MonadIO (liftIO))
-import qualified Data.ByteString.Char8      as S
-import qualified Data.ByteString.Lazy.Char8 as L
-import           Data.List                  (sort)
-import qualified Data.Map                   as Map
-import           Data.Maybe                 (fromMaybe)
-import           Data.Monoid                (Monoid (mappend, mconcat, mempty))
+import           Control.Concurrent            (threadDelay)
+import           Control.Exception             (throwIO)
+import           Control.Monad                 (liftM)
+import           Control.Monad.IO.Class        (MonadIO (liftIO))
+import           Data.ByteString.Builder       (Builder, byteString)
+import           Data.ByteString.Builder.Extra (flush)
+import qualified Data.ByteString.Char8         as S
+import qualified Data.ByteString.Lazy.Char8    as L
+import           Data.List                     (sort)
+import qualified Data.Map                      as Map
+import           Data.Maybe                    (fromMaybe)
+import           Data.Monoid                   (Monoid (mappend, mconcat, mempty))
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder   (Builder, flush, fromByteString)
-------------------------------------------------------------------------------
-import           Snap.Core                  (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, redirect, route, rqClientAddr, rqClientPort, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
-import           Snap.Internal.Debug        ()
-import           Snap.Util.FileServe        (serveDirectory)
-import           Snap.Util.FileUploads      (PartInfo (partContentType, partFileName), allowWithMaximumSize, defaultUploadPolicy, disallow, handleFileUploads)
-import           Snap.Util.GZip             (noCompression, withCompression)
-import           System.Directory           (createDirectoryIfMissing)
-import           System.IO.Streams          (OutputStream)
-import qualified System.IO.Streams          as Streams
-import           Test.Common.Rot13          (rot13)
+import           Snap.Core                     (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, redirect, route, rqClientAddr, rqClientPort, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
+import           Snap.Internal.Debug           ()
+import           Snap.Util.FileServe           (serveDirectory)
+import           Snap.Util.FileUploads         (PartInfo (partContentType, partFileName), allowWithMaximumSize, defaultUploadPolicy, disallow, handleFileUploads)
+import           Snap.Util.GZip                (noCompression, withCompression)
+import           System.Directory              (createDirectoryIfMissing)
+import           System.IO.Streams             (OutputStream)
+import qualified System.IO.Streams             as Streams
+import           Test.Common.Rot13             (rot13)
 
 
 ------------------------------------------------------------------------------
@@ -55,7 +55,7 @@ trickleOutput n os = do
     return os
   where
     dots = replicate n ".\n"
-    f x  = threadDelay 1000000 >> return (fromByteString x `mappend` flush)
+    f x  = threadDelay 1000000 >> return (byteString x `mappend` flush)
 
 
 ------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ pongHandler = modifyResponse $
               setContentType "text/plain" .
               setContentLength 4
   where
-    body os = do Streams.write (Just $ fromByteString "PONG") os
+    body os = do Streams.write (Just $ byteString "PONG") os
                  return os
 
 echoUriHandler :: Snap ()
@@ -137,12 +137,12 @@ uploadHandler = do
 
     builder _ [] = mempty
     builder ty ((k,v):xs) =
-        mconcat [ fromByteString ty
-                , fromByteString ":\n"
-                , fromByteString k
-                , fromByteString "\nValue:\n"
-                , fromByteString v
-                , fromByteString "\n\n"
+        mconcat [ byteString ty
+                , byteString ":\n"
+                , byteString k
+                , byteString "\nValue:\n"
+                , byteString v
+                , byteString "\n\n"
                 , builder ty xs ]
 
 

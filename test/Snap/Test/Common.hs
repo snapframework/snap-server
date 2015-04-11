@@ -15,24 +15,21 @@ import           Control.Exception.Lifted    (SomeException (..), catch, evaluat
 import           Control.Monad               (liftM, replicateM)
 import           Control.Monad.IO.Class      (MonadIO (..))
 import           Control.Monad.Trans.Control (MonadBaseControl)
+import           Data.ByteString.Builder     (byteString, toLazyByteString)
 import           Data.ByteString.Char8       (ByteString)
 import qualified Data.ByteString.Char8       as S
 import qualified Data.ByteString.Lazy        as L
 import           Data.Monoid                 (Monoid (mappend, mempty))
 import           Data.Typeable               (Typeable, typeOf)
-
-import qualified Network.Socket.ByteString   as N
-#if !(MIN_VERSION_base(4,6,0))
-import           Prelude                     hiding (catch)
-#endif
-------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder    (fromByteString, toByteString)
 import           Network.Socket              (AddrInfo (addrAddress, addrFlags), AddrInfoFlag (AI_NUMERICHOST), Family (AF_INET), Socket, SocketType (Stream), connect, defaultHints, defaultProtocol, getAddrInfo, sClose, socket)
 import           System.Timeout              (timeout)
 import           Test.HUnit                  (assertFailure)
 import           Test.QuickCheck             (Arbitrary (arbitrary), choose)
 
-
+import qualified Network.Socket.ByteString   as N
+#if !(MIN_VERSION_base(4,6,0))
+import           Prelude                     hiding (catch)
+#endif
 ------------------------------------------------------------------------------
 instance Arbitrary S.ByteString where
     arbitrary = liftM S.pack arbitrary
@@ -92,14 +89,14 @@ withSock port go = do
 recvAll :: Socket -> IO ByteString
 recvAll sock = do
     b <- f mempty sock
-    return $! toByteString b
+    return $! S.concat $ L.toChunks $ toLazyByteString b
 
   where
     f b sk = do
         s <- N.recv sk 100000
         if S.null s
           then return b
-          else f (b `mappend` fromByteString s) sk
+          else f (b `mappend` byteString s) sk
 
 
 ------------------------------------------------------------------------------
