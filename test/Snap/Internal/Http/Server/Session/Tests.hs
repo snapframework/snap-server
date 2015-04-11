@@ -8,47 +8,48 @@ module Snap.Internal.Http.Server.Session.Tests (tests) where
 
 ------------------------------------------------------------------------------
 #if !MIN_VERSION_base(4,6,0)
-import           Prelude                                  hiding (catch)
+import           Prelude                           hiding (catch)
 #endif
-import           Blaze.ByteString.Builder                 (flush, fromByteString, toByteString)
-import           Blaze.ByteString.Builder.Char8           (fromChar)
-import           Blaze.ByteString.Builder.Internal.Buffer (allocBuffer)
-import           Control.Concurrent                       (MVar, forkIO, killThread, modifyMVar_, myThreadId, newChan, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar, threadDelay, throwTo, withMVar)
-import           Control.Exception.Lifted                 (AsyncException (ThreadKilled), Exception, SomeException (..), bracket, catch, evaluate, mask, throwIO, try)
-import           Control.Monad                            (forM_, liftM, replicateM_, void, when, (>=>))
-import           Control.Monad.State.Class                (modify)
-import           Data.ByteString.Char8                    (ByteString)
-import qualified Data.ByteString.Char8                    as S
-import qualified Data.CaseInsensitive                     as CI
-import           Data.IORef                               (IORef, newIORef, readIORef, writeIORef)
-import qualified Data.Map                                 as Map
-import           Data.Maybe                               (isNothing)
-import           Data.Monoid                              (mappend)
-import           Data.Time.Clock.POSIX                    (posixSecondsToUTCTime)
-import           Data.Typeable                            (Typeable)
-import           Data.Word                                (Word64)
-import qualified Network.Http.Client                      as Http
-import           System.IO.Streams                        (InputStream, OutputStream)
-import qualified System.IO.Streams                        as Streams
-import qualified System.IO.Streams.Concurrent             as Streams
-import qualified System.IO.Streams.Debug                  as Streams
-import           System.Timeout                           (timeout)
-import           Test.Framework                           (Test, testGroup)
-import           Test.Framework.Providers.HUnit           (testCase)
-import qualified Test.Framework.Runners.Console           as Console
-import           Test.HUnit                               (assertBool, assertEqual)
+import           Control.Concurrent                (MVar, forkIO, killThread, modifyMVar_, myThreadId, newChan, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar, threadDelay, throwTo, withMVar)
+import           Control.Exception.Lifted          (AsyncException (ThreadKilled), Exception, SomeException (..), bracket, catch, evaluate, mask, throwIO, try)
+import           Control.Monad                     (forM_, liftM, replicateM_, void, when, (>=>))
+import           Control.Monad.State.Class         (modify)
+import           Data.ByteString.Builder           (Builder, byteString, char8, toLazyByteString)
+import           Data.ByteString.Builder.Extra     (flush)
+import           Data.ByteString.Builder.Internal  (newBuffer)
+import           Data.ByteString.Char8             (ByteString)
+import qualified Data.ByteString.Char8             as S
+import qualified Data.ByteString.Lazy.Char8        as L
+import qualified Data.CaseInsensitive              as CI
+import           Data.IORef                        (IORef, newIORef, readIORef, writeIORef)
+import qualified Data.Map                          as Map
+import           Data.Maybe                        (isNothing)
+import           Data.Monoid                       (mappend)
+import           Data.Time.Clock.POSIX             (posixSecondsToUTCTime)
+import           Data.Typeable                     (Typeable)
+import           Data.Word                         (Word64)
+import qualified Network.Http.Client               as Http
+import           System.IO.Streams                 (InputStream, OutputStream)
+import qualified System.IO.Streams                 as Streams
+import qualified System.IO.Streams.Concurrent      as Streams
+import qualified System.IO.Streams.Debug           as Streams
+import           System.Timeout                    (timeout)
+import           Test.Framework                    (Test, testGroup)
+import           Test.Framework.Providers.HUnit    (testCase)
+import qualified Test.Framework.Runners.Console    as Console
+import           Test.HUnit                        (assertBool, assertEqual)
 ------------------------------------------------------------------------------
-import           Snap.Core                                (Cookie (Cookie, cookieName, cookieValue), Request (rqContentLength, rqCookies, rqHostName, rqLocalHostname, rqPathInfo, rqQueryString, rqURI), Snap, addResponseCookie, escapeHttp, getHeader, getRequest, getsRequest, modifyResponse, readRequestBody, rqParam, rqPostParam, rqQueryParam, sendFile, sendFilePartial, setContentLength, setHeader, setResponseBody, setResponseStatus, terminateConnection, writeBS, writeBuilder, writeLBS)
-import           Snap.Http.Server.Types                   (emptyServerConfig, getDefaultTimeout, getIsSecure, getLocalAddress, getLocalHostname, getLocalPort, getLogAccess, getLogError, getNumAcceptLoops, getOnDataFinished, getOnEscape, getOnException, getOnNewRequest, getOnParse, getOnUserHandlerFinished, getRemoteAddress, getRemotePort, getTwiddleTimeout, isNewConnection, setDefaultTimeout, setIsSecure, setLocalHostname, setLogAccess, setLogError, setNumAcceptLoops, setOnDataFinished, setOnEscape, setOnException, setOnNewRequest, setOnParse, setOnUserHandlerFinished)
-import           Snap.Internal.Http.Server.Date           (getLogDateString)
-import           Snap.Internal.Http.Server.Session        (BadRequestException (..), LengthRequiredException (..), TerminateSessionException (..), httpAcceptLoop, httpSession, snapToServerHandler)
-import qualified Snap.Internal.Http.Server.TLS            as TLS
-import           Snap.Internal.Http.Server.Types          (AcceptFunc (AcceptFunc), PerSessionData (PerSessionData, _isNewConnection), SendFileHandler, ServerConfig (_logError))
-import           Snap.Test                                (RequestBuilder)
-import qualified Snap.Test                                as T
-import           Snap.Test.Common                         (coverShowInstance, coverTypeableInstance, expectException)
+import           Snap.Core                         (Cookie (Cookie, cookieName, cookieValue), Request (rqContentLength, rqCookies, rqHostName, rqLocalHostname, rqPathInfo, rqQueryString, rqURI), Snap, addResponseCookie, escapeHttp, getHeader, getRequest, getsRequest, modifyResponse, readRequestBody, rqParam, rqPostParam, rqQueryParam, sendFile, sendFilePartial, setContentLength, setHeader, setResponseBody, setResponseStatus, terminateConnection, writeBS, writeBuilder, writeLBS)
+import           Snap.Http.Server.Types            (emptyServerConfig, getDefaultTimeout, getIsSecure, getLocalAddress, getLocalHostname, getLocalPort, getLogAccess, getLogError, getNumAcceptLoops, getOnDataFinished, getOnEscape, getOnException, getOnNewRequest, getOnParse, getOnUserHandlerFinished, getRemoteAddress, getRemotePort, getTwiddleTimeout, isNewConnection, setDefaultTimeout, setIsSecure, setLocalHostname, setLogAccess, setLogError, setNumAcceptLoops, setOnDataFinished, setOnEscape, setOnException, setOnNewRequest, setOnParse, setOnUserHandlerFinished)
+import           Snap.Internal.Http.Server.Date    (getLogDateString)
+import           Snap.Internal.Http.Server.Session (BadRequestException (..), LengthRequiredException (..), TerminateSessionException (..), httpAcceptLoop, httpSession, snapToServerHandler)
+import qualified Snap.Internal.Http.Server.TLS     as TLS
+import           Snap.Internal.Http.Server.Types   (AcceptFunc (AcceptFunc), PerSessionData (PerSessionData, _isNewConnection), SendFileHandler, ServerConfig (_logError))
+import           Snap.Test                         (RequestBuilder)
+import qualified Snap.Test                         as T
+import           Snap.Test.Common                  (coverShowInstance, coverTypeableInstance, expectException)
 #ifdef OPENSSL
-import qualified Network.Socket                           as N
+import qualified Network.Socket                    as N
 #endif
 
 
@@ -453,7 +454,7 @@ testUserBodyException = testCase "session/userBodyException" $ do
     expectException $ runRequestPipeline [queryGetParams] snap
   where
     snap = modifyResponse $ setResponseBody $ \os -> do
-        Streams.write (Just (fromByteString "hi" `mappend` flush)) os
+        Streams.write (Just (byteString "hi" `mappend` flush)) os
         throwIO TestException
 
 
@@ -470,7 +471,7 @@ testEscape = testCase "session/testEscape" $ do
          let s = if l == ["OK?"]
                    then "OK"
                    else S.append "BAD: " $ S.pack $ show l
-         Streams.write (Just $ fromByteString s) writeEnd
+         Streams.write (Just $ byteString s) writeEnd
          Streams.write Nothing writeEnd
 
 
@@ -512,7 +513,7 @@ testWeirdMissingSlash = testCase "session/weirdMissingSlash" $ do
                          , "foo/bar\n"
                          , "z\n"
                          ]
-    p s = writeBuilder $ fromByteString s `mappend` fromChar '\n'
+    p s = writeBuilder $ byteString s `mappend` char8 '\n'
     snap = do
         rq <- getRequest
         p $ rqURI rq
@@ -533,7 +534,7 @@ testOnlyQueryString = testCase "session/onlyQueryString" $ do
                          , "\n"
                          , "z\n"
                          ]
-    p s = writeBuilder $ fromByteString s `mappend` fromChar '\n'
+    p s = writeBuilder $ byteString s `mappend` char8 '\n'
     snap = do
         rq <- getRequest
         p $ rqURI rq
@@ -850,7 +851,7 @@ runSession :: InputStream ByteString
            -> Snap a
            -> IO ()
 runSession readEnd writeEnd handler = do
-    buffer         <- allocBuffer 64000
+    buffer         <- newBuffer 64000
     perSessionData <- makePerSessionData readEnd writeEnd
     httpSession buffer (snapToServerHandler handler)
                        (makeServerConfig ())
@@ -1009,3 +1010,7 @@ dieIfTimeout m = timeout (10 * seconds) m >>= maybe (error "timeout") return
 ------------------------------------------------------------------------------
 seconds :: Int
 seconds = (10::Int) ^ (6::Int)
+
+------------------------------------------------------------------------------
+toByteString :: Builder -> S.ByteString
+toByteString = S.concat . L.toChunks . toLazyByteString

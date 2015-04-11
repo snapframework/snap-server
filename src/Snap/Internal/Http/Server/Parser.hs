@@ -44,8 +44,8 @@ import           Foreign.ForeignPtr               (withForeignPtr)
 import           Foreign.Ptr                      (minusPtr, nullPtr, plusPtr)
 import           Prelude                          hiding (take)
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder         (Builder)
 import           Blaze.ByteString.Builder.HTTP    (chunkedTransferEncoding, chunkedTransferTerminator)
+import           Data.ByteString.Builder          (Builder)
 import           System.IO.Streams                (InputStream, OutputStream)
 import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)

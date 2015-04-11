@@ -124,7 +124,7 @@ testWriteChunkedTransferEncoding = testCase "parser/writeChunked" $ do
     Streams.fromList [fromByteString "ok"] >>= Streams.connectTo os'
     Streams.write Nothing os'
     s <- liftM (toByteString . mconcat) getList
-    assertEqual "chunked" "02\r\nok\r\n0\r\n\r\n" s
+    assertEqual "chunked" "002\r\nok\r\n0\r\n\r\n" s
 
 
 ------------------------------------------------------------------------------

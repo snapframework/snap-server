@@ -18,9 +18,9 @@ import qualified Data.ByteString.Char8             as S
 import           Data.Typeable                     (Typeable)
 import           Network.Socket                    (Socket)
 #ifdef OPENSSL
-import           Blaze.ByteString.Builder          (fromByteString)
 import           Control.Exception                 (Exception, bracketOnError, finally, throwIO)
 import           Control.Monad                     (when)
+import           Data.ByteString.Builder           (byteString)
 import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
@@ -158,7 +158,7 @@ sendFileFunc :: SSL -> SendFileHandler
 sendFileFunc ssl buffer builder fPath offset nbytes = do
     Streams.unsafeWithFileAsInputStartingAt (fromIntegral offset) fPath $ \fileInput0 -> do
         fileInput <- Streams.takeBytes (fromIntegral nbytes) fileInput0 >>=
-                     Streams.map fromByteString
+                     Streams.map byteString
         input     <- Streams.fromList [builder] >>=
                      flip Streams.appendInputStream fileInput
         output    <- Streams.makeOutputStream sendChunk >>=

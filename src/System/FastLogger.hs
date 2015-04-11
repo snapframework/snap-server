@@ -17,28 +17,25 @@ module System.FastLogger
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Concurrent                 (MVar, ThreadId, killThread, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar, withMVar)
-import           Control.Concurrent.Extended        (forkIOLabeledWithUnmaskBs)
-import           Control.Exception                  (AsyncException, Handler (..), IOException, SomeException, bracket, catch, catches, mask_)
-import           Control.Monad                      (unless, void, when)
-import           Data.ByteString.Char8              (ByteString)
-import qualified Data.ByteString.Char8              as S
-import           Data.ByteString.Internal           (c2w)
-import qualified Data.ByteString.Lazy.Char8         as L
-import           Data.IORef                         (IORef, newIORef, readIORef, writeIORef)
-import           Data.Monoid                        (mappend, mconcat, mempty)
-import qualified Data.Text                          as T
-import qualified Data.Text.Encoding                 as T
-import           Data.Word                          (Word64)
-import           Prelude                            (Eq (..), FilePath, IO, Int, Maybe, Monad (..), Num (..), Ord (..), Show (..), mapM_, maybe, ($), ($!), (++), (.), (||))
-import           System.IO                          (IOMode (AppendMode), hClose, hFlush, openFile, stderr, stdout)
-import           System.PosixCompat.Time            (epochTime)
+import           Control.Concurrent               (MVar, ThreadId, killThread, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar, withMVar)
+import           Control.Concurrent.Extended      (forkIOLabeledWithUnmaskBs)
+import           Control.Exception                (AsyncException, Handler (..), IOException, SomeException, bracket, catch, catches, mask_)
+import           Control.Monad                    (unless, void, when)
+import           Data.ByteString.Builder          (Builder, byteString, char8, stringUtf8, toLazyByteString, toLazyByteString)
+import           Data.ByteString.Char8            (ByteString)
+import qualified Data.ByteString.Char8            as S
+import qualified Data.ByteString.Lazy.Char8       as L
+import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
+import           Data.Monoid                      (mappend, mconcat, mempty)
+import qualified Data.Text                        as T
+import qualified Data.Text.Encoding               as T
+import           Data.Word                        (Word64)
+import           Prelude                          (Eq (..), FilePath, IO, Int, Maybe, Monad (..), Num (..), Ord (..), Show (..), mapM_, maybe, ($), ($!), (++), (.), (||))
+import           System.IO                        (IOMode (AppendMode), hClose, hFlush, openFile, stderr, stdout)
+import           System.PosixCompat.Time          (epochTime)
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder           (Builder, fromByteString, fromWord8, toByteString, toLazyByteString)
-import           Blaze.ByteString.Builder.Char.Utf8 (fromShow)
-------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Common   (atomicModifyIORef')
-import           Snap.Internal.Http.Server.Date     (getLogDateString)
+import           Snap.Internal.Http.Server.Common (atomicModifyIORef')
+import           Snap.Internal.Http.Server.Date   (getLogDateString)
 
 
 ------------------------------------------------------------------------------
@@ -118,11 +115,13 @@ timestampedLogEntry :: ByteString -> IO ByteString
 timestampedLogEntry msg = do
     timeStr <- getLogDateString
 
-    return $! toByteString
-           $! mconcat [ fromWord8 $ c2w '['
-                      , fromByteString timeStr
-                      , fromByteString "] "
-                      , fromByteString msg ]
+    return $! S.concat
+           $  L.toChunks
+           $  toLazyByteString
+           $  mconcat [ char8 '['
+                      , byteString timeStr
+                      , byteString "] "
+                      , byteString msg ]
 
 
 ------------------------------------------------------------------------------
@@ -143,35 +142,33 @@ combinedLogEntry :: ByteString        -- ^ remote host
 combinedLogEntry !host !mbUser !req !status !numBytes !mbReferer !ua = do
     timeStr <- getLogDateString
 
-    let !l = [ fromByteString host
-             , fromByteString " - "
+    let !l = [ byteString host
+             , byteString " - "
              , user
-             , fromByteString " ["
-             , fromByteString timeStr
-             , fromByteString "] \""
-             , fromByteString req
-             , fromByteString "\" "
+             , byteString " ["
+             , byteString timeStr
+             , byteString "] \""
+             , byteString req
+             , byteString "\" "
              , fromShow status
              , space
              , fromShow numBytes
              , space
              , referer
-             , fromByteString " \""
-             , fromByteString ua
+             , byteString " \""
+             , byteString ua
              , quote ]
 
-    let !output = toByteString $ mconcat l
-
-    return $! output
+    return $! S.concat . L.toChunks $ toLazyByteString $ mconcat l
 
   where
-    dash     = fromWord8 $ c2w '-'
-    quote    = fromWord8 $ c2w '\"'
-    space    = fromWord8 $ c2w ' '
-    user     = maybe dash fromByteString mbUser
+    dash     = char8 '-'
+    quote    = char8 '\"'
+    space    = char8 ' '
+    user     = maybe dash byteString mbUser
     referer  = maybe dash
                      (\s -> mconcat [ quote
-                                    , fromByteString s
+                                    , byteString s
                                     , quote ])
                      mbReferer
 
@@ -182,7 +179,7 @@ combinedLogEntry !host !mbUser !req !status !numBytes !mbReferer !ua = do
 -- (or use 'combinedLogEntry').
 logMsg :: Logger -> ByteString -> IO ()
 logMsg !lg !s = do
-    let !s' = fromByteString s `mappend` fromWord8 (c2w '\n')
+    let !s' = byteString s `mappend` char8 '\n'
     atomicModifyIORef' (_queuedMessages lg) $ \d -> (d `mappend` s',())
     void $ tryPutMVar (_dataWaiting lg) ()
 
@@ -279,3 +276,8 @@ loggingThread (Logger queue notifier filePath _ errAct) unmask = do
 -- flushed out to disk
 stopLogger :: Logger -> IO ()
 stopLogger lg = withMVar (_loggingThread lg) killThread
+
+
+------------------------------------------------------------------------------
+fromShow :: Show a => a -> Builder
+fromShow = stringUtf8 . show

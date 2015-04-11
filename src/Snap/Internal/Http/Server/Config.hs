@@ -72,42 +72,42 @@ module Snap.Internal.Http.Server.Config
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception              (SomeException)
-import           Control.Monad                  (when)
-import           Data.ByteString                (ByteString)
-import qualified Data.ByteString.Char8          as B
-import qualified Data.CaseInsensitive           as CI
-import           Data.Function                  (on)
-import           Data.List                      (foldl')
-import           Data.Maybe                     (isJust, isNothing)
-import           Data.Monoid                    (Last (Last, getLast), Monoid (..))
-import qualified Data.Text                      as T
-import qualified Data.Text.Encoding             as T
-import           Data.Typeable                  (TyCon, Typeable, Typeable1 (..), mkTyConApp)
+import           Control.Exception          (SomeException)
+import           Control.Monad              (when)
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString.Char8      as S
+import qualified Data.ByteString.Lazy.Char8 as L
+import qualified Data.CaseInsensitive       as CI
+import           Data.Function              (on)
+import           Data.List                  (foldl')
+import           Data.Maybe                 (isJust, isNothing)
+import           Data.Monoid                (Last (Last, getLast), Monoid (..))
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as T
+import           Data.Typeable              (TyCon, Typeable, Typeable1 (..), mkTyConApp)
 #if MIN_VERSION_base(4,7,0)
-import           Data.Typeable.Internal         (Typeable, mkTyCon3)
+import           Data.Typeable.Internal     (Typeable, mkTyCon3)
 #else
-import           Data.Typeable                  (mkTyCon3)
+import           Data.Typeable              (mkTyCon3)
 #endif
-import           Network                        (Socket)
+import           Network                    (Socket)
 #if !MIN_VERSION_base(4,6,0)
-import           Prelude                        hiding (catch)
+import           Prelude                    hiding (catch)
 #endif
-import           System.Console.GetOpt          (ArgDescr (..), ArgOrder (Permute), OptDescr (..), getOpt, usageInfo)
-import           System.Environment             hiding (getEnv)
+import           System.Console.GetOpt      (ArgDescr (..), ArgOrder (Permute), OptDescr (..), getOpt, usageInfo)
+import           System.Environment         hiding (getEnv)
 #ifndef PORTABLE
-import           Data.Char                      (isAlpha)
-import           System.Posix.Env               (getEnv)
+import           Data.Char                  (isAlpha)
+import           System.Posix.Env           (getEnv)
 #endif
-import           System.Exit                    (exitFailure)
-import           System.IO                      (hPutStrLn, stderr)
+import           System.Exit                (exitFailure)
+import           System.IO                  (hPutStrLn, stderr)
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder       (Builder, fromByteString, toByteString)
-import           Blaze.ByteString.Builder.Char8 (fromShow)
-import qualified System.IO.Streams              as Streams
+import           Data.ByteString.Builder    (Builder, byteString, stringUtf8, toLazyByteString)
+import qualified System.IO.Streams          as Streams
 ------------------------------------------------------------------------------
-import           Snap.Core                      (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
-import           Snap.Internal.Debug            (debug)
+import           Snap.Core                  (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
+import           Snap.Internal.Debug        (debug)
 
 
 ------------------------------------------------------------------------------
@@ -648,7 +648,7 @@ defaultErrorHandler e = do
     logError sm
 
     finishWith $ setContentType "text/plain; charset=utf-8"
-               . setContentLength (fromIntegral $ B.length msg)
+               . setContentLength (fromIntegral $ S.length msg)
                . setResponseStatus 500 "Internal Server Error"
                . setResponseBody errBody
                $ emptyResponse
@@ -656,12 +656,13 @@ defaultErrorHandler e = do
   where
     errBody os = Streams.write (Just msgB) os >> return os
 
+    toByteString = S.concat . L.toChunks . toLazyByteString
     smsg req = toByteString $ requestErrorMessage req e
 
     msg  = toByteString msgB
     msgB = mconcat [
-             fromByteString "A web handler threw an exception. Details:\n"
-           , fromShow e
+             byteString "A web handler threw an exception. Details:\n"
+           , stringUtf8 $ show e
            ]
 
 
@@ -761,17 +762,21 @@ fmapOpt f (Option s l d e) = Option s l (fmapArg f d) e
 ------------------------------------------------------------------------------
 requestErrorMessage :: Request -> SomeException -> Builder
 requestErrorMessage req e =
-    mconcat [ fromByteString "During processing of request from "
-            , fromByteString $ rqClientAddr req
-            , fromByteString ":"
+    mconcat [ byteString "During processing of request from "
+            , byteString $ rqClientAddr req
+            , byteString ":"
             , fromShow $ rqClientPort req
-            , fromByteString "\nrequest:\n"
+            , byteString "\nrequest:\n"
             , fromShow $ show req
-            , fromByteString "\n"
+            , byteString "\n"
             , msgB
             ]
   where
     msgB = mconcat [
-             fromByteString "A web handler threw an exception. Details:\n"
+             byteString "A web handler threw an exception. Details:\n"
            , fromShow e
            ]
+
+------------------------------------------------------------------------------
+fromShow :: Show a => a -> Builder
+fromShow = stringUtf8 . show

@@ -20,7 +20,7 @@ import           Control.Arrow                            (first, second)
 import           Control.Concurrent                       (MVar, newEmptyMVar, putMVar, readMVar)
 import           Control.Exception                        (AsyncException, Exception, Handler (..), SomeException (..))
 import qualified Control.Exception                        as E
-import           Control.Monad                            (unless, void, when, (>=>))
+import           Control.Monad                            (join, unless, void, when, (>=>))
 import           Data.ByteString.Char8                    (ByteString)
 import qualified Data.ByteString.Char8                    as S
 import qualified Data.ByteString.Unsafe                   as S
@@ -44,16 +44,18 @@ import           Data.Time.Format                         (defaultTimeLocale)
 import           System.Locale                            (defaultTimeLocale)
 #endif
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder                 (Builder, flush, fromByteString)
-import           Blaze.ByteString.Builder.Char8           (fromChar, fromShow)
-import           Blaze.ByteString.Builder.Internal        (Write, defaultBufferSize, exactWrite, fromWrite, getBound)
-import           Blaze.ByteString.Builder.Internal.Buffer (Buffer, allocBuffer)
+import           Data.ByteString.Builder                  (Builder, byteString, char8, stringUtf8)
+import           Data.ByteString.Builder.Extra            (flush)
+import           Data.ByteString.Builder.Internal         (Buffer, defaultChunkSize, newBuffer)
+import           Data.ByteString.Builder.Prim             (FixedPrim, primFixed, (>$<), (>*<))
+import           Data.ByteString.Builder.Prim.Internal    (fixedPrim, size)
 import           System.IO.Streams                        (InputStream, OutputStream)
 import qualified System.IO.Streams                        as Streams
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                        as V
 import           Snap.Core                                (EscapeSnap (..))
 import           Snap.Core                                (Snap, runSnap)
+import           Snap.Internal.Core                       (fixupResponse)
 import           Snap.Internal.Http.Server.Clock          (getClockTime)
 import           Snap.Internal.Http.Server.Common         (eatException)
 import           Snap.Internal.Http.Server.Date           (getDateString)
@@ -65,7 +67,6 @@ import qualified Snap.Internal.Http.Server.TimeoutManager as TM
 import           Snap.Internal.Http.Server.Types          (AcceptFunc (..), PerSessionData (..), SendFileHandler, ServerConfig (..), ServerHandler)
 import           Snap.Internal.Http.Types                 (Cookie (..), HttpVersion, Method (..), Request (..), Response (..), ResponseBody (..), StreamProc, getHeader, headers, rspBodyToEnum, updateHeaders)
 import           Snap.Internal.Parsing                    (unsafeFromNat)
-import           Snap.Internal.Core                       (fixupResponse)
 import           Snap.Types.Headers                       (Headers)
 import qualified Snap.Types.Headers                       as H
 import           System.IO.Unsafe                         (unsafePerformIO)
@@ -90,7 +91,7 @@ snapToServerHandler :: Snap a -> ServerHandler hookState
 snapToServerHandler !snap !serverConfig !perSessionData !req =
     runSnap snap logErr tickle req
   where
-    logErr = _logError serverConfig . fromByteString
+    logErr = _logError serverConfig . byteString
     tickle = _twiddleTimeout perSessionData
 
 
@@ -130,7 +131,7 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
     logException :: Exception e => e -> IO ()
     logException e =
         logError $
-        mconcat [ fromByteString "got exception in httpAcceptFunc: "
+        mconcat [ byteString "got exception in httpAcceptFunc: "
                 , fromShow e
                 ]
 
@@ -203,7 +204,7 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
 
     --------------------------------------------------------------------------
     session psd = do
-        buffer <- allocBuffer defaultBufferSize
+        buffer <- newBuffer defaultChunkSize
         httpSession buffer serverHandler serverConfig psd
 
     --------------------------------------------------------------------------
@@ -263,8 +264,8 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     sendfileHandler         = _sendfileHandler sessionData
 
     --------------------------------------------------------------------------
-    newBuffer :: IO (OutputStream Builder)
-    newBuffer = Streams.unsafeBuilderStream (return buffer) writeEnd
+    mkBuffer :: IO (OutputStream Builder)
+    mkBuffer = Streams.unsafeBuilderStream (return buffer) writeEnd
 
     --------------------------------------------------------------------------
     -- Begin HTTP session processing.
@@ -405,15 +406,15 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         ----------------------------------------------------------------------
         return411 = do
             let (major, minor) = version
-            let resp = mconcat [ fromByteString "HTTP/"
+            let resp = mconcat [ byteString "HTTP/"
                                , fromShow major
-                               , fromChar '.'
+                               , char8 '.'
                                , fromShow minor
-                               , fromByteString " 411 Length Required\r\n\r\n"
-                               , fromByteString "411 Length Required\r\n"
+                               , byteString " 411 Length Required\r\n\r\n"
+                               , byteString "411 Length Required\r\n"
                                , flush
                                ]
-            writeEndB <- newBuffer
+            writeEndB <- mkBuffer
             Streams.write (Just resp) writeEndB
             Streams.write Nothing writeEndB
             terminateSession LengthRequiredException
@@ -455,12 +456,12 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     badRequestWithNoHost :: IO a
     badRequestWithNoHost = do
         let msg = mconcat [
-                    fromByteString "HTTP/1.1 400 Bad Request\r\n\r\n"
-                  , fromByteString "400 Bad Request: HTTP/1.1 request with no "
-                  , fromByteString "Host header\r\n"
+                    byteString "HTTP/1.1 400 Bad Request\r\n\r\n"
+                  , byteString "400 Bad Request: HTTP/1.1 request with no "
+                  , byteString "Host header\r\n"
                   , flush
                   ]
-        writeEndB <- newBuffer
+        writeEndB <- mkBuffer
         Streams.write (Just msg) writeEndB
         Streams.write Nothing writeEndB
         terminateSession BadRequestException
@@ -471,10 +472,10 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         when (getHeader "expect" req == Just "100-continue") $ do
             let v = if rqVersion req == (1,1) then "HTTP/1.1" else "HTTP/1.0"
 
-            let hl = fromByteString v                       <>
-                     fromByteString " 100 Continue\r\n\r\n" <>
+            let hl = byteString v                       <>
+                     byteString " 100 Continue\r\n\r\n" <>
                      flush
-            os <- newBuffer
+            os <- mkBuffer
             Streams.write (Just hl) os
 
     --------------------------------------------------------------------------
@@ -550,7 +551,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     escapeSnapHandler hookState (EscapeHttp escapeHandler) = do
         escapeHook hookState
-        newBuffer >>= escapeHandler tickle readEnd
+        mkBuffer >>= escapeHandler tickle readEnd
         return False
     escapeSnapHandler _ (TerminateConnection e) = terminateSession e
 
@@ -562,9 +563,9 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                        -> IO a
     catchUserException hookState phase req e = do
         logError $ mconcat [
-            fromByteString "Exception leaked to httpSession during phase '"
-          , fromByteString phase
-          , fromByteString "': \n"
+            byteString "Exception leaked to httpSession during phase '"
+          , byteString phase
+          , byteString "': \n"
           , requestErrorMessage req e
           ]
         -- Note: the handler passed to httpSession needs to catch its own
@@ -589,9 +590,9 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                                              else (hdrs', body, False)
 
         when shouldClose $ writeIORef forceConnectionClose $! True
-        let hdrWrite      = mkHeaderWrite v rsp hdrs''
-        let hlen          = getBound hdrWrite
-        let headerBuilder = fromWrite hdrWrite
+        let hdrPrim       = mkHeaderPrim v rsp hdrs''
+        let hlen          = size hdrPrim
+        let headerBuilder = primFixed hdrPrim $! ()
 
         nBodyBytes <- case body' of
                         Stream s ->
@@ -686,14 +687,15 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 
 
 --------------------------------------------------------------------------
-mkHeaderLine :: HttpVersion -> Response -> Write
+mkHeaderLine :: HttpVersion -> Response -> FixedPrim ()
 mkHeaderLine outVer r =
     case outCode of
         200 | outVer == (1, 1) ->
-                  exactWrite 17 (void . cpBS "HTTP/1.1 200 OK\r\n")
+                  -- typo in bytestring here
+                  fixedPrim 17 $ const (void . cpBS "HTTP/1.1 200 OK\r\n")
         200 | otherwise ->
-                  exactWrite 17 (void . cpBS "HTTP/1.0 200 OK\r\n")
-        _ -> exactWrite len (void . line)
+                  fixedPrim 17 $ const (void . cpBS "HTTP/1.0 200 OK\r\n")
+        _ -> fixedPrim len $ const (void . line)
   where
     outCode = rspStatus r
 
@@ -711,15 +713,23 @@ mkHeaderLine outVer r =
     len = 12 + S.length outCodeStr + S.length reason
 
 
---------------------------------------------------------------------------
-mkHeaderWrite :: HttpVersion -> Response -> Headers -> Write
-mkHeaderWrite v r hdrs = mkHeaderLine v r <> headersToWrite hdrs
+------------------------------------------------------------------------------
+mkHeaderPrim :: HttpVersion -> Response -> Headers -> FixedPrim ()
+mkHeaderPrim v r hdrs = mkHeaderLine v r <+> headersToPrim hdrs
 
 
 ------------------------------------------------------------------------------
-{-# INLINE headersToWrite #-}
-headersToWrite :: Headers -> Write
-headersToWrite hdrs = exactWrite len copy
+infixl 4 <+>
+(<+>) :: FixedPrim () -> FixedPrim () -> FixedPrim ()
+p1 <+> p2 = ignore >$< p1 >*< p2
+  where
+    ignore = join (,)
+
+
+------------------------------------------------------------------------------
+{-# INLINE headersToPrim #-}
+headersToPrim :: Headers -> FixedPrim ()
+headersToPrim hdrs = fixedPrim len (const copy)
   where
     len = H.foldedFoldl' f 0 hdrs + 2
       where
@@ -769,18 +779,18 @@ terminateSession = E.throwIO . TerminateSessionException . SomeException
 ------------------------------------------------------------------------------
 requestErrorMessage :: Request -> SomeException -> Builder
 requestErrorMessage req e =
-    mconcat [ fromByteString "During processing of request from "
-            , fromByteString $ rqClientAddr req
-            , fromByteString ":"
+    mconcat [ byteString "During processing of request from "
+            , byteString $ rqClientAddr req
+            , byteString ":"
             , fromShow $ rqClientPort req
-            , fromByteString "\nrequest:\n"
+            , byteString "\nrequest:\n"
             , fromShow $ show req
-            , fromByteString "\n"
+            , byteString "\n"
             , msgB
             ]
   where
     msgB = mconcat [
-             fromByteString "A web handler threw an exception. Details:\n"
+             byteString "A web handler threw an exception. Details:\n"
            , fromShow e
            ]
 
@@ -808,3 +818,7 @@ renderCookies r hdrs
 
   where
     cookies = fmap cookieToBS . Map.elems $ rspCookies r
+
+------------------------------------------------------------------------------
+fromShow :: Show a => a -> Builder
+fromShow = stringUtf8 . show

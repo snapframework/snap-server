@@ -29,6 +29,7 @@ import           Control.Monad                     (liftM, when)
 import           Control.Monad.Trans               (MonadIO)
 import           Data.ByteString.Char8             (ByteString)
 import qualified Data.ByteString.Char8             as S
+import qualified Data.ByteString.Lazy.Char8        as L
 import           Data.Maybe                        (catMaybes, fromJust, fromMaybe)
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
@@ -39,7 +40,7 @@ import           System.IO                         (hFlush, hPutStrLn, stderr)
 import           System.Posix.Env
 #endif
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder          (Builder, toByteString)
+import           Data.ByteString.Builder           (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
@@ -117,7 +118,7 @@ simpleHttpServe config handler = do
 
     --------------------------------------------------------------------------
     logE :: Maybe (ByteString -> IO ()) -> Builder -> IO ()
-    logE elog b = let x = toByteString b
+    logE elog b = let x = S.concat $ L.toChunks $ toLazyByteString b
                   in (maybe debugE (\l s -> debugE s >> logE' l s) elog) x
 
     --------------------------------------------------------------------------

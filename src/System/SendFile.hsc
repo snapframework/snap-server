@@ -14,30 +14,32 @@ module System.SendFile
 #include <sys/socket.h>
 
 ------------------------------------------------------------------------------
-import           Control.Concurrent       (threadWaitWrite)
-import qualified Data.ByteString.Unsafe   as S
-import           Data.Word                (Word64)
-import           Foreign.C.Error          (throwErrnoIfMinus1RetryMayBlock)
+import           Control.Concurrent         (threadWaitWrite)
+import qualified Data.ByteString.Char8      as S
+import qualified Data.ByteString.Lazy.Char8 as L
+import qualified Data.ByteString.Unsafe     as S
+import           Data.Word                  (Word64)
+import           Foreign.C.Error            (throwErrnoIfMinus1RetryMayBlock)
 #if __GLASGOW_HASKELL__ >= 703
-import           Foreign.C.Types          (CChar (..), CInt (..), CSize (..))
+import           Foreign.C.Types            (CChar (..), CInt (..), CSize (..))
 #else
-import           Foreign.C.Types          (CChar, CInt, CSize)
+import           Foreign.C.Types            (CChar, CInt, CSize)
 #endif
-import           Foreign.Ptr              (Ptr, plusPtr)
+import           Foreign.Ptr                (Ptr, plusPtr)
 #if __GLASGOW_HASKELL__ >= 703
-import           System.Posix.Types       (Fd (..))
+import           System.Posix.Types         (Fd (..))
 #else
-import           System.Posix.Types       (COff, CSsize, Fd)
+import           System.Posix.Types         (COff, CSsize, Fd)
 #endif
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder (Builder, toByteString)
+import           Data.ByteString.Builder    (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
 #if defined(LINUX)
-import qualified System.SendFile.Linux    as SF
+import qualified System.SendFile.Linux      as SF
 #elif defined(FREEBSD)
-import qualified System.SendFile.FreeBSD  as SF
+import qualified System.SendFile.FreeBSD    as SF
 #elif defined(OSX)
-import qualified System.SendFile.Darwin   as SF
+import qualified System.SendFile.Darwin     as SF
 #endif
 
 
@@ -78,7 +80,8 @@ sendHeadersImpl :: (Fd -> Ptr CChar -> CSize -> CInt -> IO CSize)
                 -> IO ()
 sendHeadersImpl sendFunc waitFunc headers fd =
     sendFunc `seq` waitFunc `seq`
-    S.unsafeUseAsCStringLen (toByteString headers) $
+    S.unsafeUseAsCStringLen (S.concat $ L.toChunks
+                                      $ toLazyByteString headers) $
          \(cstr, clen) -> go cstr (fromIntegral clen)
   where
 #if defined(LINUX)
