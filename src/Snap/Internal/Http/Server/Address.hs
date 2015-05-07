@@ -19,7 +19,7 @@ import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as S
 import           Data.Maybe            (fromMaybe)
 import           Data.Typeable         (Typeable)
-import           Network.Socket        (AddrInfo (addrAddress, addrFamily, addrFlags), AddrInfoFlag (AI_NUMERICSERV), Family (AF_INET, AF_INET6), HostName, NameInfoFlag (NI_NUMERICHOST), ServiceName, SockAddr (SockAddrInet, SockAddrInet6), defaultHints, getAddrInfo, getNameInfo, iN6ADDR_ANY, iNADDR_ANY)
+import           Network.Socket        (AddrInfo (addrAddress, addrFamily, addrSocketType, addrFlags), AddrInfoFlag (AI_NUMERICSERV), Family (AF_INET, AF_INET6), HostName, NameInfoFlag (NI_NUMERICHOST), ServiceName, SockAddr (SockAddrInet, SockAddrInet6), SocketType (Stream), defaultHints, getAddrInfo, getNameInfo, iN6ADDR_ANY, iNADDR_ANY)
 
 
 ------------------------------------------------------------------------------
