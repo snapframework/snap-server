@@ -55,7 +55,8 @@ getSockAddr p s | s == "::" =
                               , SockAddrInet6 (fromIntegral p) 0 iN6ADDR_ANY 0
                               )
 getSockAddr p s = do
-    let hints = defaultHints { addrFlags = [AI_NUMERICSERV] }
+    let hints = defaultHints { addrFlags = [AI_NUMERICSERV]
+                             , addrSocketType = Stream }
     ais <- getAddrInfo (Just hints) (Just $ map w2c $ S.unpack s)
                        (Just $ show p)
     if null ais
