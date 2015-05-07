@@ -92,4 +92,6 @@ getSockAddrImpl !_getAddrInfo p s =
                                let sa = addrAddress ai
                                return (fm, sa)
   where
-    hints = defaultHints { addrFlags = [AI_NUMERICSERV] }
+    hints = defaultHints { addrFlags = [AI_NUMERICSERV]
+                         , addrSocketType = Stream
+                         }
