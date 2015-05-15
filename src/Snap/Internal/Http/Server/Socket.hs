@@ -6,6 +6,7 @@
 module Snap.Internal.Http.Server.Socket
   ( bindSocket
   , bindSocketImpl
+  , bindUnixSocket
   , httpAcceptFunc
   , haProxyAcceptFunc
   , sendFileFunc
@@ -13,13 +14,16 @@ module Snap.Internal.Http.Server.Socket
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception                 (bracketOnError, finally)
+import           Control.Exception                 (bracketOnError, finally, throwIO)
+import           Control.Monad                     (when)
+import           Data.Bits                         (complement, (.&.))
 import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, listen, setSocketOption, socket)
 import qualified Network.Socket                    as N
 #ifdef HAS_SENDFILE
 import           Control.Exception                 (bracket)
 import           Network.Socket                    (fdSocket)
+import           System.Posix.Files                (accessModes, fileExist, removeLink, setFileCreationMask)
 import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
 import           System.Posix.Types                (Fd (..))
 import           System.SendFile                   (sendFile, sendHeaders)
@@ -31,7 +35,7 @@ import           Network.Socket.ByteString         (sendAll)
 ------------------------------------------------------------------------------
 import qualified System.IO.Streams                 as Streams
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
+import           Snap.Internal.Http.Server.Address (AddressNotSupportedException (..), getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHandler)
 import qualified System.IO.Streams.Network.HAProxy as HA
 
@@ -59,6 +63,29 @@ bindSocketImpl _setSocketOption _bindSocket _listen bindAddr bindPort = do
         _listen sock 150
         return $! sock
 
+bindUnixSocket :: Maybe Int -> String -> IO Socket
+#if HAS_SENDFILE
+bindUnixSocket perms path = do
+   when (not isAbsPath) $
+      throwIO (AddressNotSupportedException path)
+   bracketOnError (socket N.AF_UNIX N.Stream 0) N.close $ \sock -> do
+      exists <- fileExist path
+      when exists $ removeLink path
+      let mode = fmap (\p -> accessModes .&. complement (fromIntegral p)) perms
+      case mode of
+         Nothing -> N.bindSocket sock (N.SockAddrUnix path)
+         Just mask -> bracket (setFileCreationMask mask)
+                              setFileCreationMask
+                              $ \_ -> N.bindSocket sock (N.SockAddrUnix path)
+      N.listen sock 150
+      return $! sock
+   where
+     isAbsPath = case path of
+       '/':_ -> True
+       _     -> False
+#else
+bindUnixSocket path = throwIO (AddressNotSupportedException path)
+#endif
 
 ------------------------------------------------------------------------------
 -- TODO(greg): move buffer size configuration into config

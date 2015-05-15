@@ -34,6 +34,7 @@ module Snap.Http.Server.Config
   , getSSLPort
   , getVerbose
   , getStartupHook
+  , getUnixSocketAccessMode
 
   , setAccessLog
   , setBind
@@ -52,6 +53,8 @@ module Snap.Http.Server.Config
   , setSSLChainCert
   , setSSLPort
   , setVerbose
+  , setUnixSocketAccessMode
+
   , setStartupHook
   , StartupInfo
   , getStartupSockets
