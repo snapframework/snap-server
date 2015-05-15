@@ -41,6 +41,7 @@ module Snap.Internal.Http.Server.Config
   , getSSLPort
   , getVerbose
   , getStartupHook
+  , getUnixSocket
   , getUnixSocketAccessMode
 
   , setAccessLog
@@ -60,6 +61,7 @@ module Snap.Internal.Http.Server.Config
   , setSSLKey
   , setSSLPort
   , setVerbose
+  , setUnixSocket
   , setUnixSocketAccessMode
 
   , setStartupHook
@@ -204,7 +206,8 @@ data Config m a = Config
     , sslcert        :: Maybe FilePath
     , sslchaincert   :: Maybe Bool
     , sslkey         :: Maybe FilePath
-    , unixacc        :: Maybe Int
+    , unixsocket     :: Maybe FilePath
+    , unixaccessmode :: Maybe Int
     , compression    :: Maybe Bool
     , verbose        :: Maybe Bool
     , errorHandler   :: Maybe (SomeException -> m ())
@@ -242,7 +245,8 @@ instance Show (Config m a) where
                      , "sslcert: "        ++ _sslcert
                      , "sslchaincert: "   ++ _sslchaincert
                      , "sslkey: "         ++ _sslkey
-                     , "unixpemrs: "      ++ _unixacc
+                     , "unixsocket: "     ++ _unixsocket
+                     , "unixaccessmode: " ++ _unixaccessmode
                      , "compression: "    ++ _compression
                      , "verbose: "        ++ _verbose
                      , "defaultTimeout: " ++ _defaultTimeout
@@ -265,7 +269,8 @@ instance Show (Config m a) where
         _verbose        = show $ verbose        c
         _defaultTimeout = show $ defaultTimeout c
         _proxyType      = show $ proxyType      c
-        _unixacc        = case unixacc c of
+        _unixsocket     = show $ unixsocket     c
+        _unixaccessmode = case unixaccessmode c of
                                Nothing -> "Nothing"
                                Just s -> ("Just 0" ++) . showOct s $ []
 
@@ -291,7 +296,8 @@ instance Monoid (Config m a) where
         , sslcert        = Nothing
         , sslchaincert   = Nothing
         , sslkey         = Nothing
-        , unixacc        = Nothing
+        , unixsocket     = Nothing
+        , unixaccessmode = Nothing
         , compression    = Nothing
         , verbose        = Nothing
         , errorHandler   = Nothing
@@ -313,7 +319,8 @@ instance Monoid (Config m a) where
         , sslcert        = ov sslcert
         , sslchaincert   = ov sslchaincert
         , sslkey         = ov sslkey
-        , unixacc        = ov unixacc
+        , unixsocket     = ov unixsocket
+        , unixaccessmode = ov unixaccessmode
         , compression    = ov compression
         , verbose        = ov verbose
         , errorHandler   = ov errorHandler
@@ -397,9 +404,13 @@ getSSLChainCert = sslchaincert
 getSSLKey         :: Config m a -> Maybe FilePath
 getSSLKey = sslkey
 
+-- | File path to unix socket. Must be absolute.
+getUnixSocket     :: Config m a -> Maybe FilePath
+getUnixSocket = unixsocket
+
 -- | Access mode for unix socket, by default is system specific.
 getUnixSocketAccessMode :: Config m a -> Maybe Int
-getUnixSocketAccessMode = unixacc
+getUnixSocketAccessMode = unixaccessmode
 
 -- | If set and set to True, compression is turned on when applicable
 getCompression    :: Config m a -> Maybe Bool
@@ -464,8 +475,11 @@ setSSLChainCert x c = c { sslchaincert = Just x }
 setSSLKey         :: FilePath                -> Config m a -> Config m a
 setSSLKey x c = c { sslkey = Just x }
 
-setUnixSocketAccessMode :: Int -> Config m a -> Config m a
-setUnixSocketAccessMode p c = c { unixacc = Just ( p .&. 0o777) }
+setUnixSocket     :: FilePath                -> Config m a -> Config m a
+setUnixSocket x c = c { unixsocket = Just x }
+
+setUnixSocketAccessMode :: Int               -> Config m a -> Config m a
+setUnixSocketAccessMode p c = c { unixaccessmode = Just ( p .&. 0o777) }
 
 setCompression    :: Bool                    -> Config m a -> Config m a
 setCompression x c = c { compression = Just x }
@@ -626,11 +640,15 @@ optDescrs defaults =
                       , "Set --proxy=haproxy to use the haproxy protocol\n("
                       , "http://haproxy.1wt.eu/download/1.5/doc/proxy-protocol.txt)"
                       , defaultC getProxyType ]
+    , Option "" ["unix-socket"]
+             (ReqArg (Just . setConfig setUnixSocket) "PATH")
+             $ concat ["Absolute path to unix socket file. "
+                      , "File will be removed if already exists"]
     , Option "" ["unix-socket-mode"]
              (ReqArg (Just . setConfig setUnixSocketAccessMode . parseOctal)
                      "MODE")
-             $ concat ["Access mode for unix socket in octal, for example 0760."
-                      ,"Default is system specific."]
+             $ concat ["Access mode for unix socket in octal, for example 0760.\n"
+                      ," Default is system specific."]
     , Option "h" ["help"]
              (NoArg Nothing)
              "display this help and exit"

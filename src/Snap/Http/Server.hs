@@ -31,6 +31,8 @@ import           Data.ByteString.Char8             (ByteString)
 import qualified Data.ByteString.Char8             as S
 import qualified Data.ByteString.Lazy.Char8        as L
 import           Data.Maybe                        (catMaybes, fromJust, fromMaybe)
+import qualified Data.Text                         as T
+import qualified Data.Text.Encoding                as T
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
 import           Network.Socket                    (Socket, sClose)
@@ -44,7 +46,7 @@ import           Data.ByteString.Builder           (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getUnixSocketAccessMode, getVerbose)
+import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getUnixSocket, getUnixSocketAccessMode, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
 import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
@@ -221,7 +223,6 @@ listeners conf = TLS.withTLS $ do
     httpListener = do
         p <- getPort conf
         b <- getBind conf
-        when ("unix:/" `S.isPrefixOf` b) Nothing
         return (S.concat [ "http://"
                          , b
                          , ":"
@@ -231,14 +232,11 @@ listeners conf = TLS.withTLS $ do
                      then return (sock, Sock.haProxyAcceptFunc sock)
                      else return (sock, Sock.httpAcceptFunc sock))
     unixListener = do
-        b <- getBind conf
-        let acc = getUnixSocketAccessMode conf
-        if "unix:/" `S.isPrefixOf` b
-           then let path = S.unpack $ S.drop 5 b
-                in return ( b,
-                   do sock <- Sock.bindUnixSocket acc path
-                      return (sock, Sock.httpAcceptFunc sock))
-           else Nothing
+        path <- getUnixSocket conf
+        let accessMode = getUnixSocketAccessMode conf
+        return (T.encodeUtf8 . T.pack  $ "unix:" ++ path,
+                 do sock <- Sock.bindUnixSocket accessMode path
+                    return (sock, Sock.httpAcceptFunc sock))
 
 
 ------------------------------------------------------------------------------

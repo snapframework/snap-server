@@ -21,9 +21,7 @@ import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, listen, setSocketOption, socket)
 import qualified Network.Socket                    as N
 #ifdef HAS_SENDFILE
-import           Control.Exception                 (bracket)
 import           Network.Socket                    (fdSocket)
-import           System.Posix.Files                (accessModes, fileExist, removeLink, setFileCreationMask)
 import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
 import           System.Posix.Types                (Fd (..))
 import           System.SendFile                   (sendFile, sendHeaders)
@@ -32,6 +30,12 @@ import           Data.ByteString.Builder           (byteString)
 import           Data.ByteString.Builder.Extra     (flush)
 import           Network.Socket.ByteString         (sendAll)
 #endif
+#ifdef HAS_UNIX_SOCKETS
+import           Control.Exception                 (bracket, catch)
+import           System.IO.Error                   (isDoesNotExistError)
+import           System.Posix.Files                (accessModes, removeLink, setFileCreationMask)
+#endif
+
 ------------------------------------------------------------------------------
 import qualified System.IO.Streams                 as Streams
 ------------------------------------------------------------------------------
@@ -64,27 +68,26 @@ bindSocketImpl _setSocketOption _bindSocket _listen bindAddr bindPort = do
         return $! sock
 
 bindUnixSocket :: Maybe Int -> String -> IO Socket
-#if HAS_SENDFILE
-bindUnixSocket perms path = do
-   when (not isAbsPath) $
+#if HAS_UNIX_SOCKETS
+bindUnixSocket mode path = do
+   when notAbsolute $
       throwIO (AddressNotSupportedException path)
    bracketOnError (socket N.AF_UNIX N.Stream 0) N.close $ \sock -> do
-      exists <- fileExist path
-      when exists $ removeLink path
-      let mode = fmap (\p -> accessModes .&. complement (fromIntegral p)) perms
+      catch (removeLink path) $ \e -> when (not $ isDoesNotExistError e) $ throwIO e
       case mode of
          Nothing -> N.bindSocket sock (N.SockAddrUnix path)
-         Just mask -> bracket (setFileCreationMask mask)
+         Just mode' -> bracket (setFileCreationMask $ modeToMask mode')
                               setFileCreationMask
-                              $ \_ -> N.bindSocket sock (N.SockAddrUnix path)
+                              (const $ N.bindSocket sock (N.SockAddrUnix path))
       N.listen sock 150
       return $! sock
    where
-     isAbsPath = case path of
-       '/':_ -> True
-       _     -> False
+     modeToMask p = accessModes .&. complement (fromIntegral p)
+     notAbsolute = case path of
+          ('/':_) -> False
+          _       -> True
 #else
-bindUnixSocket path = throwIO (AddressNotSupportedException path)
+bindUnixSocket _ path = throwIO (AddressNotSupportedException $ "unix:" ++ path)
 #endif
 
 ------------------------------------------------------------------------------
