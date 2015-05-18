@@ -1,29 +1,37 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Snap.Internal.Http.Server.Socket.Tests (tests) where
 
 ------------------------------------------------------------------------------
-import qualified Network.Socket                   as N
+import           Control.Applicative               ((<$>))
+import qualified Network.Socket                    as N
 ------------------------------------------------------------------------------
-import           Control.Applicative              ((<$>))
-import           Control.Concurrent               (forkIO, killThread, newEmptyMVar, putMVar, readMVar, takeMVar)
-import qualified Control.Exception                as E
-import           Data.IORef                       (newIORef, readIORef, writeIORef)
-import           Test.Framework                   (Test)
-import           Test.Framework.Providers.HUnit   (testCase)
-import           Test.HUnit                       (assertEqual)
+import           Control.Concurrent                (forkIO, killThread, newEmptyMVar, putMVar, readMVar, takeMVar)
+import qualified Control.Exception                 as E
+import           Data.IORef                        (newIORef, readIORef, writeIORef)
+import           Test.Framework                    (Test)
+import           Test.Framework.Providers.HUnit    (testCase)
+import           Test.HUnit                        (assertEqual)
 ------------------------------------------------------------------------------
-import qualified Snap.Internal.Http.Server.Socket as Sock
-import           Snap.Test.Common                 (eatException, expectException, withSock)
-
+import qualified Snap.Internal.Http.Server.Socket  as Sock
+import           Snap.Test.Common                  (eatException, expectException, withSock)
+------------------------------------------------------------------------------
+#ifdef HAS_UNIX_SOCKETS
+import           System.Directory                  (getTemporaryDirectory)
+import           System.FilePath                   ((</>))
+import qualified System.Posix                      as Posix
+#else
+import           Snap.Internal.Http.Server.Address (AddressNotSupportedException)
+#endif
 
 ------------------------------------------------------------------------------
 tests :: [Test]
 tests = [ testSockClosedOnListenException
         , testAcceptFailure
+        , testUnixSocketBind
         ]
-
 
 ------------------------------------------------------------------------------
 testSockClosedOnListenException :: Test
@@ -71,3 +79,52 @@ testAcceptFailure = testCase "socket/acceptAndInitialize" $ do
                   fail "error"
 
     client port = withSock port (const $ return ())
+
+testUnixSocketBind :: Test
+#ifdef HAS_UNIX_SOCKETS
+testUnixSocketBind = testCase "socket/unixSocketBind" $
+  withSocketPath $ \path ->  do
+    E.bracket (Sock.bindUnixSocket Nothing path) N.close $ \sock -> do
+        N.isListening sock >>= assertEqual "listening" True
+
+    expectException $ E.bracket (Sock.bindUnixSocket Nothing "a/relative/path")
+                    N.close doNothing
+
+    expectException $ E.bracket (Sock.bindUnixSocket Nothing "/relative/../path")
+                    N.close doNothing
+
+    expectException $ E.bracket (Sock.bindUnixSocket Nothing "/hopefully/not/existing/path")
+                    N.close doNothing
+
+#ifdef LINUX
+    -- Most (all?) BSD systems ignore access mode on unix sockets.
+    -- Should we still check it?
+
+    -- This is pretty much for 100% coverage
+    expectException $ E.bracket (Sock.bindUnixSocket Nothing "/")
+                    N.close doNothing
+
+    let mode = 0o766
+    E.bracket (Sock.bindUnixSocket (Just mode) path) N.close $ \_ -> do
+        -- Should check sockFd instead of path?
+        sockMode <- fmap Posix.fileMode $ Posix.getFileStatus path
+        assertEqual "access mode" (fromIntegral mode) $
+            Posix.intersectFileModes Posix.accessModes sockMode
+#endif
+  where
+    doNothing _ = return()
+    withSocketPath act = do
+      tmpRoot <- getTemporaryDirectory
+      tmpDir <- Posix.mkdtemp $ tmpRoot </> "snap-server-test-"
+      let path = tmpDir </> "unixSocketBind.sock"
+      E.finally (act path) $ do
+          eatException $ Posix.removeLink path
+          eatException $ Posix.removeDirectory tmpDir
+
+#else
+testUnixSocketBind = testCase "socket/unixSocketBind" $ do
+    caught <- E.catch (Sock.bindUnixSocket Nothing "/tmp/snap-sock.sock" >> return False)
+              $ \(e :: AddressNotSupportedException) -> length (show e) `seq` return True
+    assertEqual "not supported" True caught
+
+#endif

@@ -17,7 +17,7 @@ import           Snap.Test.Common                  (coverShowInstance, coverType
 ------------------------------------------------------------------------------
 tests :: [Test]
 tests = [ testGetNameInfoFails
-        , testGetAddressBadType
+        , testGetAddressUnix
         , testGetAddressIPv6
         , testGetSockAddr
         , testTrivials
@@ -32,9 +32,11 @@ testGetNameInfoFails = testCase "address/getNameInfo-fails" $ do
 
 
 ------------------------------------------------------------------------------
-testGetAddressBadType :: Test
-testGetAddressBadType = testCase "address/getAddress-bad-type" $
-    expectException $ getAddress $ SockAddrUnix "foo"
+testGetAddressUnix :: Test
+testGetAddressUnix = testCase "address/getAddress-unix-socket" $ do
+    (port, addr) <- getAddress $ SockAddrUnix "/foo/bar"
+    assertEqual "unix port" (-1) port
+    assertEqual "unix address" "unix:/foo/bar" addr
 
 
 ------------------------------------------------------------------------------
