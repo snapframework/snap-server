@@ -32,6 +32,7 @@ import           Network.Socket.ByteString         (sendAll)
 #endif
 #ifdef HAS_UNIX_SOCKETS
 import           Control.Exception                 (bracket, catch)
+import           System.FilePath                   (isRelative)
 import           System.IO.Error                   (isDoesNotExistError)
 import           System.Posix.Files                (accessModes, removeLink, setFileCreationMask)
 #endif
@@ -70,7 +71,7 @@ bindSocketImpl _setSocketOption _bindSocket _listen bindAddr bindPort = do
 bindUnixSocket :: Maybe Int -> String -> IO Socket
 #if HAS_UNIX_SOCKETS
 bindUnixSocket mode path = do
-   when notAbsolute $
+   when (isRelative path) $
       throwIO (AddressNotSupportedException path)
    bracketOnError (socket N.AF_UNIX N.Stream 0) N.close $ \sock -> do
       catch (removeLink path) $ \e -> when (not $ isDoesNotExistError e) $ throwIO e
@@ -83,9 +84,6 @@ bindUnixSocket mode path = do
       return $! sock
    where
      modeToMask p = accessModes .&. complement (fromIntegral p)
-     notAbsolute = case path of
-          ('/':_) -> False
-          _       -> True
 #else
 bindUnixSocket _ path = throwIO (AddressNotSupportedException $ "unix:" ++ path)
 #endif
