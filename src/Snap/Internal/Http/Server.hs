@@ -172,7 +172,7 @@ httpServe defaultTimeout ports localHostname alog' alh elog' elh initial handler
 
     --------------------------------------------------------------------------
     sslException (e@(TLS.TLSException msg)) = do
-        logE elog' msg
+        logE errorHandle elog' msg
         SC.hPutStrLn stderr msg
         throw e
 
@@ -185,14 +185,14 @@ httpServe defaultTimeout ports localHostname alog' alh elog' elh initial handler
                     "Error on startup: \n"
                   , T.encodeUtf8 $ T.pack $ show e
                   ]
-        logE elog' msg
+        logE errorHandle elog' msg
         SC.hPutStrLn stderr msg
         throw e
 
     --------------------------------------------------------------------------
     spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
 
-        logE elog $ S.concat [ "Server.httpServe: START, binding to "
+        logE errorHandle elog $ S.concat [ "Server.httpServe: START, binding to "
                              , bshow ports ]
 
         let isHttps p = case p of { (HttpsPort _ _ _ _ _) -> True; _ -> False;}
@@ -205,21 +205,23 @@ httpServe defaultTimeout ports localHostname alog' alh elog' elh initial handler
         nports <- mapM bindPort ports
         let socks = map (\x -> case x of ListenHttp s -> s; ListenHttps s _ -> s) nports
 
-        (simpleEventLoop defaultTimeout nports numCapabilities (logE elog) (initial socks)
+        (simpleEventLoop defaultTimeout nports numCapabilities (logE errorHandle elog) (initial socks)
                     $ runHTTP defaultTimeout alog alh elog elh handler localHostname)
           `finally` do
-            logE elog "Server.httpServe: SHUTDOWN"
+            logE errorHandle elog "Server.httpServe: SHUTDOWN"
 
             if initHttps
                 then TLS.stopTLS
                 else return ()
 
-            logE elog "Server.httpServe: BACKEND STOPPED"
+            logE errorHandle elog "Server.httpServe: BACKEND STOPPED"
 
     --------------------------------------------------------------------------
     bindPort (HttpPort  baddr port         ) = bindHttp  baddr port
     bindPort (HttpsPort baddr port cert chainCert key) =
         TLS.bindHttps baddr port cert chainCert key
+
+    errorHandle = fromMaybe defaultErrorLogHandler elh
 
 
 ------------------------------------------------------------------------------
@@ -245,14 +247,17 @@ defaultAccessLogHandler req rsp = do
 
     combinedLogEntry host user reql status cl referer userAgent
 
+defaultErrorLogHandler :: ErrorLogHandler
+defaultErrorLogHandler = timestampedLogEntry
+
 ------------------------------------------------------------------------------
-logE :: Maybe (ByteString -> IO ()) -> ByteString -> IO ()
-logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
+logE :: ErrorLogHandler -> Maybe (ByteString -> IO ()) -> ByteString -> IO ()
+logE elh elog = maybe debugE (\l s -> debugE s >> logE' elh l s) elog
 
 
 ------------------------------------------------------------------------------
-logE' :: (ByteString -> IO ()) -> ByteString -> IO ()
-logE' logger s = (timestampedLogEntry s) >>= logger
+logE' :: ErrorLogHandler -> (ByteString -> IO ()) -> ByteString -> IO ()
+logE' elh logger s = logger =<< elh s
 
 
 ------------------------------------------------------------------------------
@@ -296,7 +301,7 @@ runHTTP defaultTimeout alog alh elog elh handler lh sinfo readEnd writeEnd onSen
                  , Handler $ \(e :: AsyncException) -> do
                        throwIO e
                  , Handler $ \(e :: SomeException) ->
-                       logE elog $ toByteString $ lmsg e
+                       logE errorHandle elog $ toByteString $ lmsg e
                  ]
 
   where
@@ -309,7 +314,7 @@ runHTTP defaultTimeout alog alh elog elh handler lh sinfo readEnd writeEnd onSen
 
     go = do
         buf <- allocBuffer 16384
-        let iter1 = runServerMonad lh sinfo (logA accessHandle alog) (logE elog) $
+        let iter1 = runServerMonad lh sinfo (logA accessHandle alog) (logE errorHandle elog) $
                                    httpSession defaultTimeout writeEnd buf
                                                onSendFile tickle handler
         let iter = iterateeDebugWrapper "httpSession iteratee" iter1
@@ -323,6 +328,7 @@ runHTTP defaultTimeout alog alh elog elh handler lh sinfo readEnd writeEnd onSen
         debug "runHTTP/go: finished"
 
     accessHandle = fromMaybe defaultAccessLogHandler alh
+    errorHandle = fromMaybe defaultErrorLogHandler elh
 
 
 ------------------------------------------------------------------------------

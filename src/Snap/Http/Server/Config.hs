@@ -9,6 +9,9 @@ module Snap.Http.Server.Config
   ( Config
   , ConfigLog(..)
 
+  , AccessLogHandler
+  , ErrorLogHandler
+
   , emptyConfig
   , defaultConfig
   , commandLineConfig
@@ -65,3 +68,4 @@ module Snap.Http.Server.Config
   ) where
 
 import Snap.Internal.Http.Server.Config
+import Snap.Internal.Http.Server
