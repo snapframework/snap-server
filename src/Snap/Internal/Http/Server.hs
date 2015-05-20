@@ -155,11 +155,13 @@ httpServe :: Int                         -- ^ default timeout
           -> [ListenPort]                -- ^ ports to listen on
           -> ByteString                  -- ^ local hostname (server name)
           -> Maybe (ByteString -> IO ()) -- ^ access log action
+          -> Maybe AccessLogHandler
           -> Maybe (ByteString -> IO ()) -- ^ error log action
+          -> Maybe ErrorLogHandler
           -> ([Socket] -> IO ())         -- ^ initialisation
           -> ServerHandler               -- ^ handler procedure
           -> IO ()
-httpServe defaultTimeout ports localHostname alog' elog' initial handler =
+httpServe defaultTimeout ports localHostname alog' alh elog' elh initial handler =
     withSocketsDo $ spawnAll alog' elog' `catches` errorHandlers
 
   where
@@ -204,7 +206,7 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
         let socks = map (\x -> case x of ListenHttp s -> s; ListenHttps s _ -> s) nports
 
         (simpleEventLoop defaultTimeout nports numCapabilities (logE elog) (initial socks)
-                    $ runHTTP defaultTimeout alog elog handler localHostname)
+                    $ runHTTP defaultTimeout alog alh elog elh handler localHostname)
           `finally` do
             logE elog "Server.httpServe: SHUTDOWN"
 
@@ -224,6 +226,24 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
 debugE :: (MonadIO m) => ByteString -> m ()
 debugE s = debug $ "Server: " ++ (map w2c $ S.unpack s)
 
+type ErrorLogHandler = ByteString -> IO ByteString
+type AccessLogHandler = Request -> Response -> IO ByteString
+
+defaultAccessLogHandler :: AccessLogHandler
+defaultAccessLogHandler req rsp = do
+    let hdrs      = rqHeaders req
+    let host      = rqRemoteAddr req
+    let user      = Nothing -- TODO we don't do authentication yet
+    let (v, v')   = rqVersion req
+    let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
+    let method    = toBS $ show (rqMethod req)
+    let reql      = S.intercalate " " [ method, rqURI req, ver ]
+    let status    = rspStatus rsp
+    let cl        = rspContentLength rsp
+    let referer   = maybe Nothing (Just . head) $ H.lookup "referer" hdrs
+    let userAgent = maybe "-" head $ H.lookup "user-agent" hdrs
+
+    combinedLogEntry host user reql status cl referer userAgent
 
 ------------------------------------------------------------------------------
 logE :: Maybe (ByteString -> IO ()) -> ByteString -> IO ()
@@ -241,33 +261,21 @@ bshow = toBS . show
 
 
 ------------------------------------------------------------------------------
-logA :: Maybe (ByteString -> IO ()) -> Request -> Response -> IO ()
-logA alog = maybe (\_ _ -> return ()) logA' alog
+logA :: AccessLogHandler -> Maybe (ByteString -> IO ()) -> Request -> Response -> IO ()
+logA alh alog = maybe (\_ _ -> return ()) (logA' alh) alog
 
 
 ------------------------------------------------------------------------------
-logA' :: (ByteString -> IO ()) -> Request -> Response -> IO ()
-logA' logger req rsp = do
-    let hdrs      = rqHeaders req
-    let host      = rqRemoteAddr req
-    let user      = Nothing -- TODO we don't do authentication yet
-    let (v, v')   = rqVersion req
-    let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
-    let method    = toBS $ show (rqMethod req)
-    let reql      = S.intercalate " " [ method, rqURI req, ver ]
-    let status    = rspStatus rsp
-    let cl        = rspContentLength rsp
-    let referer   = maybe Nothing (Just . head) $ H.lookup "referer" hdrs
-    let userAgent = maybe "-" head $ H.lookup "user-agent" hdrs
-
-    msg <- combinedLogEntry host user reql status cl referer userAgent
-    logger msg
+logA' :: AccessLogHandler -> (ByteString -> IO ()) -> Request -> Response -> IO ()
+logA' alh logger req rsp = logger =<< alh req rsp
 
 
 ------------------------------------------------------------------------------
 runHTTP :: Int                           -- ^ default timeout
         -> Maybe (ByteString -> IO ())   -- ^ access logger
+        -> Maybe AccessLogHandler
         -> Maybe (ByteString -> IO ())   -- ^ error logger
+        -> Maybe ErrorLogHandler
         -> ServerHandler                 -- ^ handler procedure
         -> ByteString                    -- ^ local host name
         -> SessionInfo                   -- ^ session port information
@@ -277,7 +285,7 @@ runHTTP :: Int                           -- ^ default timeout
                                          -- ^ sendfile end
         -> ((Int -> Int) -> IO ())       -- ^ timeout tickler
         -> IO ()
-runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
+runHTTP defaultTimeout alog alh elog elh handler lh sinfo readEnd writeEnd onSendFile
         tickle =
     go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
                        return ()
@@ -301,7 +309,7 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
 
     go = do
         buf <- allocBuffer 16384
-        let iter1 = runServerMonad lh sinfo (logA alog) (logE elog) $
+        let iter1 = runServerMonad lh sinfo (logA accessHandle alog) (logE elog) $
                                    httpSession defaultTimeout writeEnd buf
                                                onSendFile tickle handler
         let iter = iterateeDebugWrapper "httpSession iteratee" iter1
@@ -313,6 +321,8 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         debug "runHTTP/go: running..."
         run_ $ readEnd step
         debug "runHTTP/go: finished"
+
+    accessHandle = fromMaybe defaultAccessLogHandler alh
 
 
 ------------------------------------------------------------------------------

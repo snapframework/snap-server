@@ -19,11 +19,13 @@ module Snap.Http.Server.Config
   , fmapOpt
 
   , getAccessLog
+  , getAccessLogHandler
   , getBind
   , getCompression
   , getDefaultTimeout
   , getErrorHandler
   , getErrorLog
+  , getErrorLogHandler
   , getHostname
   , getLocale
   , getOther
@@ -38,11 +40,13 @@ module Snap.Http.Server.Config
   , getStartupHook
 
   , setAccessLog
+  , setAccessLogHandler
   , setBind
   , setCompression
   , setDefaultTimeout
   , setErrorHandler
   , setErrorLog
+  , setErrorLogHandler
   , setHostname
   , setLocale
   , setOther
