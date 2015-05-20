@@ -255,6 +255,7 @@ getAccessLogHandler = accessLogHandler
 getErrorLog       :: Config m a -> Maybe ConfigLog
 getErrorLog = errorLog
 
+-- | Get the error log handler
 getErrorLogHandler :: Config m a -> Maybe ErrorLogHandler
 getErrorLogHandler = errorLogHandler
 
