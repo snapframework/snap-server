@@ -93,6 +93,15 @@ type ServerHandler = (ByteString -> IO ())
 ------------------------------------------------------------------------------
 type ServerMonad = StateT ServerState (Iteratee ByteString IO)
 
+------------------------------------------------------------------------------
+-- | This handler may be used (in conjunction with setErrorLogHandler) to write out error logs in a 
+-- custom manner.
+type ErrorLogHandler = ByteString -> IO ByteString
+
+------------------------------------------------------------------------------
+-- | This handler may be used (in conjunction with setAccessLogHandler) to write out access logs in a
+-- custom manner.
+type AccessLogHandler = Request -> Response -> IO ByteString
 
 ------------------------------------------------------------------------------
 data ListenPort =
@@ -228,9 +237,7 @@ httpServe defaultTimeout ports localHostname alog' alh elog' elh initial handler
 debugE :: (MonadIO m) => ByteString -> m ()
 debugE s = debug $ "Server: " ++ (map w2c $ S.unpack s)
 
-type ErrorLogHandler = ByteString -> IO ByteString
-type AccessLogHandler = Request -> Response -> IO ByteString
-
+------------------------------------------------------------------------------
 defaultAccessLogHandler :: AccessLogHandler
 defaultAccessLogHandler req rsp = do
     let hdrs      = rqHeaders req
@@ -247,6 +254,7 @@ defaultAccessLogHandler req rsp = do
 
     combinedLogEntry host user reql status cl referer userAgent
 
+------------------------------------------------------------------------------
 defaultErrorLogHandler :: ErrorLogHandler
 defaultErrorLogHandler = timestampedLogEntry
 
