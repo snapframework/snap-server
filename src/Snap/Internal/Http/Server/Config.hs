@@ -23,6 +23,9 @@ module Snap.Internal.Http.Server.Config
   , optDescrs
   , fmapOpt
 
+  , AccessLogHandler
+  , ErrorLogHandler
+
   , getAccessLog
   , getAccessLogHandler
   , getBind
@@ -45,14 +48,12 @@ module Snap.Internal.Http.Server.Config
   , getStartupHook
 
   , setAccessLog
-  , AccessLogHandler
   , setAccessLogHandler 
   , setBind
   , setCompression
   , setDefaultTimeout
   , setErrorHandler
   , setErrorLog
-  , ErrorLogHandler
   , setErrorLogHandler
   , setHostname
   , setLocale

@@ -41,14 +41,12 @@ module Snap.Http.Server.Config
   , getStartupHook
 
   , setAccessLog
-  , AccessLogHandler
   , setAccessLogHandler
   , setBind
   , setCompression
   , setDefaultTimeout
   , setErrorHandler
   , setErrorLog
-  , ErrorLogHandler
   , setErrorLogHandler
   , setHostname
   , setLocale
