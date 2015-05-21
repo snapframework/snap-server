@@ -7,6 +7,9 @@ module Snap.Http.Server.Config
   , ConfigLog(..)
   , ProxyType
 
+  , AccessLogHandler
+  , ErrorLogHandler
+
   , emptyConfig
   , defaultConfig
   , commandLineConfig
@@ -17,11 +20,13 @@ module Snap.Http.Server.Config
   , fmapOpt
 
   , getAccessLog
+  , getAccessLogHandler
   , getBind
   , getCompression
   , getDefaultTimeout
   , getErrorHandler
   , getErrorLog
+  , getErrorLogHandler
   , getHostname
   , getLocale
   , getOther
@@ -36,11 +41,15 @@ module Snap.Http.Server.Config
   , getStartupHook
 
   , setAccessLog
+  , AccessLogHandler
+  , setAccessLogHandler
   , setBind
   , setCompression
   , setDefaultTimeout
   , setErrorHandler
   , setErrorLog
+  , ErrorLogHandler
+  , setErrorLogHandler
   , setHostname
   , setLocale
   , setOther
