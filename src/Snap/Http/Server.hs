@@ -25,7 +25,7 @@ import           Control.Concurrent                (killThread, newEmptyMVar, ne
 import           Control.Concurrent.Extended       (forkIOLabeledWithUnmaskBs)
 import           Control.Exception                 (SomeException, bracket, catch, finally, mask, mask_)
 import qualified Control.Exception.Lifted          as L
-import           Control.Monad                     (liftM, when)
+import           Control.Monad                     (liftM, when, (=<<))
 import           Control.Monad.Trans               (MonadIO)
 import           Data.ByteString.Char8             (ByteString)
 import qualified Data.ByteString.Char8             as S
@@ -44,10 +44,10 @@ import           Data.ByteString.Builder           (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getVerbose)
+import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getAccessLogHandler, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getErrorLogHandler, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
-import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
+import           Snap.Internal.Http.Server.Config  (AccessLogHandler, ErrorLogHandler, ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
 import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket  as Sock
 import qualified Snap.Internal.Http.Server.TLS     as TLS
@@ -117,42 +117,36 @@ simpleHttpServe config handler = do
 
 
     --------------------------------------------------------------------------
-    logE :: Maybe (ByteString -> IO ()) -> Builder -> IO ()
-    logE elog b = let x = S.concat $ L.toChunks $ toLazyByteString b
-                  in (maybe debugE (\l s -> debugE s >> logE' l s) elog) x
+    logE :: ErrorLogHandler -> Maybe (ByteString -> IO ()) -> Builder -> IO ()
+    logE elh elog b = let x = S.concat $ L.toChunks $ toLazyByteString b
+                      in (maybe debugE (\l s -> debugE s >> logE' elh l s) elog) x
 
     --------------------------------------------------------------------------
-    logE' :: (ByteString -> IO ()) -> ByteString -> IO ()
-    logE' logger s = (timestampedLogEntry s) >>= logger
+    logE' :: ErrorLogHandler -> (ByteString -> IO ()) -> ByteString -> IO ()
+    logE' elh logger s = logger =<< elh s
 
     --------------------------------------------------------------------------
-    logA :: Maybe (ByteString -> IO ())
+    logA :: AccessLogHandler
+         -> Maybe (ByteString -> IO ())
          -> Request
          -> Response
          -> Word64
          -> IO ()
-    logA alog = maybe (\_ _ _ -> return $! ()) logA' alog
+    logA alh alog = maybe (\_ _ _ -> return $! ()) (logA' alh) alog
 
     --------------------------------------------------------------------------
-    logA' logger req rsp cl = do
-        let hdrs      = rqHeaders req
-        let host      = rqClientAddr req
-        let user      = Nothing -- TODO we don't do authentication yet
-        let (v, v')   = rqVersion req
-        let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
-        let method    = bshow (rqMethod req)
-        let reql      = S.intercalate " " [ method, rqURI req, ver ]
-        let status    = rspStatus rsp
-        let referer   = H.lookup "referer" hdrs
-        let userAgent = fromMaybe "-" $ H.lookup "user-agent" hdrs
+    logA' alh logger req rsp cl = logger =<< alh req rsp cl
 
-        msg <- combinedLogEntry host user reql status cl referer userAgent
-        logger msg
+    --------------------------------------------------------------------------
+    accessHandler conf = fromMaybe defaultAccessLogHandler (getAccessLogHandler conf)
+    errorHandler conf = fromMaybe defaultErrorLogHandler (getErrorLogHandler conf)
 
     --------------------------------------------------------------------------
     go conf sockets afuncs = do
         let tout = fromMaybe 60 $ getDefaultTimeout conf
         let shandler = snapToServerHandler handler
+        let ah = accessHandler conf
+        let eh = errorHandler conf
 
         setUnicodeLocale $ fromJust $ getLocale conf
 
@@ -160,8 +154,8 @@ simpleHttpServe config handler = do
                     (fromJust $ getErrorLog conf) $ \(alog, elog) -> do
             let scfg = Ty.setDefaultTimeout tout .
                        Ty.setLocalHostname (fromJust $ getHostname conf) .
-                       Ty.setLogAccess (logA alog) .
-                       Ty.setLogError (logE elog) $
+                       Ty.setLogAccess (logA ah alog) .
+                       Ty.setLogError (logE eh elog) $
                        Ty.emptyServerConfig
             maybe (return $! ())
                   ($ mkStartupInfo sockets conf)
@@ -197,6 +191,25 @@ simpleHttpServe config handler = do
                                       , liftM logMsg elog <|> maybeIoLog efp))
 {-# INLINE simpleHttpServe #-}
 
+------------------------------------------------------------------------------
+defaultAccessLogHandler :: AccessLogHandler
+defaultAccessLogHandler req rsp cl = do
+   let hdrs      = rqHeaders req
+   let host      = rqClientAddr req
+   let user      = Nothing -- TODO we don't do authentication yet
+   let (v, v')   = rqVersion req
+   let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
+   let method    = bshow (rqMethod req)
+   let reql      = S.intercalate " " [ method, rqURI req, ver ]
+   let status    = rspStatus rsp
+   let referer   = H.lookup "referer" hdrs
+   let userAgent = fromMaybe "-" $ H.lookup "user-agent" hdrs
+
+   combinedLogEntry host user reql status cl referer userAgent
+
+------------------------------------------------------------------------------
+defaultErrorLogHandler :: ErrorLogHandler
+defaultErrorLogHandler = timestampedLogEntry
 
 ------------------------------------------------------------------------------
 listeners :: Config m a -> IO [(ByteString, Socket, AcceptFunc)]

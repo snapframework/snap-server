@@ -23,12 +23,17 @@ module Snap.Internal.Http.Server.Config
   , optDescrs
   , fmapOpt
 
+  , AccessLogHandler
+  , ErrorLogHandler
+
   , getAccessLog
+  , getAccessLogHandler
   , getBind
   , getCompression
   , getDefaultTimeout
   , getErrorHandler
   , getErrorLog
+  , getErrorLogHandler
   , getHostname
   , getLocale
   , getOther
@@ -43,11 +48,13 @@ module Snap.Internal.Http.Server.Config
   , getStartupHook
 
   , setAccessLog
+  , setAccessLogHandler
   , setBind
   , setCompression
   , setDefaultTimeout
   , setErrorHandler
   , setErrorLog
+  , setErrorLogHandler
   , setHostname
   , setLocale
   , setOther
@@ -90,6 +97,7 @@ import           Data.Typeable.Internal     (Typeable, mkTyCon3)
 #else
 import           Data.Typeable              (mkTyCon3)
 #endif
+import           Data.Word                  (Word64)
 import           Network                    (Socket)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                    hiding (catch)
@@ -106,7 +114,7 @@ import           System.IO                  (hPutStrLn, stderr)
 import           Data.ByteString.Builder    (Builder, byteString, stringUtf8, toLazyByteString)
 import qualified System.IO.Streams          as Streams
 ------------------------------------------------------------------------------
-import           Snap.Core                  (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
+import           Snap.Core                  (MonadSnap, Request (rqClientAddr, rqClientPort), Response, emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
 import           Snap.Internal.Debug        (debug)
 
 
@@ -130,6 +138,15 @@ instance Show ConfigLog where
     show (ConfigFileLog f) = "log to file " ++ show f
     show (ConfigIoLog _)   = "custom logging handler"
 
+------------------------------------------------------------------------------
+-- | This handler may be used (in conjunction with setErrorLogHandler) to write out error logs in a
+-- custom manner.
+type ErrorLogHandler = ByteString -> IO ByteString
+
+------------------------------------------------------------------------------
+-- | This handler may be used (in conjunction with setAccessLogHandler) to write out access logs in a
+-- custom manner.
+type AccessLogHandler = Request -> Response -> Word64 -> IO ByteString
 
 ------------------------------------------------------------------------------
 -- We should be using ServerConfig here. There needs to be a clearer
@@ -188,24 +205,26 @@ instance Show ConfigLog where
 -- Any fields which are unspecified in the 'Config' passed to 'httpServe' (and
 -- this is the norm) are filled in with default values from 'defaultConfig'.
 data Config m a = Config
-    { hostname       :: Maybe ByteString
-    , accessLog      :: Maybe ConfigLog
-    , errorLog       :: Maybe ConfigLog
-    , locale         :: Maybe String
-    , port           :: Maybe Int
-    , bind           :: Maybe ByteString
-    , sslport        :: Maybe Int
-    , sslbind        :: Maybe ByteString
-    , sslcert        :: Maybe FilePath
-    , sslchaincert   :: Maybe Bool
-    , sslkey         :: Maybe FilePath
-    , compression    :: Maybe Bool
-    , verbose        :: Maybe Bool
-    , errorHandler   :: Maybe (SomeException -> m ())
-    , defaultTimeout :: Maybe Int
-    , other          :: Maybe a
-    , proxyType      :: Maybe ProxyType
-    , startupHook    :: Maybe (StartupInfo m a -> IO ())
+    { hostname          :: Maybe ByteString
+    , accessLog         :: Maybe ConfigLog
+    , errorLog          :: Maybe ConfigLog
+    , accessLogHandler  :: Maybe AccessLogHandler
+    , errorLogHandler   :: Maybe ErrorLogHandler
+    , locale            :: Maybe String
+    , port              :: Maybe Int
+    , bind              :: Maybe ByteString
+    , sslport           :: Maybe Int
+    , sslbind           :: Maybe ByteString
+    , sslcert           :: Maybe FilePath
+    , sslchaincert      :: Maybe Bool
+    , sslkey            :: Maybe FilePath
+    , compression       :: Maybe Bool
+    , verbose           :: Maybe Bool
+    , errorHandler      :: Maybe (SomeException -> m ())
+    , defaultTimeout    :: Maybe Int
+    , other             :: Maybe a
+    , proxyType         :: Maybe ProxyType
+    , startupHook       :: Maybe (StartupInfo m a -> IO ())
     }
 #if MIN_VERSION_base(4,7,0)
   deriving Typeable
@@ -273,6 +292,8 @@ instance Monoid (Config m a) where
         { hostname       = Nothing
         , accessLog      = Nothing
         , errorLog       = Nothing
+        , accessLogHandler = Nothing
+        , errorLogHandler = Nothing
         , locale         = Nothing
         , port           = Nothing
         , bind           = Nothing
@@ -294,6 +315,8 @@ instance Monoid (Config m a) where
         { hostname       = ov hostname
         , accessLog      = ov accessLog
         , errorLog       = ov errorLog
+        , accessLogHandler = ov accessLogHandler
+        , errorLogHandler = ov errorLogHandler
         , locale         = ov locale
         , port           = ov port
         , bind           = ov bind
@@ -346,9 +369,17 @@ getHostname = hostname
 getAccessLog      :: Config m a -> Maybe ConfigLog
 getAccessLog = accessLog
 
+-- | Get the access log handler
+getAccessLogHandler :: Config m a -> Maybe AccessLogHandler
+getAccessLogHandler = accessLogHandler
+
 -- | Path to the error log
 getErrorLog       :: Config m a -> Maybe ConfigLog
 getErrorLog = errorLog
+
+-- | Get the error log handler
+getErrorLogHandler :: Config m a -> Maybe ErrorLogHandler
+getErrorLogHandler = errorLogHandler
 
 -- | Gets the locale to use. Locales are used on Unix only, to set the
 -- @LANG@\/@LC_ALL@\/etc. environment variable. For instance if you set the
@@ -421,8 +452,14 @@ setHostname x c = c { hostname = Just x }
 setAccessLog      :: ConfigLog               -> Config m a -> Config m a
 setAccessLog x c = c { accessLog = Just x }
 
+setAccessLogHandler :: AccessLogHandler      -> Config m a -> Config m a
+setAccessLogHandler x c = c { accessLogHandler = Just x }
+
 setErrorLog       :: ConfigLog               -> Config m a -> Config m a
 setErrorLog x c = c { errorLog = Just x }
+
+setErrorLogHandler :: ErrorLogHandler        -> Config m a -> Config m a
+setErrorLogHandler x c = c { errorLogHandler = Just x }
 
 setLocale         :: String                  -> Config m a -> Config m a
 setLocale x c = c { locale = Just x }
