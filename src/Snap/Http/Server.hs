@@ -44,10 +44,10 @@ import           Data.ByteString.Builder           (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getVerbose, getAccessLogHandler, getErrorLogHandler)
+import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getAccessLogHandler, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getErrorLogHandler, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
-import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets, AccessLogHandler, ErrorLogHandler)
+import           Snap.Internal.Http.Server.Config  (AccessLogHandler, ErrorLogHandler, ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
 import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket  as Sock
 import qualified Snap.Internal.Http.Server.TLS     as TLS

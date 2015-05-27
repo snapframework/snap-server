@@ -48,7 +48,7 @@ module Snap.Internal.Http.Server.Config
   , getStartupHook
 
   , setAccessLog
-  , setAccessLogHandler 
+  , setAccessLogHandler
   , setBind
   , setCompression
   , setDefaultTimeout
@@ -139,7 +139,7 @@ instance Show ConfigLog where
     show (ConfigIoLog _)   = "custom logging handler"
 
 ------------------------------------------------------------------------------
--- | This handler may be used (in conjunction with setErrorLogHandler) to write out error logs in a 
+-- | This handler may be used (in conjunction with setErrorLogHandler) to write out error logs in a
 -- custom manner.
 type ErrorLogHandler = ByteString -> IO ByteString
 
@@ -315,7 +315,7 @@ instance Monoid (Config m a) where
         { hostname       = ov hostname
         , accessLog      = ov accessLog
         , errorLog       = ov errorLog
-        , accessLogHandler = ov accessLogHandler 
+        , accessLogHandler = ov accessLogHandler
         , errorLogHandler = ov errorLogHandler
         , locale         = ov locale
         , port           = ov port
