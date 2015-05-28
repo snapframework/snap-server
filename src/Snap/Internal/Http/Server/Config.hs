@@ -410,15 +410,15 @@ getUnixSocket     :: Config m a -> Maybe FilePath
 getUnixSocket = unixsocket
 
 -- | Access mode for unix socket, by default is system specific.
---  This should only be used to grant additional permissions to created
---  socket file, and not to remove permissions set by default. The only portable way
---  to limit access to socket is creating it in a directory with proper permissions
---  set.
+-- This should only be used to grant additional permissions to created
+-- socket file, and not to remove permissions set by default.
+-- The only portable way to limit access to socket is creating it in a
+-- directory with proper permissions set.
 --
---  Most BSD systems ignore access permissionse on sockets.
+-- Most BSD systems ignore access permissions on unix sockets.
 --
---  Note: This uses umask. There is a race condition if process creates other
---  files at the same time as opening a unix socket with this option set.
+-- Note: This uses umask. There is a race condition if process creates other
+-- files at the same time as opening a unix socket with this option set.
 getUnixSocketAccessMode :: Config m a -> Maybe Int
 getUnixSocketAccessMode = unixaccessmode
 

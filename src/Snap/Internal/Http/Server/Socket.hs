@@ -72,7 +72,9 @@ bindUnixSocket :: Maybe Int -> String -> IO Socket
 #if HAS_UNIX_SOCKETS
 bindUnixSocket mode path = do
    when (isRelative path) $
-      throwIO (AddressNotSupportedException path)
+      throwIO $ AddressNotSupportedException
+                $! "Refusing to bind unix socket to non-absolute path: " ++ path
+
    bracketOnError (socket N.AF_UNIX N.Stream 0) N.close $ \sock -> do
       catch (removeLink path) $ \e -> when (not $ isDoesNotExistError e) $ throwIO e
       case mode of
