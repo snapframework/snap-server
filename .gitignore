@@ -3,6 +3,7 @@ cabal-dev
 .hpc
 *.o
 *.hi
+*.nix
 *.chi
 *.chs.h
 .virthualenv
@@ -19,5 +20,6 @@ TAGS
 *.hp
 .cabal-sandbox
 cabal.sandbox.config
+result
 test/*.log
 *.log
