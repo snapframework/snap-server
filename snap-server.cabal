@@ -93,6 +93,7 @@ Library
     case-insensitive                    >= 1.1      && < 1.3,
     clock                               >= 0.4.1    && < 0.5,
     containers                          >= 0.3      && < 0.6,
+    filepath                            >= 1.1      && < 2.0,
     io-streams                          >= 1.3      && < 1.4,
     io-streams-haproxy                  >= 1.0      && < 1.1,
     lifted-base                         >= 0.1      && < 0.3,
@@ -130,19 +131,19 @@ Library
                    openssl-streams >= 1.1    && < 1.3
 
   if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE
+    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Linux
 
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_SENDFILE
+    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Darwin
 
   if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE
+    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.FreeBSD
@@ -203,6 +204,7 @@ Test-suite testsuite
     clock                               >= 0.4.1    && < 0.5,
     containers                          >= 0.3      && < 0.6,
     directory                           >= 1.0      && < 1.3,
+    filepath                            >= 1.1      && < 2.0,
     io-streams                          >= 1.3      && < 1.4,
     io-streams-haproxy                  >= 1.0      && < 1.1,
     lifted-base                         >= 0.1      && < 0.3,
@@ -256,7 +258,7 @@ Test-suite testsuite
                    openssl-streams >= 1.1    && < 1.3
 
   if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE
+    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Linux,
@@ -265,7 +267,7 @@ Test-suite testsuite
 
 
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_SENDFILE
+    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Darwin,
@@ -273,7 +275,7 @@ Test-suite testsuite
     c-sources: test/cbits/errno_util.c
 
   if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE
+    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.FreeBSD,
@@ -358,19 +360,19 @@ Executable snap-test-pong-server
     build-depends: unix                         < 2.8
 
   if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE
+    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Linux
 
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_SENDFILE
+    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Darwin
 
   if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE
+    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.FreeBSD
@@ -455,19 +457,19 @@ Executable snap-test-server
     build-depends: unix < 2.8
 
   if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE
+    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Linux
 
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_SENDFILE
+    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.Darwin
 
   if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE
+    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
     other-modules:
       System.SendFile,
       System.SendFile.FreeBSD

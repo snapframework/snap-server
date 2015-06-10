@@ -41,6 +41,8 @@ module Snap.Internal.Http.Server.Config
   , getSSLPort
   , getVerbose
   , getStartupHook
+  , getUnixSocket
+  , getUnixSocketAccessMode
 
   , setAccessLog
   , setBind
@@ -59,6 +61,9 @@ module Snap.Internal.Http.Server.Config
   , setSSLKey
   , setSSLPort
   , setVerbose
+  , setUnixSocket
+  , setUnixSocketAccessMode
+
   , setStartupHook
 
   , StartupInfo(..)
@@ -74,6 +79,7 @@ module Snap.Internal.Http.Server.Config
 ------------------------------------------------------------------------------
 import           Control.Exception          (SomeException)
 import           Control.Monad              (when)
+import           Data.Bits                  ((.&.))
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString.Char8      as S
 import qualified Data.ByteString.Lazy.Char8 as L
@@ -91,6 +97,7 @@ import           Data.Typeable.Internal     (Typeable, mkTyCon3)
 import           Data.Typeable              (mkTyCon3)
 #endif
 import           Network                    (Socket)
+import           Numeric                    (readOct, showOct)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                    hiding (catch)
 #endif
@@ -199,6 +206,8 @@ data Config m a = Config
     , sslcert        :: Maybe FilePath
     , sslchaincert   :: Maybe Bool
     , sslkey         :: Maybe FilePath
+    , unixsocket     :: Maybe FilePath
+    , unixaccessmode :: Maybe Int
     , compression    :: Maybe Bool
     , verbose        :: Maybe Bool
     , errorHandler   :: Maybe (SomeException -> m ())
@@ -236,6 +245,8 @@ instance Show (Config m a) where
                      , "sslcert: "        ++ _sslcert
                      , "sslchaincert: "   ++ _sslchaincert
                      , "sslkey: "         ++ _sslkey
+                     , "unixsocket: "     ++ _unixsocket
+                     , "unixaccessmode: " ++ _unixaccessmode
                      , "compression: "    ++ _compression
                      , "verbose: "        ++ _verbose
                      , "defaultTimeout: " ++ _defaultTimeout
@@ -258,6 +269,10 @@ instance Show (Config m a) where
         _verbose        = show $ verbose        c
         _defaultTimeout = show $ defaultTimeout c
         _proxyType      = show $ proxyType      c
+        _unixsocket     = show $ unixsocket     c
+        _unixaccessmode = case unixaccessmode c of
+                               Nothing -> "Nothing"
+                               Just s -> ("Just 0" ++) . showOct s $ []
 
 
 ------------------------------------------------------------------------------
@@ -281,6 +296,8 @@ instance Monoid (Config m a) where
         , sslcert        = Nothing
         , sslchaincert   = Nothing
         , sslkey         = Nothing
+        , unixsocket     = Nothing
+        , unixaccessmode = Nothing
         , compression    = Nothing
         , verbose        = Nothing
         , errorHandler   = Nothing
@@ -302,6 +319,8 @@ instance Monoid (Config m a) where
         , sslcert        = ov sslcert
         , sslchaincert   = ov sslchaincert
         , sslkey         = ov sslkey
+        , unixsocket     = ov unixsocket
+        , unixaccessmode = ov unixaccessmode
         , compression    = ov compression
         , verbose        = ov verbose
         , errorHandler   = ov errorHandler
@@ -385,6 +404,24 @@ getSSLChainCert = sslchaincert
 getSSLKey         :: Config m a -> Maybe FilePath
 getSSLKey = sslkey
 
+-- | File path to unix socket. Must be absolute path, but allows for symbolic
+-- links.
+getUnixSocket     :: Config m a -> Maybe FilePath
+getUnixSocket = unixsocket
+
+-- | Access mode for unix socket, by default is system specific.
+-- This should only be used to grant additional permissions to created
+-- socket file, and not to remove permissions set by default.
+-- The only portable way to limit access to socket is creating it in a
+-- directory with proper permissions set.
+--
+-- Most BSD systems ignore access permissions on unix sockets.
+--
+-- Note: This uses umask. There is a race condition if process creates other
+-- files at the same time as opening a unix socket with this option set.
+getUnixSocketAccessMode :: Config m a -> Maybe Int
+getUnixSocketAccessMode = unixaccessmode
+
 -- | If set and set to True, compression is turned on when applicable
 getCompression    :: Config m a -> Maybe Bool
 getCompression = compression
@@ -447,6 +484,12 @@ setSSLChainCert x c = c { sslchaincert = Just x }
 
 setSSLKey         :: FilePath                -> Config m a -> Config m a
 setSSLKey x c = c { sslkey = Just x }
+
+setUnixSocket     :: FilePath                -> Config m a -> Config m a
+setUnixSocket x c = c { unixsocket = Just x }
+
+setUnixSocketAccessMode :: Int               -> Config m a -> Config m a
+setUnixSocketAccessMode p c = c { unixaccessmode = Just ( p .&. 0o777) }
 
 setCompression    :: Bool                    -> Config m a -> Config m a
 setCompression x c = c { compression = Just x }
@@ -607,6 +650,15 @@ optDescrs defaults =
                       , "Set --proxy=haproxy to use the haproxy protocol\n("
                       , "http://haproxy.1wt.eu/download/1.5/doc/proxy-protocol.txt)"
                       , defaultC getProxyType ]
+    , Option "" ["unix-socket"]
+             (ReqArg (Just . setConfig setUnixSocket) "PATH")
+             $ concat ["Absolute path to unix socket file. "
+                      , "File will be removed if already exists"]
+    , Option "" ["unix-socket-mode"]
+             (ReqArg (Just . setConfig setUnixSocketAccessMode . parseOctal)
+                     "MODE")
+             $ concat ["Access mode for unix socket in octal, for example 0760.\n"
+                      ," Default is system specific."]
     , Option "h" ["help"]
              (NoArg Nothing)
              "display this help and exit"
@@ -622,6 +674,9 @@ optDescrs defaults =
                        , CI.original s
                        , "'"
                        ]
+    parseOctal s = case readOct s of
+          ((v, _):_) | v >= 0 && v <= 0o777 -> v
+          _ -> error $ "Error (--unix-socket-mode): expected octal access mode"
 
     setConfig f c  = f c mempty
     conf           = defaultConfig `mappend` defaults

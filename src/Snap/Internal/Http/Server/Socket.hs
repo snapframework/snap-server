@@ -6,6 +6,7 @@
 module Snap.Internal.Http.Server.Socket
   ( bindSocket
   , bindSocketImpl
+  , bindUnixSocket
   , httpAcceptFunc
   , haProxyAcceptFunc
   , sendFileFunc
@@ -13,12 +14,13 @@ module Snap.Internal.Http.Server.Socket
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception                 (bracketOnError, finally)
+import           Control.Exception                 (bracketOnError, finally, throwIO)
+import           Control.Monad                     (when)
+import           Data.Bits                         (complement, (.&.))
 import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, listen, setSocketOption, socket)
 import qualified Network.Socket                    as N
 #ifdef HAS_SENDFILE
-import           Control.Exception                 (bracket)
 import           Network.Socket                    (fdSocket)
 import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
 import           System.Posix.Types                (Fd (..))
@@ -28,10 +30,17 @@ import           Data.ByteString.Builder           (byteString)
 import           Data.ByteString.Builder.Extra     (flush)
 import           Network.Socket.ByteString         (sendAll)
 #endif
+#ifdef HAS_UNIX_SOCKETS
+import           Control.Exception                 (bracket, catch)
+import           System.FilePath                   (isRelative)
+import           System.IO.Error                   (isDoesNotExistError)
+import           System.Posix.Files                (accessModes, removeLink, setFileCreationMask)
+#endif
+
 ------------------------------------------------------------------------------
 import qualified System.IO.Streams                 as Streams
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
+import           Snap.Internal.Http.Server.Address (AddressNotSupportedException (..), getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHandler)
 import qualified System.IO.Streams.Network.HAProxy as HA
 
@@ -59,6 +68,27 @@ bindSocketImpl _setSocketOption _bindSocket _listen bindAddr bindPort = do
         _listen sock 150
         return $! sock
 
+bindUnixSocket :: Maybe Int -> String -> IO Socket
+#if HAS_UNIX_SOCKETS
+bindUnixSocket mode path = do
+   when (isRelative path) $
+      throwIO $ AddressNotSupportedException
+                $! "Refusing to bind unix socket to non-absolute path: " ++ path
+
+   bracketOnError (socket N.AF_UNIX N.Stream 0) N.close $ \sock -> do
+      catch (removeLink path) $ \e -> when (not $ isDoesNotExistError e) $ throwIO e
+      case mode of
+         Nothing -> N.bindSocket sock (N.SockAddrUnix path)
+         Just mode' -> bracket (setFileCreationMask $ modeToMask mode')
+                              setFileCreationMask
+                              (const $ N.bindSocket sock (N.SockAddrUnix path))
+      N.listen sock 150
+      return $! sock
+   where
+     modeToMask p = accessModes .&. complement (fromIntegral p)
+#else
+bindUnixSocket _ path = throwIO (AddressNotSupportedException $ "unix:" ++ path)
+#endif
 
 ------------------------------------------------------------------------------
 -- TODO(greg): move buffer size configuration into config

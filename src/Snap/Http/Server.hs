@@ -31,6 +31,8 @@ import           Data.ByteString.Char8             (ByteString)
 import qualified Data.ByteString.Char8             as S
 import qualified Data.ByteString.Lazy.Char8        as L
 import           Data.Maybe                        (catMaybes, fromJust, fromMaybe)
+import qualified Data.Text                         as T
+import qualified Data.Text.Encoding                as T
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
 import           Network.Socket                    (Socket, sClose)
@@ -44,7 +46,7 @@ import           Data.ByteString.Builder           (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getVerbose)
+import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getUnixSocket, getUnixSocketAccessMode, getVerbose)
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
 import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
@@ -201,7 +203,7 @@ simpleHttpServe config handler = do
 ------------------------------------------------------------------------------
 listeners :: Config m a -> IO [(ByteString, Socket, AcceptFunc)]
 listeners conf = TLS.withTLS $ do
-  let fs = catMaybes [httpListener, httpsListener]
+  let fs = catMaybes [httpListener, httpsListener, unixListener]
   mapM (\(str, mkAfunc) -> do (sock, afunc) <- mkAfunc
                               return $! (str, sock, afunc)) fs
   where
@@ -229,6 +231,12 @@ listeners conf = TLS.withTLS $ do
                    if getProxyType conf == Just HaProxy
                      then return (sock, Sock.haProxyAcceptFunc sock)
                      else return (sock, Sock.httpAcceptFunc sock))
+    unixListener = do
+        path <- getUnixSocket conf
+        let accessMode = getUnixSocketAccessMode conf
+        return (T.encodeUtf8 . T.pack  $ "unix:" ++ path,
+                 do sock <- Sock.bindUnixSocket accessMode path
+                    return (sock, Sock.httpAcceptFunc sock))
 
 
 ------------------------------------------------------------------------------
