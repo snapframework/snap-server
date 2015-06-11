@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE CPP                #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings  #-}
 
@@ -13,6 +14,7 @@ module Snap.Internal.Http.Server.Address
   ) where
 
 ------------------------------------------------------------------------------
+import           Control.Applicative   ((<$>))
 import           Control.Exception     (Exception, throwIO)
 import           Control.Monad         (liftM)
 import           Data.ByteString.Char8 (ByteString)
@@ -59,11 +61,17 @@ getAddress = getAddressImpl getHostAddr
 getAddressImpl :: (SockAddr -> IO String) -> SockAddr -> IO (Int, ByteString)
 getAddressImpl !_getHostAddr addr =
   case addr of
-    SockAddrInet p _ -> host (fromIntegral p)
+    SockAddrInet p _      -> host (fromIntegral p)
     SockAddrInet6 p _ _ _ -> host (fromIntegral p)
-    SockAddrUnix path -> return (-1, T.encodeUtf8 . T.pack $ "unix:" ++ path)
+    SockAddrUnix path     -> return (-1, prefix path)
+#if MIN_VERSION_network(2,6,0)
+    _                     -> fail "Unsupported address type"
+#endif
   where
-    host port = (,) port . S.pack <$> _getHostAddr addr
+    prefix path = T.encodeUtf8 $! T.pack $ "unix:" ++ path
+    host port   = (,) port . S.pack <$> _getHostAddr addr
+
+
 ------------------------------------------------------------------------------
 getSockAddr :: Int
             -> ByteString

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -5,6 +6,9 @@ module Snap.Internal.Http.Server.Address.Tests (tests) where
 
 ------------------------------------------------------------------------------
 import           Network.Socket                    (Family (AF_INET, AF_INET6), SockAddr (SockAddrInet, SockAddrInet6, SockAddrUnix), iN6ADDR_ANY, iNADDR_ANY)
+#if MIN_VERSION_network(2,6,0)
+import           Network.Socket                    (SockAddr (SockAddrCan))
+#endif
 ------------------------------------------------------------------------------
 import           Test.Framework                    (Test)
 import           Test.Framework.Providers.HUnit    (testCase)
@@ -18,6 +22,7 @@ import           Snap.Test.Common                  (coverShowInstance, coverType
 tests :: [Test]
 tests = [ testGetNameInfoFails
         , testGetAddressUnix
+        , testGetAddressCan
         , testGetAddressIPv6
         , testGetSockAddr
         , testTrivials
@@ -40,6 +45,13 @@ testGetAddressUnix = testCase "address/getAddress-unix-socket" $ do
 
 
 ------------------------------------------------------------------------------
+testGetAddressCan :: Test
+testGetAddressCan = testCase "address/getAddress-can" $ do
+#if MIN_VERSION_network(2,6,0)
+    expectException $ getAddress $ SockAddrCan 0
+#endif
+
+------------------------------------------------------------------------------
 testGetAddressIPv6 :: Test
 testGetAddressIPv6 = testCase "address/getAddress-IPv6" $ do
     let x = SockAddrInet6 10 undefined undefined undefined
@@ -59,6 +71,8 @@ testGetSockAddr = testCase "address/getSockAddr" $ do
     assertEqual "" a2 $ SockAddrInet6 10 0 iN6ADDR_ANY 0
 
     expectException $ getSockAddrImpl (\_ _ _ -> return []) 10 "foo"
+
+
 
 
 ------------------------------------------------------------------------------
