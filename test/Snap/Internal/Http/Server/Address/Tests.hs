@@ -49,6 +49,8 @@ testGetAddressCan :: Test
 testGetAddressCan = testCase "address/getAddress-can" $ do
 #if MIN_VERSION_network(2,6,0)
     expectException $ getAddress $ SockAddrCan 0
+#else
+    return ()
 #endif
 
 ------------------------------------------------------------------------------
