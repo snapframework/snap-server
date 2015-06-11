@@ -7,10 +7,10 @@
 -- | This module exports the 'Config' datatype, which you can use to configure
 -- the Snap HTTP server.
 --
-module Snap.Internal.Http.Server.Config
-  -- NOTE: also edit Snap.Http.Server.Config if you change these
-  ( ConfigLog(..)
-  , Config(..)
+module Snap.Internal.Http.Server.CmdlineConfig
+  -- NOTE: also edit Snap.Http.Server.CmdlineConfig if you change these
+  ( CmdlineConfigLog(..)
+  , CmdlineConfig(..)
   , ProxyType(..)
 
   , emptyConfig
@@ -18,7 +18,7 @@ module Snap.Internal.Http.Server.Config
 
   , commandLineConfig
   , extendedCommandLineConfig
-  , completeConfig
+  , completeCommandLineConfig
 
   , optDescrs
   , fmapOpt
@@ -66,6 +66,7 @@ module Snap.Internal.Http.Server.Config
 
   , setStartupHook
 
+  -- TODO: scrap this
   , StartupInfo(..)
   , getStartupSockets
   , getStartupConfig
@@ -128,11 +129,11 @@ data ProxyType = NoProxy
 
 ------------------------------------------------------------------------------
 -- | Data type representing the configuration of a logging target
-data ConfigLog = ConfigNoLog                        -- ^ no logging
-               | ConfigFileLog FilePath             -- ^ log to text file
-               | ConfigIoLog (ByteString -> IO ())  -- ^ log custom IO handler
+data CmdlineConfigLog = ConfigNoLog                     -- ^ no logging
+                      | ConfigFileLog FilePath          -- ^ log to text file
+                      | ConfigIoLog (Builder -> IO ())  -- ^ log custom IO handler
 
-instance Show ConfigLog where
+instance Show CmdlineConfigLog where
     show ConfigNoLog       = "no log"
     show (ConfigFileLog f) = "log to file " ++ show f
     show (ConfigIoLog _)   = "custom logging handler"
@@ -194,7 +195,7 @@ instance Show ConfigLog where
 --
 -- Any fields which are unspecified in the 'Config' passed to 'httpServe' (and
 -- this is the norm) are filled in with default values from 'defaultConfig'.
-data Config m a = Config
+data CmdlineConfig m a = CmdlineConfig
     { hostname       :: Maybe ByteString
     , accessLog      :: Maybe ConfigLog
     , errorLog       :: Maybe ConfigLog
@@ -224,7 +225,8 @@ data Config m a = Config
 -- | The 'Typeable1' instance is here so 'Config' values can be
 -- dynamically loaded with Hint.
 configTyCon :: TyCon
-configTyCon = mkTyCon3 "snap-server" "Snap.Http.Server.Config" "Config"
+configTyCon = mkTyCon3 "snap-server" "Snap.Http.Server.CmdlineConfig"
+                       "CmdlineConfig"
 {-# NOINLINE configTyCon #-}
 
 instance (Typeable1 m) => Typeable1 (Config m) where
@@ -232,8 +234,8 @@ instance (Typeable1 m) => Typeable1 (Config m) where
 #endif
 
 
-instance Show (Config m a) where
-    show c = unlines [ "Config:"
+instance Show (CmdlineConfig m a) where
+    show c = unlines [ "CmdlineConfig:"
                      , "hostname: "       ++ _hostname
                      , "accessLog: "      ++ _accessLog
                      , "errorLog: "       ++ _errorLog
@@ -278,13 +280,13 @@ instance Show (Config m a) where
 ------------------------------------------------------------------------------
 -- | Returns a completely empty 'Config'. Equivalent to 'mempty' from
 -- 'Config''s 'Monoid' instance.
-emptyConfig :: Config m a
+emptyConfig :: CmdlineConfig m a
 emptyConfig = mempty
 
 
 ------------------------------------------------------------------------------
-instance Monoid (Config m a) where
-    mempty = Config
+instance Monoid (CmdlineConfig m a) where
+    mempty = CmdlineConfig
         { hostname       = Nothing
         , accessLog      = Nothing
         , errorLog       = Nothing
@@ -307,7 +309,7 @@ instance Monoid (Config m a) where
         , startupHook    = Nothing
         }
 
-    a `mappend` b = Config
+    a `mappend` b = CmdlineConfig
         { hostname       = ov hostname
         , accessLog      = ov accessLog
         , errorLog       = ov errorLog
@@ -330,14 +332,14 @@ instance Monoid (Config m a) where
         , startupHook    = ov startupHook
         }
       where
-        ov :: (Config m a -> Maybe b) -> Maybe b
+        ov :: (CmdlineConfig m a -> Maybe b) -> Maybe b
         ov f = getLast $! (mappend `on` (Last . f)) a b
 
 
 ------------------------------------------------------------------------------
 -- | These are the default values for the options
-defaultConfig :: MonadSnap m => Config m a
-defaultConfig = mempty
+defaultCmdlineConfig :: MonadSnap m => CmdlineConfig m a
+defaultCmdlineConfig = mempty
     { hostname       = Just "localhost"
     , accessLog      = Just $ ConfigFileLog "log/access.log"
     , errorLog       = Just $ ConfigFileLog "log/error.log"
@@ -358,50 +360,50 @@ defaultConfig = mempty
 -- | The hostname of the HTTP server. This field has the same format as an HTTP
 -- @Host@ header; if a @Host@ header came in with the request, we use that,
 -- otherwise we default to this value specified in the configuration.
-getHostname       :: Config m a -> Maybe ByteString
+getHostname       :: CmdlineConfig m a -> Maybe ByteString
 getHostname = hostname
 
 -- | Path to the access log
-getAccessLog      :: Config m a -> Maybe ConfigLog
+getAccessLog      :: CmdlineConfig m a -> Maybe CmdlineConfigLog
 getAccessLog = accessLog
 
 -- | Path to the error log
-getErrorLog       :: Config m a -> Maybe ConfigLog
+getErrorLog       :: CmdlineConfig m a -> Maybe CmdlineConfigLog
 getErrorLog = errorLog
 
 -- | Gets the locale to use. Locales are used on Unix only, to set the
 -- @LANG@\/@LC_ALL@\/etc. environment variable. For instance if you set the
 -- locale to \"@en_US@\", we'll set the relevant environment variables to
 -- \"@en_US.UTF-8@\".
-getLocale         :: Config m a -> Maybe String
+getLocale         :: CmdlineConfig m a -> Maybe String
 getLocale = locale
 
 -- | Returns the port to listen on (for http)
-getPort           :: Config m a -> Maybe Int
+getPort           :: CmdlineConfig m a -> Maybe Int
 getPort = port
 
 -- | Returns the address to bind to (for http)
-getBind           :: Config m a -> Maybe ByteString
+getBind           :: CmdlineConfig m a -> Maybe ByteString
 getBind = bind
 
 -- | Returns the port to listen on (for https)
-getSSLPort        :: Config m a -> Maybe Int
+getSSLPort        :: CmdlineConfig m a -> Maybe Int
 getSSLPort = sslport
 
 -- | Returns the address to bind to (for https)
-getSSLBind        :: Config m a -> Maybe ByteString
+getSSLBind        :: CmdlineConfig m a -> Maybe ByteString
 getSSLBind = sslbind
 
 -- | Path to the SSL certificate file
-getSSLCert        :: Config m a -> Maybe FilePath
+getSSLCert        :: CmdlineConfig m a -> Maybe FilePath
 getSSLCert = sslcert
 
 -- | Path to the SSL certificate file
-getSSLChainCert   :: Config m a -> Maybe Bool
+getSSLChainCert   :: CmdlineConfig m a -> Maybe Bool
 getSSLChainCert = sslchaincert
 
 -- | Path to the SSL key file
-getSSLKey         :: Config m a -> Maybe FilePath
+getSSLKey         :: CmdlineConfig m a -> Maybe FilePath
 getSSLKey = sslkey
 
 -- | File path to unix socket. Must be absolute path, but allows for symbolic
@@ -423,93 +425,93 @@ getUnixSocketAccessMode :: Config m a -> Maybe Int
 getUnixSocketAccessMode = unixaccessmode
 
 -- | If set and set to True, compression is turned on when applicable
-getCompression    :: Config m a -> Maybe Bool
+getCompression    :: CmdlineConfig m a -> Maybe Bool
 getCompression = compression
 
 -- | Whether to write server status updates to stderr
-getVerbose        :: Config m a -> Maybe Bool
+getVerbose        :: CmdlineConfig m a -> Maybe Bool
 getVerbose = verbose
 
 -- | A MonadSnap action to handle 500 errors
-getErrorHandler   :: Config m a -> Maybe (SomeException -> m ())
+getErrorHandler   :: CmdlineConfig m a -> Maybe (SomeException -> m ())
 getErrorHandler = errorHandler
 
-getDefaultTimeout :: Config m a -> Maybe Int
+getDefaultTimeout :: CmdlineConfig m a -> Maybe Int
 getDefaultTimeout = defaultTimeout
 
-getOther :: Config m a -> Maybe a
+getOther :: CmdlineConfig m a -> Maybe a
 getOther = other
 
-getProxyType :: Config m a -> Maybe ProxyType
+getProxyType :: CmdlineConfig m a -> Maybe ProxyType
 getProxyType = proxyType
 
 -- | A startup hook is run after the server initializes but before user request
 -- processing begins. The server passes, through a 'StartupInfo' object, the
--- startup hook a list of the sockets it is listening on and the final 'Config'
--- object completed after command-line processing.
-getStartupHook :: Config m a -> Maybe (StartupInfo m a -> IO ())
+-- startup hook a list of the sockets it is listening on and the final
+-- 'CmdlineConfig' object completed after command-line processing.
+getStartupHook :: CmdlineConfig m a -> Maybe (StartupInfo m a -> IO ())
 getStartupHook = startupHook
 
 
 ------------------------------------------------------------------------------
-setHostname       :: ByteString              -> Config m a -> Config m a
+setHostname       :: ByteString              -> CmdlineConfig m a -> CmdlineConfig m a
 setHostname x c = c { hostname = Just x }
 
-setAccessLog      :: ConfigLog               -> Config m a -> Config m a
+setAccessLog      :: CmdlineConfigLog               -> CmdlineConfig m a -> CmdlineConfig m a
 setAccessLog x c = c { accessLog = Just x }
 
-setErrorLog       :: ConfigLog               -> Config m a -> Config m a
+setErrorLog       :: CmdlineConfigLog               -> CmdlineConfig m a -> CmdlineConfig m a
 setErrorLog x c = c { errorLog = Just x }
 
-setLocale         :: String                  -> Config m a -> Config m a
+setLocale         :: String                  -> CmdlineConfig m a -> CmdlineConfig m a
 setLocale x c = c { locale = Just x }
 
-setPort           :: Int                     -> Config m a -> Config m a
+setPort           :: Int                     -> CmdlineConfig m a -> CmdlineConfig m a
 setPort x c = c { port = Just x }
 
-setBind           :: ByteString              -> Config m a -> Config m a
+setBind           :: ByteString              -> CmdlineConfig m a -> CmdlineConfig m a
 setBind x c = c { bind = Just x }
 
-setSSLPort        :: Int                     -> Config m a -> Config m a
+setSSLPort        :: Int                     -> CmdlineConfig m a -> CmdlineConfig m a
 setSSLPort x c = c { sslport = Just x }
 
-setSSLBind        :: ByteString              -> Config m a -> Config m a
+setSSLBind        :: ByteString              -> CmdlineConfig m a -> CmdlineConfig m a
 setSSLBind x c = c { sslbind = Just x }
 
-setSSLCert        :: FilePath                -> Config m a -> Config m a
+setSSLCert        :: FilePath                -> CmdlineConfig m a -> CmdlineConfig m a
 setSSLCert x c = c { sslcert = Just x }
 
-setSSLChainCert   :: Bool                    -> Config m a -> Config m a
+setSSLChainCert   :: Bool                    -> CmdlineConfig m a -> CmdlineConfig m a
 setSSLChainCert x c = c { sslchaincert = Just x }
 
-setSSLKey         :: FilePath                -> Config m a -> Config m a
+setSSLKey         :: FilePath                -> CmdlineConfig m a -> CmdlineConfig m a
 setSSLKey x c = c { sslkey = Just x }
 
-setUnixSocket     :: FilePath                -> Config m a -> Config m a
+setUnixSocket     :: FilePath                -> CmdlineConfig m a -> CmdlineConfig m a
 setUnixSocket x c = c { unixsocket = Just x }
 
-setUnixSocketAccessMode :: Int               -> Config m a -> Config m a
+setUnixSocketAccessMode :: Int               -> CmdlineConfig m a -> CmdlineConfig m a
 setUnixSocketAccessMode p c = c { unixaccessmode = Just ( p .&. 0o777) }
 
-setCompression    :: Bool                    -> Config m a -> Config m a
+setCompression    :: Bool                    -> CmdlineConfig m a -> CmdlineConfig m a
 setCompression x c = c { compression = Just x }
 
-setVerbose        :: Bool                    -> Config m a -> Config m a
+setVerbose        :: Bool                    -> CmdlineConfig m a -> CmdlineConfig m a
 setVerbose x c = c { verbose = Just x }
 
-setErrorHandler   :: (SomeException -> m ()) -> Config m a -> Config m a
+setErrorHandler   :: (SomeException -> m ()) -> CmdlineConfig m a -> CmdlineConfig m a
 setErrorHandler x c = c { errorHandler = Just x }
 
-setDefaultTimeout :: Int                     -> Config m a -> Config m a
+setDefaultTimeout :: Int                     -> CmdlineConfig m a -> CmdlineConfig m a
 setDefaultTimeout x c = c { defaultTimeout = Just x }
 
-setOther          :: a                       -> Config m a -> Config m a
+setOther          :: a                       -> CmdlineConfig m a -> CmdlineConfig m a
 setOther x c = c { other = Just x }
 
-setProxyType      :: ProxyType               -> Config m a -> Config m a
+setProxyType      :: ProxyType               -> CmdlineConfig m a -> CmdlineConfig m a
 setProxyType x c = c { proxyType = Just x }
 
-setStartupHook    :: (StartupInfo m a -> IO ()) -> Config m a -> Config m a
+setStartupHook    :: (StartupInfo m a -> IO ()) -> CmdlineConfig m a -> CmdlineConfig m a
 setStartupHook x c = c { startupHook = Just x }
 
 
@@ -517,39 +519,39 @@ setStartupHook x c = c { startupHook = Just x }
 
 -- | Arguments passed to 'setStartupHook'.
 data StartupInfo m a = StartupInfo
-    { startupHookConfig  :: Config m a
+    { startupHookConfig  :: CmdlineConfig m a
     , startupHookSockets :: [Socket]
     }
 
 emptyStartupInfo :: StartupInfo m a
-emptyStartupInfo = StartupInfo emptyConfig []
+emptyStartupInfo = StartupInfo emptyCmdlineConfig []
 
 -- | The 'Socket's opened by the server. There will be two 'Socket's for SSL
 -- connections, and one otherwise.
 getStartupSockets :: StartupInfo m a -> [Socket]
 getStartupSockets = startupHookSockets
 
--- The 'Config', after any command line parsing has been performed.
-getStartupConfig :: StartupInfo m a -> Config m a
+-- The 'CmdlineConfig', after any command line parsing has been performed.
+getStartupConfig :: StartupInfo m a -> CmdlineConfig m a
 getStartupConfig = startupHookConfig
 
 setStartupSockets :: [Socket] -> StartupInfo m a -> StartupInfo m a
 setStartupSockets x c = c { startupHookSockets = x }
 
-setStartupConfig :: Config m a -> StartupInfo m a -> StartupInfo m a
+setStartupConfig :: CmdlineConfig m a -> StartupInfo m a -> StartupInfo m a
 setStartupConfig x c = c { startupHookConfig = x }
 
 
 ------------------------------------------------------------------------------
-completeConfig :: (MonadSnap m) => Config m a -> IO (Config m a)
-completeConfig config = do
+completeCmdlineConfig :: (MonadSnap m) => CmdlineConfig m a -> IO (CmdlineConfig m a)
+completeCmdlineConfig config = do
     when noPort $ hPutStrLn stderr
         "no port specified, defaulting to port 8000"
 
     return $! cfg `mappend` cfg'
 
   where
-    cfg = defaultConfig `mappend` config
+    cfg = defaultCmdlineConfig `mappend` config
 
     sslVals = map ($ cfg) [ isJust . getSSLPort
                           , isJust . getSSLBind
@@ -559,7 +561,7 @@ completeConfig config = do
     sslValid   = and sslVals
     noPort = isNothing (getPort cfg) && not sslValid
 
-    cfg' = emptyConfig { port = if noPort then Just 8000 else Nothing }
+    cfg' = emptyCmdlineConfig { port = if noPort then Just 8000 else Nothing }
 
 
 ------------------------------------------------------------------------------
@@ -576,8 +578,8 @@ toString = T.unpack . T.decodeUtf8
 -- | Returns a description of the snap command line options suitable for use
 -- with "System.Console.GetOpt".
 optDescrs :: forall m a . MonadSnap m =>
-             Config m a         -- ^ the configuration defaults.
-          -> [OptDescr (Maybe (Config m a))]
+             CmdlineConfig m a         -- ^ the configuration defaults.
+          -> [OptDescr (Maybe (CmdlineConfig m a))]
 optDescrs defaults =
     [ Option "" ["hostname"]
              (ReqArg (Just . setConfig setHostname . bsFromString) "NAME")
@@ -696,7 +698,7 @@ optDescrs defaults =
 ------------------------------------------------------------------------------
 defaultErrorHandler :: MonadSnap m => SomeException -> m ()
 defaultErrorHandler e = do
-    debug "Snap.Http.Server.Config errorHandler:"
+    debug "Snap.Http.Server.CmdlineConfig errorHandler:"
     req <- getRequest
     let sm = smsg req
     debug $ toString sm
@@ -727,12 +729,12 @@ defaultErrorHandler e = do
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
 commandLineConfig :: MonadSnap m
-                  => Config m a
+                  => CmdlineConfig m a
                       -- ^ default configuration. This is combined with
-                      -- 'defaultConfig' to obtain default values to use if the
+                      -- 'defaultCmdlineConfig' to obtain default values to use if the
                       -- given parameter is specified on the command line.
-                      -- Usually it is fine to use 'emptyConfig' here.
-                  -> IO (Config m a)
+                      -- Usually it is fine to use 'emptyCmdlineConfig' here.
+                  -> IO (CmdlineConfig m a)
 commandLineConfig defaults = extendedCommandLineConfig (optDescrs defaults) f defaults
   where
     -- Here getOpt can ever change the "other" field, because we only use the
@@ -741,27 +743,27 @@ commandLineConfig defaults = extendedCommandLineConfig (optDescrs defaults) f de
 
 
 ------------------------------------------------------------------------------
--- | Returns a 'Config' obtained from parsing command-line options, using the
--- default Snap 'OptDescr' set as well as a list of user OptDescrs. User
--- OptDescrs use the \"other\" field (accessible using 'getOther' and
+-- | Returns a 'CmdlineConfig' obtained from parsing command-line options,
+-- using the default Snap 'OptDescr' set as well as a list of user OptDescrs.
+-- User OptDescrs use the \"other\" field (accessible using 'getOther' and
 -- 'setOther') to store additional command-line option state. These are
 -- combined using a user-defined combining function.
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
 
 extendedCommandLineConfig :: MonadSnap m
-                          => [OptDescr (Maybe (Config m a))]
+                          => [OptDescr (Maybe (CmdlineConfig m a))]
                              -- ^ User options.
                           -> (a -> a -> a)
                              -- ^ State for multiple invoked user command-line
                              -- options will be combined using this function.
-                          -> Config m a
+                          -> CmdlineConfig m a
                              -- ^ default configuration. This is combined with
-                             -- Snap's 'defaultConfig' to obtain default values
-                             -- to use if the given parameter is specified on
-                             -- the command line. Usually it is fine to use
-                             -- 'emptyConfig' here.
-                          -> IO (Config m a)
+                             -- Snap's 'defaultCmdlineConfig' to obtain default
+                             -- values to use if the given parameter is
+                             -- specified on the command line. Usually it is
+                             -- fine to use 'emptyCmdlineConfig' here.
+                          -> IO (CmdlineConfig m a)
 extendedCommandLineConfig opts combiningFunction defaults = do
     args <- getArgs
     prog <- getProgName
@@ -776,11 +778,11 @@ extendedCommandLineConfig opts combiningFunction defaults = do
 
 #ifndef PORTABLE
     lang <- getEnv "LANG"
-    completeConfig $ mconcat [defaults,
-                              mempty {locale = fmap upToUtf8 lang},
-                              result]
+    completeCmdlineConfig $ mconcat [ defaults
+                                    , mempty {locale = fmap upToUtf8 lang}
+                                    , result ]
 #else
-    completeConfig $ mconcat [defaults, result]
+    completeCmdlineConfig $ mconcat [defaults, result]
 #endif
 
   where
@@ -796,8 +798,8 @@ extendedCommandLineConfig opts combiningFunction defaults = do
     combine !a !b = a `mappend` b `mappend` newOther
       where
         -- combined is only a Just if both a and b have other fields, and then
-        -- we use the combining function. Config's mappend picks the last
-        -- "Just" in the other list.
+        -- we use the combining function. CmdlineConfig's mappend picks the
+        -- last "Just" in the other list.
         combined = do
             x <- getOther a
             y <- getOther b

@@ -64,9 +64,9 @@ Library
 
   exposed-modules:
     Snap.Http.Server,
+    Snap.Http.Server.CmdlineConfig,
     Snap.Http.Server.Config,
-    Snap.Http.Server.Types,
-    Snap.Internal.Http.Server.Config,
+    Snap.Internal.Http.Server.CmdlineConfig,
     Snap.Internal.Http.Server.Types,
     System.FastLogger
 
@@ -167,12 +167,12 @@ Test-suite testsuite
   other-modules:
     Paths_snap_server,
     Snap.Http.Server,
+    Snap.Http.Server.CmdlineConfig,
     Snap.Http.Server.Config,
-    Snap.Http.Server.Types,
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Clock,
     Snap.Internal.Http.Server.Common,
-    Snap.Internal.Http.Server.Config,
+    Snap.Internal.Http.Server.CmdlineConfig,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
@@ -345,7 +345,7 @@ Executable snap-test-pong-server
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Clock,
     Snap.Internal.Http.Server.Common,
-    Snap.Internal.Http.Server.Config,
+    Snap.Internal.Http.Server.CmdlineConfig,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
@@ -442,7 +442,7 @@ Executable snap-test-server
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Clock,
     Snap.Internal.Http.Server.Common,
-    Snap.Internal.Http.Server.Config,
+    Snap.Internal.Http.Server.CmdlineConfig,
     Snap.Internal.Http.Server.Date,
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
