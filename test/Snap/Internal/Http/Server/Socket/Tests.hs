@@ -22,30 +22,31 @@ import           Snap.Test.Common                  (eatException, expectExceptio
 import           System.Directory                  (getTemporaryDirectory)
 import           System.FilePath                   ((</>))
 import qualified System.Posix                      as Posix
-#else
-import           Snap.Internal.Http.Server.Address (AddressNotSupportedException)
-#endif
-
-#if !MIN_VERSION_unix(2,6,0)
+# if !MIN_VERSION_unix(2,6,0)
 import           Control.Monad.State               (replicateM)
 import           Control.Monad.Trans.State.Strict  as State
 import qualified Data.Vector.Unboxed               as V
 import           System.Directory                  (createDirectoryIfMissing)
 import           System.Random                     (StdGen, newStdGen, randomR)
+# endif
+#else
+import           Snap.Internal.Http.Server.Address (AddressNotSupportedException)
 #endif
 
 ------------------------------------------------------------------------------
+#ifdef HAS_UNIX_SOCKETS
 mkdtemp :: String -> IO FilePath
-#if MIN_VERSION_unix(2,6,0)
+# if MIN_VERSION_unix(2,6,0)
 mkdtemp = Posix.mkdtemp
-#else
+
+# else
 
 tMPCHARS :: V.Vector Char
 tMPCHARS = V.fromList $! ['a'..'z'] ++ ['0'..'9']
 
 mkdtemp template = do
     suffix <- newStdGen >>= return . State.evalState (chooseN 8 tMPCHARS)
-    let dir = template ++ suffix;
+    let dir = template ++ suffix
     createDirectoryIfMissing False dir
     return dir
   where
@@ -56,6 +57,7 @@ mkdtemp template = do
 
     chooseN :: Int -> V.Vector Char -> State.State StdGen String
     chooseN n v = replicateM n $ choose v
+#endif
 #endif
 
 ------------------------------------------------------------------------------
