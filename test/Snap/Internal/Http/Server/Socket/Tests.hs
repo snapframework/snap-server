@@ -26,6 +26,38 @@ import qualified System.Posix                      as Posix
 import           Snap.Internal.Http.Server.Address (AddressNotSupportedException)
 #endif
 
+#if !MIN_VERSION_unix(2,6,0)
+import           Control.Monad.State               (replicateM)
+import           Control.Monad.Trans.State.Strict  as State
+import qualified Data.Vector.Unboxed               as V
+import           System.Directory                  (createDirectoryIfMissing)
+import           System.Random                     (StdGen, newStdGen, randomR)
+#endif
+
+------------------------------------------------------------------------------
+mkdtemp :: String -> IO FilePath
+#if MIN_VERSION_unix(2,6,0)
+mkdtemp = Posix.mkdtemp
+#else
+
+tMPCHARS :: V.Vector Char
+tMPCHARS = V.fromList $! ['a'..'z'] ++ ['0'..'9']
+
+mkdtemp template = do
+    suffix <- newStdGen >>= return . State.evalState (chooseN 8 tMPCHARS)
+    let dir = template ++ suffix;
+    createDirectoryIfMissing False dir
+    return dir
+  where
+    choose :: V.Vector Char -> State.State StdGen Char
+    choose v = do let sz = V.length v
+                  idx <- State.state $ randomR (0, sz - 1)
+                  return $! (V.!) v idx
+
+    chooseN :: Int -> V.Vector Char -> State.State StdGen String
+    chooseN n v = replicateM n $ choose v
+#endif
+
 ------------------------------------------------------------------------------
 tests :: [Test]
 tests = [ testSockClosedOnListenException
@@ -112,10 +144,10 @@ testUnixSocketBind = testCase "socket/unixSocketBind" $
             Posix.intersectFileModes Posix.accessModes sockMode
 #endif
   where
-    doNothing _ = return()
+    doNothing _ = return ()
     withSocketPath act = do
       tmpRoot <- getTemporaryDirectory
-      tmpDir <- Posix.mkdtemp $ tmpRoot </> "snap-server-test-"
+      tmpDir <- mkdtemp $ tmpRoot </> "snap-server-test-"
       let path = tmpDir </> "unixSocketBind.sock"
       E.finally (act path) $ do
           eatException $ Posix.removeLink path
