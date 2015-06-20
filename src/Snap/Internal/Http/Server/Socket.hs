@@ -31,7 +31,8 @@ import           Data.ByteString.Builder.Extra     (flush)
 import           Network.Socket.ByteString         (sendAll)
 #endif
 #ifdef HAS_UNIX_SOCKETS
-import           Control.Exception                 (bracket, catch)
+import           Control.Exception                 (bracket)
+import qualified Control.Exception                 as E (catch)
 import           System.FilePath                   (isRelative)
 import           System.IO.Error                   (isDoesNotExistError)
 import           System.Posix.Files                (accessModes, removeLink, setFileCreationMask)
@@ -76,7 +77,7 @@ bindUnixSocket mode path = do
                 $! "Refusing to bind unix socket to non-absolute path: " ++ path
 
    bracketOnError (socket N.AF_UNIX N.Stream 0) N.close $ \sock -> do
-      catch (removeLink path) $ \e -> when (not $ isDoesNotExistError e) $ throwIO e
+      E.catch (removeLink path) $ \e -> when (not $ isDoesNotExistError e) $ throwIO e
       case mode of
          Nothing -> N.bindSocket sock (N.SockAddrUnix path)
          Just mode' -> bracket (setFileCreationMask $ modeToMask mode')
