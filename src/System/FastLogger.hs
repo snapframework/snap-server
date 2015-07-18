@@ -107,26 +107,21 @@ withLoggerWithCustomErrorFunction e f =
 
 
 ------------------------------------------------------------------------------
--- FIXME: can be a builder, and we could even use the same trick we use for
--- HTTP
+-- FIXME: we can use the same prefix trick we use for HTTP
 --
 -- | Prepares a log message with the time prepended.
-timestampedLogEntry :: ByteString -> IO ByteString
+timestampedLogEntry :: Builder -> IO Builder
 timestampedLogEntry msg = do
     timeStr <- getLogDateString
-
-    return $! S.concat
-           $  L.toChunks
-           $  toLazyByteString
-           $  mconcat [ char8 '['
-                      , byteString timeStr
-                      , byteString "] "
-                      , byteString msg ]
+    return $! mconcat [
+                 char8 '['
+               , byteString timeStr
+               , byteString "] "
+               , msg
+               ]
 
 
 ------------------------------------------------------------------------------
--- FIXME: builder
---
 -- | Prepares a log message in \"combined\" format.
 combinedLogEntry :: ByteString        -- ^ remote host
                  -> Maybe ByteString  -- ^ remote user
@@ -138,28 +133,28 @@ combinedLogEntry :: ByteString        -- ^ remote host
                                       --   there are no quotes in here)
                  -> ByteString        -- ^ user agent (up to you to ensure
                                       --   there are no quotes in here)
-                 -> IO ByteString
+                 -> IO Builder
 combinedLogEntry !host !mbUser !req !status !numBytes !mbReferer !ua = do
     timeStr <- getLogDateString
 
-    let !l = [ byteString host
-             , byteString " - "
-             , user
-             , byteString " ["
-             , byteString timeStr
-             , byteString "] \""
-             , byteString req
-             , byteString "\" "
-             , fromShow status
-             , space
-             , fromShow numBytes
-             , space
-             , referer
-             , byteString " \""
-             , byteString ua
-             , quote ]
-
-    return $! S.concat . L.toChunks $ toLazyByteString $ mconcat l
+    return $! mconcat [
+                byteString host
+              , byteString " - "
+              , user
+              , byteString " ["
+              , byteString timeStr
+              , byteString "] \""
+              , byteString req
+              , byteString "\" "
+              , fromShow status
+              , space
+              , fromShow numBytes
+              , space
+              , referer
+              , byteString " \""
+              , byteString ua
+              , quote
+              ]
 
   where
     dash     = char8 '-'
@@ -177,10 +172,10 @@ combinedLogEntry !host !mbUser !req !status !numBytes !mbReferer !ua = do
 -- | Sends out a log message verbatim with a newline appended. Note:
 -- if you want a fancy log message you'll have to format it yourself
 -- (or use 'combinedLogEntry').
-logMsg :: Logger -> ByteString -> IO ()
+logMsg :: Logger -> Builder -> IO ()
 logMsg !lg !s = do
-    let !s' = byteString s `mappend` char8 '\n'
-    atomicModifyIORef' (_queuedMessages lg) $ \d -> (d `mappend` s',())
+    let !s' = s `mappend` char8 '\n'
+    atomicModifyIORef' (_queuedMessages lg) $ \d -> (d `mappend` s', ())
     void $ tryPutMVar (_dataWaiting lg) ()
 
 

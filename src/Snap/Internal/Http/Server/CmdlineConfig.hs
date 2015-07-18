@@ -13,12 +13,12 @@ module Snap.Internal.Http.Server.CmdlineConfig
   , CmdlineConfig(..)
   , ProxyType(..)
 
-  , emptyConfig
-  , defaultConfig
+  , emptyCmdlineConfig
+  , defaultCmdlineConfig
 
-  , commandLineConfig
-  , extendedCommandLineConfig
-  , completeCommandLineConfig
+  , cmdlineConfig
+  , extendedCmdlineConfig
+  , completeCmdlineConfig
 
   , optDescrs
   , fmapOpt
@@ -182,7 +182,7 @@ instance Show CmdlineConfigLog where
 --
 -- Cruft that definitely must be removed:
 --
---  * ConfigLog -- this becomes a binary option on the command-line side (no
+--  * CmdlineConfigLog -- this becomes a binary option on the command-line side (no
 --    logging or yes, to this file), but the ConfigIoLog gets zapped
 --    altogether.
 
@@ -197,8 +197,8 @@ instance Show CmdlineConfigLog where
 -- this is the norm) are filled in with default values from 'defaultConfig'.
 data CmdlineConfig m a = CmdlineConfig
     { hostname       :: Maybe ByteString
-    , accessLog      :: Maybe ConfigLog
-    , errorLog       :: Maybe ConfigLog
+    , accessLog      :: Maybe CmdlineConfigLog
+    , errorLog       :: Maybe CmdlineConfigLog
     , locale         :: Maybe String
     , port           :: Maybe Int
     , bind           :: Maybe ByteString
@@ -280,8 +280,8 @@ instance Show (CmdlineConfig m a) where
 ------------------------------------------------------------------------------
 -- | Returns a completely empty 'Config'. Equivalent to 'mempty' from
 -- 'Config''s 'Monoid' instance.
-emptyConfig :: CmdlineConfig m a
-emptyConfig = mempty
+emptyCmdlineConfig :: CmdlineConfig m a
+emptyCmdlineConfig = mempty
 
 
 ------------------------------------------------------------------------------
@@ -408,7 +408,7 @@ getSSLKey = sslkey
 
 -- | File path to unix socket. Must be absolute path, but allows for symbolic
 -- links.
-getUnixSocket     :: Config m a -> Maybe FilePath
+getUnixSocket     :: CmdlineConfig m a -> Maybe FilePath
 getUnixSocket = unixsocket
 
 -- | Access mode for unix socket, by default is system specific.
@@ -421,7 +421,7 @@ getUnixSocket = unixsocket
 --
 -- Note: This uses umask. There is a race condition if process creates other
 -- files at the same time as opening a unix socket with this option set.
-getUnixSocketAccessMode :: Config m a -> Maybe Int
+getUnixSocketAccessMode :: CmdlineConfig m a -> Maybe Int
 getUnixSocketAccessMode = unixaccessmode
 
 -- | If set and set to True, compression is turned on when applicable
@@ -681,17 +681,17 @@ optDescrs defaults =
           _ -> error $ "Error (--unix-socket-mode): expected octal access mode"
 
     setConfig f c  = f c mempty
-    conf           = defaultConfig `mappend` defaults
+    conf           = defaultCmdlineConfig `mappend` defaults
 
-    defaultB :: (Config m a -> Maybe Bool) -> String -> String -> String
+    defaultB :: (CmdlineConfig m a -> Maybe Bool) -> String -> String -> String
     defaultB f y n = (maybe "" (\b -> ", default " ++ if b
                                                         then y
                                                         else n) $ f conf) :: String
 
-    defaultC :: (Show b) => (Config m a -> Maybe b) -> String
+    defaultC :: (Show b) => (CmdlineConfig m a -> Maybe b) -> String
     defaultC f     = maybe "" ((", default " ++) . show) $ f conf
 
-    defaultO :: (Show b) => (Config m a -> Maybe b) -> String
+    defaultO :: (Show b) => (CmdlineConfig m a -> Maybe b) -> String
     defaultO f     = maybe ", default off" ((", default " ++) . show) $ f conf
 
 
@@ -728,14 +728,14 @@ defaultErrorHandler e = do
 -- default Snap 'OptDescr' set.
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
-commandLineConfig :: MonadSnap m
-                  => CmdlineConfig m a
-                      -- ^ default configuration. This is combined with
-                      -- 'defaultCmdlineConfig' to obtain default values to use if the
-                      -- given parameter is specified on the command line.
-                      -- Usually it is fine to use 'emptyCmdlineConfig' here.
-                  -> IO (CmdlineConfig m a)
-commandLineConfig defaults = extendedCommandLineConfig (optDescrs defaults) f defaults
+cmdlineConfig :: MonadSnap m
+              => CmdlineConfig m a
+                  -- ^ default configuration. This is combined with
+                  -- 'defaultCmdlineConfig' to obtain default values to use if the
+                  -- given parameter is specified on the command line.
+                  -- Usually it is fine to use 'emptyCmdlineConfig' here.
+              -> IO (CmdlineConfig m a)
+cmdlineConfig defaults = extendedCmdlineConfig (optDescrs defaults) f defaults
   where
     -- Here getOpt can ever change the "other" field, because we only use the
     -- Snap OptDescr list. The combining function will never be invoked.
@@ -751,20 +751,20 @@ commandLineConfig defaults = extendedCommandLineConfig (optDescrs defaults) f de
 --
 -- On Unix systems, the locale is read from the @LANG@ environment variable.
 
-extendedCommandLineConfig :: MonadSnap m
-                          => [OptDescr (Maybe (CmdlineConfig m a))]
-                             -- ^ User options.
-                          -> (a -> a -> a)
-                             -- ^ State for multiple invoked user command-line
-                             -- options will be combined using this function.
-                          -> CmdlineConfig m a
-                             -- ^ default configuration. This is combined with
-                             -- Snap's 'defaultCmdlineConfig' to obtain default
-                             -- values to use if the given parameter is
-                             -- specified on the command line. Usually it is
-                             -- fine to use 'emptyCmdlineConfig' here.
-                          -> IO (CmdlineConfig m a)
-extendedCommandLineConfig opts combiningFunction defaults = do
+extendedCmdlineConfig :: MonadSnap m
+                      => [OptDescr (Maybe (CmdlineConfig m a))]
+                         -- ^ User options.
+                      -> (a -> a -> a)
+                         -- ^ State for multiple invoked user command-line
+                         -- options will be combined using this function.
+                      -> CmdlineConfig m a
+                         -- ^ default configuration. This is combined with
+                         -- Snap's 'defaultCmdlineConfig' to obtain default
+                         -- values to use if the given parameter is
+                         -- specified on the command line. Usually it is
+                         -- fine to use 'emptyCmdlineConfig' here.
+                      -> IO (CmdlineConfig m a)
+extendedCmdlineConfig opts combiningFunction defaults = do
     args <- getArgs
     prog <- getProgName
 

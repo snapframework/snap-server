@@ -7,11 +7,11 @@ module Snap.Http.Server.CmdlineConfig
   , CmdlineConfigLog(..)
   , ProxyType
 
-  , emptyConfig
-  , defaultConfig
-  , commandLineConfig
-  , extendedCommandLineConfig
-  , completeConfig
+  , emptyCmdlineConfig
+  , defaultCmdlineConfig
+  , cmdlineConfig
+  , extendedCmdlineConfig
+  , completeCmdlineConfig
 
   , optDescrs
   , fmapOpt
@@ -34,6 +34,8 @@ module Snap.Http.Server.CmdlineConfig
   , getSSLPort
   , getVerbose
   , getStartupHook
+  , getUnixSocket
+  , getUnixSocketAccessMode
 
   , setAccessLog
   , setBind
@@ -53,6 +55,10 @@ module Snap.Http.Server.CmdlineConfig
   , setSSLPort
   , setVerbose
   , setStartupHook
+  , setUnixSocket
+  , setUnixSocketAccessMode
+
+  -- TODO: startupinfo goes away
   , StartupInfo
   , getStartupSockets
   , getStartupConfig

@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Types used by the Snap HTTP Server.
-module Snap.Http.Server.Types
+module Snap.Http.Server.Config
   ( ServerConfig
   , PerSessionData
 

@@ -16,49 +16,52 @@ module Snap.Http.Server
   , snapServerVersion
   , setUnicodeLocale
   , rawHttpServe
+  , module Snap.Http.Server.CmdlineConfig
   , module Snap.Http.Server.Config
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Applicative               ((<$>), (<|>))
-import           Control.Concurrent                (killThread, newEmptyMVar, newMVar, putMVar, readMVar, withMVar)
-import           Control.Concurrent.Extended       (forkIOLabeledWithUnmaskBs)
-import           Control.Exception                 (SomeException, bracket, catch, finally, mask, mask_)
-import qualified Control.Exception.Lifted          as L
-import           Control.Monad                     (liftM, when)
-import           Control.Monad.Trans               (MonadIO)
-import           Data.ByteString.Char8             (ByteString)
-import qualified Data.ByteString.Char8             as S
-import qualified Data.ByteString.Lazy.Char8        as L
-import           Data.Maybe                        (catMaybes, fromJust, fromMaybe)
-import qualified Data.Text                         as T
-import qualified Data.Text.Encoding                as T
-import           Data.Version                      (showVersion)
-import           Data.Word                         (Word64)
-import           Network.Socket                    (Socket, sClose)
-import           Prelude                           (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, fst, id, mapM, mapM_, maybe, snd, unzip3, zip, ($), ($!), (++), (.))
-import           System.IO                         (hFlush, hPutStrLn, stderr)
+import           Control.Applicative                     ((<$>), (<|>))
+import           Control.Concurrent                      (killThread, newEmptyMVar, newMVar, putMVar, readMVar, withMVar)
+import           Control.Concurrent.Extended             (forkIOLabeledWithUnmaskBs)
+import           Control.Exception                       (SomeException, bracket, catch, finally, mask, mask_)
+import qualified Control.Exception.Lifted                as L
+import           Control.Monad                           (liftM, when)
+import           Control.Monad.Trans                     (MonadIO)
+import           Data.ByteString.Builder                 (toLazyByteString)
+import           Data.ByteString.Char8                   (ByteString)
+import qualified Data.ByteString.Char8                   as S
+import qualified Data.ByteString.Lazy.Char8              as L
+import           Data.Maybe                              (catMaybes, fromJust, fromMaybe)
+import qualified Data.Text                               as T
+import qualified Data.Text.Encoding                      as T
+import           Data.Version                            (showVersion)
+import           Data.Word                               (Word64)
+import           Network.Socket                          (Socket, sClose)
+import           Prelude                                 (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, fst, id, mapM, mapM_, maybe, snd, unzip3, zip, ($), ($!), (++), (.))
+import           System.IO                               (hFlush, hPutStrLn, stderr)
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
 ------------------------------------------------------------------------------
-import           Data.ByteString.Builder           (Builder, toLazyByteString)
+import           Data.ByteString.Builder                 (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
-import qualified Paths_snap_server                 as V
-import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getUnixSocket, getUnixSocketAccessMode, getVerbose)
-import qualified Snap.Http.Server.Types            as Ty
-import           Snap.Internal.Debug               (debug)
-import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
-import           Snap.Internal.Http.Server.Session (httpAcceptLoop, snapToServerHandler)
-import qualified Snap.Internal.Http.Server.Socket  as Sock
-import qualified Snap.Internal.Http.Server.TLS     as TLS
-import           Snap.Internal.Http.Server.Types   (AcceptFunc, ServerConfig, ServerHandler)
-import qualified Snap.Types.Headers                as H
-import           Snap.Util.GZip                    (withCompression)
-import           Snap.Util.Proxy                   (behindProxy)
-import qualified Snap.Util.Proxy                   as Proxy
-import           System.FastLogger                 (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction, stopLogger, timestampedLogEntry)
+import qualified Paths_snap_server                       as V
+import           Snap.Core                               (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
+import           Snap.Http.Server.CmdlineConfig
+import           Snap.Http.Server.Config
+import qualified Snap.Http.Server.Config                 as Config
+import           Snap.Internal.Debug                     (debug)
+import           Snap.Internal.Http.Server.CmdlineConfig (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
+import           Snap.Internal.Http.Server.Session       (httpAcceptLoop, snapToServerHandler)
+import qualified Snap.Internal.Http.Server.Socket        as Sock
+import qualified Snap.Internal.Http.Server.TLS           as TLS
+import           Snap.Internal.Http.Server.Types         (AcceptFunc, ServerConfig, ServerHandler)
+import qualified Snap.Types.Headers                      as H
+import           Snap.Util.GZip                          (withCompression)
+import           Snap.Util.Proxy                         (behindProxy)
+import qualified Snap.Util.Proxy                         as Proxy
+import           System.FastLogger                       (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction, stopLogger, timestampedLogEntry)
 
 
 ------------------------------------------------------------------------------
@@ -94,9 +97,9 @@ rawHttpServe h cfg loops = do
 -- This function is like 'httpServe' except it doesn't setup compression,
 -- reverse proxy address translation (via 'Snap.Util.Proxy.behindProxy'), or
 -- the error handler; this allows it to be used from 'MonadSnap'.
-simpleHttpServe :: MonadSnap m => Config m a -> Snap () -> IO ()
+simpleHttpServe :: MonadSnap m => CmdlineConfig m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
-    conf <- completeConfig config
+    conf <- completeCmdlineConfig config
     let output = when (fromJust $ getVerbose conf) . hPutStrLn stderr
     (descrs, sockets, afuncs) <- unzip3 <$> listeners conf
     mapM_ (output . ("Listening on " ++) . S.unpack) descrs
@@ -114,21 +117,19 @@ simpleHttpServe config handler = do
     --------------------------------------------------------------------------
     -- FIXME: this logging code *sucks*
     --------------------------------------------------------------------------
-    debugE :: (MonadIO m) => ByteString -> m ()
-    debugE s = debug $ "Error: " ++ S.unpack s
-
-
-    --------------------------------------------------------------------------
-    logE :: Maybe (ByteString -> IO ()) -> Builder -> IO ()
-    logE elog b = let x = S.concat $ L.toChunks $ toLazyByteString b
-                  in (maybe debugE (\l s -> debugE s >> logE' l s) elog) x
+    debugE :: (MonadIO m) => Builder -> m ()
+    debugE s = debug $ "Error: " ++ L.unpack (toLazyByteString s)
 
     --------------------------------------------------------------------------
-    logE' :: (ByteString -> IO ()) -> ByteString -> IO ()
+    logE :: Maybe (Builder -> IO ()) -> Builder -> IO ()
+    logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
+
+    --------------------------------------------------------------------------
+    logE' :: (Builder -> IO ()) -> Builder -> IO ()
     logE' logger s = (timestampedLogEntry s) >>= logger
 
     --------------------------------------------------------------------------
-    logA :: Maybe (ByteString -> IO ())
+    logA :: Maybe (Builder -> IO ())
          -> Request
          -> Response
          -> Word64
@@ -153,18 +154,18 @@ simpleHttpServe config handler = do
 
     --------------------------------------------------------------------------
     go conf sockets afuncs = do
-        let tout = fromMaybe 60 $ getDefaultTimeout conf
+        let tout = fromMaybe 60 $ Config.getDefaultTimeout conf
         let shandler = snapToServerHandler handler
 
         setUnicodeLocale $ fromJust $ getLocale conf
 
         withLoggers (fromJust $ getAccessLog conf)
                     (fromJust $ getErrorLog conf) $ \(alog, elog) -> do
-            let scfg = Ty.setDefaultTimeout tout .
-                       Ty.setLocalHostname (fromJust $ getHostname conf) .
-                       Ty.setLogAccess (logA alog) .
-                       Ty.setLogError (logE elog) $
-                       Ty.emptyServerConfig
+            let scfg = Config.setDefaultTimeout tout .
+                       Config.setLocalHostname (fromJust $ getHostname conf) .
+                       Config.setLogAccess (logA alog) .
+                       Config.setLogError (logE elog) $
+                       Config.emptyServerConfig
             maybe (return $! ())
                   ($ mkStartupInfo sockets conf)
                   (getStartupHook conf)
@@ -201,7 +202,7 @@ simpleHttpServe config handler = do
 
 
 ------------------------------------------------------------------------------
-listeners :: Config m a -> IO [(ByteString, Socket, AcceptFunc)]
+listeners :: CmdlineConfig m a -> IO [(ByteString, Socket, AcceptFunc)]
 listeners conf = TLS.withTLS $ do
   let fs = catMaybes [httpListener, httpsListener, unixListener]
   mapM (\(str, mkAfunc) -> do (sock, afunc) <- mkAfunc
@@ -241,11 +242,11 @@ listeners conf = TLS.withTLS $ do
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP requests using the given handler, with settings from
--- the 'Config' passed in. This function never returns; to shut down the HTTP
+-- the 'CmdlineConfig' passed in. This function never returns; to shut down the HTTP
 -- server, kill the controlling thread.
-httpServe :: Config Snap a -> Snap () -> IO ()
+httpServe :: CmdlineConfig Snap a -> Snap () -> IO ()
 httpServe config handler0 = do
-    conf <- completeConfig config
+    conf <- completeCmdlineConfig config
     let !handler = chooseProxy conf
     let serve    = compress conf . catch500 conf $ handler
     simpleHttpServe conf serve
@@ -261,23 +262,23 @@ httpServe config handler0 = do
 
 
 ------------------------------------------------------------------------------
-catch500 :: MonadSnap m => Config m a -> m () -> m ()
+catch500 :: MonadSnap m => CmdlineConfig m a -> m () -> m ()
 catch500 conf = flip L.catch $ fromJust $ getErrorHandler conf
 
 
 ------------------------------------------------------------------------------
-compress :: MonadSnap m => Config m a -> m () -> m ()
+compress :: MonadSnap m => CmdlineConfig m a -> m () -> m ()
 compress conf = if fromJust $ getCompression conf then withCompression else id
 
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP using the given handler. The configuration is read
--- from the options given on the command-line, as returned by
--- 'commandLineConfig'. This function never returns; to shut down the HTTP
--- server, kill the controlling thread.
+-- from the options given on the command-line, as returned by 'cmdlineConfig'.
+-- This function never returns; to shut down the HTTP server, kill the
+-- controlling thread.
 quickHttpServe :: Snap () -> IO ()
 quickHttpServe handler = do
-    conf <- commandLineConfig defaultConfig
+    conf <- cmdlineConfig defaultCmdlineConfig
     httpServe conf handler
 
 
