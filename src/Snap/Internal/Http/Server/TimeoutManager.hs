@@ -22,7 +22,7 @@ import qualified Control.Exception                as E
 import           Control.Monad                    (Monad ((>>=), return), mapM_, void)
 import qualified Data.ByteString.Char8            as S
 import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
-import           Prelude                          (Bool, IO, Int, Show (..), const, fromIntegral, max, max, min, null, otherwise, round, ($), ($!), (+), (++), (-), (.), (<=), (==))
+import           Prelude                          (Bool, Double, IO, Int, Show (..), const, fromIntegral, max, max, min, null, otherwise, round, ($), ($!), (+), (++), (-), (.), (<=), (==))
 ------------------------------------------------------------------------------
 import           Control.Concurrent               (MVar, newEmptyMVar, putMVar, readMVar, takeMVar, tryPutMVar)
 ------------------------------------------------------------------------------
@@ -79,8 +79,8 @@ data TimeoutManager = TimeoutManager {
 
 ------------------------------------------------------------------------------
 -- | Create a new TimeoutManager.
-initialize :: ClockTime         -- ^ default timeout
-           -> ClockTime         -- ^ poll interval
+initialize :: Double            -- ^ default timeout
+           -> Double            -- ^ poll interval
            -> IO ClockTime      -- ^ function to get current time
            -> IO TimeoutManager
 initialize defaultTimeout interval getTime = E.uninterruptibleMask_ $ do
@@ -88,7 +88,12 @@ initialize defaultTimeout interval getTime = E.uninterruptibleMask_ $ do
     mp    <- newEmptyMVar
     mthr  <- newEmptyMVar
 
-    let tm = TimeoutManager defaultTimeout interval getTime conns mp mthr
+    let tm = TimeoutManager (Clock.fromSecs defaultTimeout)
+                            (Clock.fromSecs interval)
+                            getTime
+                            conns
+                            mp
+                            mthr
 
     thr <- T.fork "snap-server: timeout manager" $ managerThread tm
     putMVar mthr thr
@@ -157,7 +162,7 @@ modify th f = do
     writeIORef stateRef state'
 
   where
-    f' !x    = fromIntegral $! f (round x)
+    f' !x    = Clock.fromSecs $! fromIntegral $ f $ round $ Clock.toSecs x
     getTime  = _hGetTime th
     stateRef = _state th
 {-# INLINE modify #-}

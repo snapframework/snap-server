@@ -30,7 +30,7 @@ tests = [ testOneTimeout
 ------------------------------------------------------------------------------
 register :: IO () -> TM.TimeoutManager -> IO TM.TimeoutThread
 register m t = TM.register t "test" $
-               \restore -> restore (Clock.sleepFor 9000)
+               \restore -> restore (Clock.sleepSecs 9000)
                            `E.finally` m
 
 
@@ -46,11 +46,11 @@ testSlowToDie = testCase "timeout/slowToDie" $ repeatedly $ do
     mgr <- TM.initialize 1 0.1 Clock.getClockTime
     r   <- newIORef False
     s   <- newIORef False
-    _   <- register (writeIORef r True >> Clock.sleepFor 3 >> writeIORef s True) mgr
-    Clock.sleepFor 1.5
+    _   <- register (writeIORef r True >> Clock.sleepSecs 3 >> writeIORef s True) mgr
+    Clock.sleepSecs 1.5
     readIORef r >>= assertEqual "started to die" True
     readIORef s >>= assertEqual "not dead yet" False
-    Clock.sleepFor 3
+    Clock.sleepSecs 3
     readIORef s >>= assertEqual "dead" True
 
 
@@ -59,7 +59,7 @@ testOneTimeoutAfterInactivity :: Test
 testOneTimeoutAfterInactivity =
     testCase "timeout/oneTimeoutAfterInactivity" $ repeatedly $ do
         mgr <- TM.initialize 1 0.1 Clock.getClockTime
-        Clock.sleepFor 3
+        Clock.sleepSecs 3
         oneTimeout mgr
 
 ------------------------------------------------------------------------------
@@ -76,7 +76,7 @@ oneTimeout mgr = do
     _   <- register (putMVar mv ()) mgr
     m   <- timeout (3*seconds) $ takeMVar mv
     assertBool "timeout fired" $ isJust m
-    Clock.sleepFor 2
+    Clock.sleepSecs 2
     TM.stop mgr
 
 
@@ -87,14 +87,14 @@ testTickle = testCase "timeout/tickle" $ repeatedly $ do
     ref <- newIORef (0 :: Int)
     h <- register (writeIORef ref 1) mgr
     E.evaluate (length $ show h)
-    Clock.sleepFor 1
+    Clock.sleepSecs 1
     b0 <- readIORef ref
     assertEqual "b0" 0 b0
     TM.tickle h 3
-    Clock.sleepFor 1
+    Clock.sleepSecs 1
     b1 <- readIORef ref
     assertEqual "b1" 0 b1
-    Clock.sleepFor 5
+    Clock.sleepSecs 5
     b2 <- readIORef ref
     assertEqual "b2" 1 b2
     TM.stop mgr
@@ -106,23 +106,23 @@ testCancel = testCase "timeout/cancel" $ repeatedly $ do
     mgr <- TM.initialize 3 0.1 Clock.getClockTime
     ref <- newIORef (0 :: Int)
     h <- register (writeIORef ref 1) mgr
-    Clock.sleepFor 1
+    Clock.sleepSecs 1
     readIORef ref >>= assertEqual "b0" 0
     TM.cancel h
     TM.tickle h 10              -- make sure tickle ignores cancelled times
-    Clock.sleepFor 2
+    Clock.sleepSecs 2
     readIORef ref >>= assertEqual "b1" 1
-    Clock.sleepFor 2
+    Clock.sleepSecs 2
     h' <- register (writeIORef ref 2) mgr
     _ <- register (return ()) mgr
     TM.set h' 1
-    Clock.sleepFor 2
+    Clock.sleepSecs 2
     readIORef ref >>= assertEqual "b2" 2
     _   <- register (writeIORef ref 3) mgr
     hs <- replicateM 1000 $! register (return ()) mgr
     mapM TM.cancel hs
     TM.stop mgr
-    Clock.sleepFor 1
+    Clock.sleepSecs 1
     readIORef ref >>= assertEqual "b3" 3
 
 

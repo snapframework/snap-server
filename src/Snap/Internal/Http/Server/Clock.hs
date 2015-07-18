@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
@@ -6,34 +5,40 @@ module Snap.Internal.Http.Server.Clock
   ( ClockTime
   , getClockTime
   , sleepFor
+  , sleepSecs
+  , fromSecs
+  , toSecs
   ) where
 
 import           Control.Concurrent (threadDelay)
-import           Data.Int           (Int64)
-import           Data.Ratio         (Ratio, (%))
 import qualified System.Clock       as Clock
 
-type ClockTime = Double
-
-------------------------------------------------------------------------------
-_nano :: Int64
-_nano = 1000000000
-
-_micro :: Int64
-_micro = 1000000
+type ClockTime = Clock.TimeSpec
 
 ------------------------------------------------------------------------------
 sleepFor :: ClockTime -> IO ()
-sleepFor t = threadDelay $ truncate $ t0 * mc
+sleepFor t = threadDelay $ fromIntegral d
   where
-    t0 = (realToFrac t) :: Ratio Int64
-    mc = _micro % 1
+    d  = (Clock.nsec t `div` 1000) + (1000000 * Clock.sec t)
+
+
+------------------------------------------------------------------------------
+sleepSecs :: Double -> IO ()
+sleepSecs = sleepFor . fromSecs
+
 
 ------------------------------------------------------------------------------
 getClockTime :: IO ClockTime
-getClockTime = do
-    tm <- Clock.getTime Clock.Monotonic
-    let !sec  = fromIntegral $ Clock.sec tm
-    let !nsec = fromIntegral $ Clock.nsec tm
-    let !out  = sec + (nsec % _nano)
-    return $! realToFrac out
+getClockTime = Clock.getTime Clock.Monotonic
+
+
+------------------------------------------------------------------------------
+fromSecs :: Double -> ClockTime
+fromSecs d = let (s, r) = properFraction d
+             in Clock.TimeSpec s (truncate $! 1000000000 * r)
+
+
+------------------------------------------------------------------------------
+toSecs :: ClockTime -> Double
+toSecs t = fromIntegral (Clock.sec t) +
+           fromIntegral (Clock.nsec t) / 1000000000.0

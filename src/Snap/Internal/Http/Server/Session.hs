@@ -210,7 +210,7 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
     --------------------------------------------------------------------------
     newLoop cpu = E.mask_ $ do
         -- TODO(greg): move constant into config
-        tm  <- TM.initialize (fromIntegral defaultTimeout) 2.0 getClockTime
+        tm  <- TM.initialize (fromIntegral defaultTimeout) 2 getClockTime
         let threadLabel = S.concat [ "snap-server: accept loop #"
                                    , S.pack $ show cpu
                                    ]
