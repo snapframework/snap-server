@@ -154,7 +154,7 @@ instance Show CmdlineConfigLog where
 -- Todo:
 --
 --  * need a function ::
---      CommandLineConfig -> IO [(ServerConfig hookState, AcceptFunc)]
+--      CommandLineConfig -> IO ([ServerConfig hookState, AcceptFunc])
 --
 --       this will prep for another function that will spawn all of the
 --       accept loops with httpAcceptLoop.
@@ -229,7 +229,7 @@ configTyCon = mkTyCon3 "snap-server" "Snap.Http.Server.CmdlineConfig"
                        "CmdlineConfig"
 {-# NOINLINE configTyCon #-}
 
-instance (Typeable1 m) => Typeable1 (Config m) where
+instance (Typeable1 m) => Typeable1 (CmdlineConfig m) where
     typeOf1 _ = mkTyConApp configTyCon [typeOf1 (undefined :: m ())]
 #endif
 

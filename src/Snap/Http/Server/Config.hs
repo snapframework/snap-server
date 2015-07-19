@@ -142,22 +142,22 @@ emptyServerConfig =
 
 ------------------------------------------------------------------------------
 getLogAccess :: ServerConfig hookState -> Request -> Response -> Word64 -> IO ()
-getLogAccess sc             = _logAccess sc
+getLogAccess sc = _logAccess sc
 
 
 ------------------------------------------------------------------------------
 getLogError :: ServerConfig hookState -> Builder -> IO ()
-getLogError sc              = _logError sc
+getLogError sc = _logError sc
 
 
 ------------------------------------------------------------------------------
 getOnNewRequest :: ServerConfig hookState -> NewRequestHook hookState
-getOnNewRequest sc          = _onNewRequest sc
+getOnNewRequest sc = _onNewRequest sc
 
 
 ------------------------------------------------------------------------------
 getOnParse :: ServerConfig hookState -> ParseHook hookState
-getOnParse sc               = _onParse sc
+getOnParse sc = _onParse sc
 
 
 ------------------------------------------------------------------------------
@@ -168,65 +168,65 @@ getOnUserHandlerFinished sc = _onUserHandlerFinished sc
 
 ------------------------------------------------------------------------------
 getOnDataFinished :: ServerConfig hookState -> DataFinishedHook hookState
-getOnDataFinished sc        = _onDataFinished sc
+getOnDataFinished sc = _onDataFinished sc
 
 
 ------------------------------------------------------------------------------
 getOnException :: ServerConfig hookState -> ExceptionHook hookState
-getOnException sc           = _onException sc
+getOnException sc = _onException sc
 
 
 ------------------------------------------------------------------------------
 getOnEscape :: ServerConfig hookState -> EscapeSnapHook hookState
-getOnEscape sc              = _onEscape sc
+getOnEscape sc = _onEscape sc
 
 
 ------------------------------------------------------------------------------
 getLocalHostname :: ServerConfig hookState -> ByteString
-getLocalHostname sc         = _localHostname sc
+getLocalHostname sc = _localHostname sc
 
 
 ------------------------------------------------------------------------------
 getDefaultTimeout :: ServerConfig hookState -> Int
-getDefaultTimeout sc        = _defaultTimeout sc
+getDefaultTimeout sc = _defaultTimeout sc
 
 
 ------------------------------------------------------------------------------
 getIsSecure :: ServerConfig hookState -> Bool
-getIsSecure sc              = _isSecure sc
+getIsSecure sc = _isSecure sc
 
 
 ------------------------------------------------------------------------------
 getNumAcceptLoops :: ServerConfig hookState -> Int
-getNumAcceptLoops sc        = _numAcceptLoops sc
+getNumAcceptLoops sc = _numAcceptLoops sc
 
 
 ------------------------------------------------------------------------------
 setLogAccess :: (Request -> Response -> Word64 -> IO ())
              -> ServerConfig hookState
              -> ServerConfig hookState
-setLogAccess s sc             = sc { _logAccess = s }
+setLogAccess s sc = sc { _logAccess = s }
 
 
 ------------------------------------------------------------------------------
 setLogError :: (Builder -> IO ())
             -> ServerConfig hookState
             -> ServerConfig hookState
-setLogError s sc              = sc { _logError = s }
+setLogError s sc = sc { _logError = s }
 
 
 ------------------------------------------------------------------------------
 setOnNewRequest :: NewRequestHook hookState
                 -> ServerConfig hookState
                 -> ServerConfig hookState
-setOnNewRequest s sc          = sc { _onNewRequest = s }
+setOnNewRequest s sc = sc { _onNewRequest = s }
 
 
 ------------------------------------------------------------------------------
 setOnParse :: ParseHook hookState
            -> ServerConfig hookState
            -> ServerConfig hookState
-setOnParse s sc               = sc { _onParse = s }
+setOnParse s sc = sc { _onParse = s }
 
 
 ------------------------------------------------------------------------------
@@ -240,43 +240,43 @@ setOnUserHandlerFinished s sc = sc { _onUserHandlerFinished = s }
 setOnDataFinished :: DataFinishedHook hookState
                   -> ServerConfig hookState
                   -> ServerConfig hookState
-setOnDataFinished s sc        = sc { _onDataFinished = s }
+setOnDataFinished s sc = sc { _onDataFinished = s }
 
 
 ------------------------------------------------------------------------------
 setOnException :: ExceptionHook hookState
                -> ServerConfig hookState
                -> ServerConfig hookState
-setOnException s sc           = sc { _onException = s }
+setOnException s sc = sc { _onException = s }
 
 
 ------------------------------------------------------------------------------
 setOnEscape :: EscapeSnapHook hookState
             -> ServerConfig hookState
             -> ServerConfig hookState
-setOnEscape s sc              = sc { _onEscape = s }
+setOnEscape s sc = sc { _onEscape = s }
 
 
 ------------------------------------------------------------------------------
 setLocalHostname :: ByteString
                  -> ServerConfig hookState
                  -> ServerConfig hookState
-setLocalHostname s sc         = sc { _localHostname = s }
+setLocalHostname s sc = sc { _localHostname = s }
 
 
 ------------------------------------------------------------------------------
 setDefaultTimeout :: Int -> ServerConfig hookState -> ServerConfig hookState
-setDefaultTimeout s sc        = sc { _defaultTimeout = s }
+setDefaultTimeout s sc = sc { _defaultTimeout = s }
 
 
 ------------------------------------------------------------------------------
 setIsSecure :: Bool -> ServerConfig hookState -> ServerConfig hookState
-setIsSecure s sc              = sc { _isSecure = s }
+setIsSecure s sc = sc { _isSecure = s }
 
 
 ------------------------------------------------------------------------------
 setNumAcceptLoops :: Int -> ServerConfig hookState -> ServerConfig hookState
-setNumAcceptLoops s sc        = sc { _numAcceptLoops = s }
+setNumAcceptLoops s sc = sc { _numAcceptLoops = s }
 
 
 ------------------------------------------------------------------------------

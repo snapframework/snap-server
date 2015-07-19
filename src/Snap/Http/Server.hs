@@ -71,24 +71,25 @@ snapServerVersion = S.pack $! showVersion V.version
 
 
 ------------------------------------------------------------------------------
-rawHttpServe :: ServerHandler s  -- ^ server handler
-             -> ServerConfig s   -- ^ server config
-             -> [AcceptFunc]     -- ^ listening server backends
+rawHttpServe :: ServerHandler s                 -- ^ server handler
+             -> [(ServerConfig s, AcceptFunc)]  -- ^ server config and accept
+                                                --   functions
              -> IO ()
-rawHttpServe h cfg loops = do
-    mvars <- mapM (const newEmptyMVar) loops
-    mask $ \restore -> bracket (mapM runLoop $ mvars `zip` loops)
+rawHttpServe h cfgloops = do
+    mvars <- mapM (const newEmptyMVar) cfgloops
+    mask $ \restore -> bracket (mapM runLoop $ mvars `zip` cfgloops)
                                (\mvTids -> do
                                    mapM_ (killThread . snd) mvTids
                                    mapM_ (readMVar . fst) mvTids)
                                (const $ restore $ mapM_ readMVar mvars)
   where
     -- parents and children have a mutual suicide pact
-    runLoop (mvar, loop) = do
+    runLoop (mvar, (cfg, loop)) = do
         tid <- forkIOLabeledWithUnmaskBs
                "snap-server http master thread" $
                \r -> (r $ httpAcceptLoop h cfg loop) `finally` putMVar mvar ()
         return (mvar, tid)
+
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP requests using the given handler. This function never
@@ -99,6 +100,8 @@ rawHttpServe h cfg loops = do
 -- the error handler; this allows it to be used from 'MonadSnap'.
 simpleHttpServe :: MonadSnap m => CmdlineConfig m a -> Snap () -> IO ()
 simpleHttpServe config handler = do
+  error "unimplemented"
+{-
     conf <- completeCmdlineConfig config
     let output = when (fromJust $ getVerbose conf) . hPutStrLn stderr
     (descrs, sockets, afuncs) <- unzip3 <$> listeners conf
@@ -198,47 +201,12 @@ simpleHttpServe config handler = do
                     maybe (return ()) stopLogger elog)
                 (\(alog, elog) -> act ( liftM logMsg alog <|> maybeIoLog afp
                                       , liftM logMsg elog <|> maybeIoLog efp))
+
+-}
 {-# INLINE simpleHttpServe #-}
 
 
 ------------------------------------------------------------------------------
-listeners :: CmdlineConfig m a -> IO [(ByteString, Socket, AcceptFunc)]
-listeners conf = TLS.withTLS $ do
-  let fs = catMaybes [httpListener, httpsListener, unixListener]
-  mapM (\(str, mkAfunc) -> do (sock, afunc) <- mkAfunc
-                              return $! (str, sock, afunc)) fs
-  where
-    httpsListener = do
-        b    <- getSSLBind conf
-        p    <- getSSLPort conf
-        cert <- getSSLCert conf
-        chainCert <- getSSLChainCert conf
-        key  <- getSSLKey conf
-        return (S.concat [ "https://"
-                         , b
-                         , ":"
-                         , bshow p ],
-                do (sock, ctx) <- TLS.bindHttps b p cert chainCert key
-                   return (sock, TLS.httpsAcceptFunc sock ctx)
-                )
-    httpListener = do
-        p <- getPort conf
-        b <- getBind conf
-        return (S.concat [ "http://"
-                         , b
-                         , ":"
-                         , bshow p ],
-                do sock <- Sock.bindSocket b p
-                   if getProxyType conf == Just HaProxy
-                     then return (sock, Sock.haProxyAcceptFunc sock)
-                     else return (sock, Sock.httpAcceptFunc sock))
-    unixListener = do
-        path <- getUnixSocket conf
-        let accessMode = getUnixSocketAccessMode conf
-        return (T.encodeUtf8 . T.pack  $ "unix:" ++ path,
-                 do sock <- Sock.bindUnixSocket accessMode path
-                    return (sock, Sock.httpAcceptFunc sock))
-
 
 ------------------------------------------------------------------------------
 -- | Starts serving HTTP requests using the given handler, with settings from
