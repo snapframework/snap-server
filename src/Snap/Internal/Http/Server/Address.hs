@@ -14,7 +14,9 @@ module Snap.Internal.Http.Server.Address
   ) where
 
 ------------------------------------------------------------------------------
+#if !MIN_VERSION_base(4,8,0)
 import           Control.Applicative   ((<$>))
+#endif
 import           Control.Exception     (Exception, throwIO)
 import           Control.Monad         (liftM)
 import           Data.ByteString.Char8 (ByteString)

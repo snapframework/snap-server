@@ -87,7 +87,10 @@ import qualified Data.CaseInsensitive       as CI
 import           Data.Function              (on)
 import           Data.List                  (foldl')
 import           Data.Maybe                 (isJust, isNothing)
-import           Data.Monoid                (Last (Last, getLast), Monoid (..))
+#if !MIN_VERSION_base(4,8,0)
+import           Data.Monoid                (Monoid(..))
+#endif
+import           Data.Monoid                (Last (Last, getLast))
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as T
 import           Data.Typeable              (TyCon, Typeable, Typeable1 (..), mkTyConApp)

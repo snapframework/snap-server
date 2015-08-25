@@ -12,7 +12,9 @@ module Snap.Internal.Http.Server.Thread
   , isFinished
   ) where
 
+#if !MIN_VERSION_base(4,8,0)
 import           Control.Applicative         ((<$>))
+#endif
 import           Control.Concurrent          (MVar, ThreadId, killThread, newEmptyMVar, putMVar, readMVar)
 #if MIN_VERSION_base(4,7,0)
 import           Control.Concurrent          (tryReadMVar)
