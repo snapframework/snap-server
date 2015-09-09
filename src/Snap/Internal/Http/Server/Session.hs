@@ -15,7 +15,9 @@ module Snap.Internal.Http.Server.Session
   ) where
 
 ------------------------------------------------------------------------------
+#if !MIN_VERSION_base(4,8,0)
 import           Control.Applicative                      ((<$>))
+#endif
 import           Control.Arrow                            (first, second)
 import           Control.Concurrent                       (MVar, newEmptyMVar, putMVar, readMVar)
 import           Control.Exception                        (AsyncException, Exception, Handler (..), SomeException (..))
@@ -30,7 +32,10 @@ import           Data.IORef                               (IORef, newIORef, read
 import           Data.List                                (foldl')
 import qualified Data.Map                                 as Map
 import           Data.Maybe                               (fromJust, fromMaybe, isNothing)
-import           Data.Monoid                              (mconcat, (<>))
+#if !MIN_VERSION_base(4,8,0)
+import           Data.Monoid                              (mconcat)
+#endif
+import           Data.Monoid                              ((<>))
 import           Data.Time.Format                         (formatTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Version                             (showVersion)
