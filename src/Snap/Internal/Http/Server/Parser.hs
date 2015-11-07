@@ -25,13 +25,20 @@ module Snap.Internal.Http.Server.Parser
   ) where
 
 ------------------------------------------------------------------------------
+#if !MIN_VERSION_base(4,8,0)
 import           Control.Applicative              ((<$>))
+#endif
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
 import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, skipWhile, take)
 import qualified Data.ByteString.Char8            as S
-import           Data.ByteString.Internal         (ByteString (..), c2w, inlinePerformIO, memchr, w2c)
+import           Data.ByteString.Internal         (ByteString (..), c2w, memchr, w2c)
+#if MIN_VERSION_bytestring(0, 10, 6)
+import           Data.ByteString.Internal         (accursedUnutterablePerformIO)
+#else
+import           Data.ByteString.Internal         (inlinePerformIO)
+#endif
 import qualified Data.ByteString.Unsafe           as S
 #if !MIN_VERSION_io_streams(1,2,0)
 import           Data.IORef                       (newIORef, readIORef, writeIORef)
@@ -417,7 +424,11 @@ toLower = S.map lower
 -- | A version of elemIndex that doesn't allocate a Maybe. (It returns -1 on
 -- not found.)
 elemIndex :: Char -> ByteString -> Int
+#if MIN_VERSION_bytestring(0, 10, 6)
+elemIndex c (PS !fp !start !len) = accursedUnutterablePerformIO $
+#else
 elemIndex c (PS !fp !start !len) = inlinePerformIO $
+#endif
                                    withForeignPtr fp $ \p0 -> do
     let !p = plusPtr p0 start
     q <- memchr p w8 (fromIntegral len)
