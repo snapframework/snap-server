@@ -16,7 +16,6 @@ module Snap.Http.Server
   , snapServerVersion
   , setUnicodeLocale
   , rawHttpServe
-  , module Snap.Http.Server.CmdlineConfig
   , module Snap.Http.Server.Config
   ) where
 
@@ -62,7 +61,9 @@ import           Snap.Util.GZip                          (withCompression)
 import           Snap.Util.Proxy                         (behindProxy)
 import qualified Snap.Util.Proxy                         as Proxy
 import           System.FastLogger                       (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction, stopLogger, timestampedLogEntry)
-
+------------------------------------------------------------------------------
+-- FIXME
+import           Prelude                                 (error)
 
 ------------------------------------------------------------------------------
 -- | A short string describing the Snap server version

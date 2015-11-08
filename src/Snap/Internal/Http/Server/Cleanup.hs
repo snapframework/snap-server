@@ -3,9 +3,8 @@
 {-# LANGUAGE RankNTypes                 #-}
 module Snap.Internal.Http.Server.Cleanup
   ( Cleanup
-  , WithCleanup
   , io
-  , register
+  , cleanup
   , runCleanup
   ) where
 
@@ -26,27 +25,42 @@ data CleanupData = CleanupData {
     _register :: forall r . WithCleanup r -> IO r,
     _restore  :: forall a . IO a -> IO a
     }
+
+------------------------------------------------------------------------------
+-- | A simple resource-handling monad for use during server startup.
 newtype Cleanup a = Cleanup (R.ReaderT CleanupData IO a)
   deriving (Functor, Applicative, Monad)
 
-register :: WithCleanup a -> Cleanup a
-register w = Cleanup $ do
-    reg <- _register <$> R.ask
-    lift $ reg w
 
+------------------------------------------------------------------------------
+-- | Allocates some resource and schedules its cleanup action to be run at the end
+-- of the whole computation. (Like bracket)
+cleanup :: IO a -> (a -> IO ()) -> Cleanup a
+cleanup create destroy = Cleanup $ do
+    reg <- R.asks _register
+    lift $ reg (create, destroy)
+
+
+------------------------------------------------------------------------------
+-- | Run an IO action within the Cleanup monad.
 io :: IO a -> Cleanup a
 io m = Cleanup $ do
-    res <- _restore <$> R.ask
+    res <- R.asks _restore
     lift $ res m
 
-runCleanup :: Cleanup a -> IO (a, IO ())
+
+------------------------------------------------------------------------------
+runCleanup :: Cleanup a -> IO a
 runCleanup (Cleanup m) = E.mask $ \restore -> do
-    ref <- newIORef (return $! ())
+    ref    <- newIORef (return $! ())
+
     let cd = CleanupData (reg restore ref) restore
-    x <- R.runReaderT m cd `E.onException` join (readIORef ref)
-    act <- readIORef ref
-    return $! (x, act)
+    x <- R.runReaderT m cd `E.onException` runRef ref
+    runRef ref
+    E.evaluate x
   where
+    runRef ref = join (readIORef ref)
+
     reg :: forall r .
            (forall a . IO a -> IO a)
         -> IORef (IO ())
@@ -54,5 +68,5 @@ runCleanup (Cleanup m) = E.mask $ \restore -> do
         -> IO r
     reg restore ref (create, destroy) =
         E.bracketOnError (restore create) destroy $ \v -> do
-            modifyIORef ref (>> eatException (destroy v))
-            return v
+            modifyIORef ref (`E.finally` eatException (destroy v))
+            return $! v

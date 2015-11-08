@@ -66,6 +66,7 @@ Library
     Snap.Http.Server,
     Snap.Http.Server.CmdlineConfig,
     Snap.Http.Server.Config,
+    Snap.Internal.Http.Server.Cleanup,
     Snap.Internal.Http.Server.CmdlineConfig,
     Snap.Internal.Http.Server.Types,
     System.FastLogger
@@ -170,6 +171,7 @@ Test-suite testsuite
     Snap.Http.Server.CmdlineConfig,
     Snap.Http.Server.Config,
     Snap.Internal.Http.Server.Address,
+    Snap.Internal.Http.Server.Cleanup,
     Snap.Internal.Http.Server.Clock,
     Snap.Internal.Http.Server.Common,
     Snap.Internal.Http.Server.CmdlineConfig,

@@ -5,6 +5,7 @@ module Snap.Internal.Http.Server.Types
   ( ServerConfig(..)
   , PerSessionData(..)
   , AccessLogFunc
+  , ErrorLogFunc
   , DataFinishedHook
   , EscapeSnapHook
   , ExceptionHook
@@ -66,8 +67,13 @@ type ExceptionHook hookState = IORef hookState -> SomeException -> IO ()
 -- session, e.g. for websockets.
 type EscapeSnapHook hookState = IORef hookState -> IO ()
 
+-- | The snap server will invoke a function having this type that you provide
+-- upon access logging time.
 type AccessLogFunc = Request -> Response -> Word64 -> IO ()
 
+-- | The snap server will invoke a function having this type when a message is
+-- to be logged to the error log.
+type ErrorLogFunc = Builder -> IO ()
 
                              ---------------------
                              -- data structures --
@@ -77,7 +83,7 @@ type AccessLogFunc = Request -> Response -> Word64 -> IO ()
 --
 data ServerConfig hookState = ServerConfig
     { _logAccess             :: !AccessLogFunc
-    , _logError              :: !(Builder -> IO ())
+    , _logError              :: !ErrorLogFunc
     , _onNewRequest          :: !(NewRequestHook hookState)
     , _onParse               :: !(ParseHook hookState)
     , _onUserHandlerFinished :: !(UserHandlerFinishedHook hookState)

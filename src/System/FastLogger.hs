@@ -118,6 +118,7 @@ timestampedLogEntry msg = do
                , byteString timeStr
                , byteString "] "
                , msg
+               , char8 '\n'
                ]
 
 
@@ -154,6 +155,7 @@ combinedLogEntry !host !mbUser !req !status !numBytes !mbReferer !ua = do
               , byteString " \""
               , byteString ua
               , quote
+              , char8 '\n'
               ]
 
   where
@@ -171,11 +173,10 @@ combinedLogEntry !host !mbUser !req !status !numBytes !mbReferer !ua = do
 ------------------------------------------------------------------------------
 -- | Sends out a log message verbatim with a newline appended. Note:
 -- if you want a fancy log message you'll have to format it yourself
--- (or use 'combinedLogEntry').
+-- (or use 'combinedLogEntry'). No newline is appended.
 logMsg :: Logger -> Builder -> IO ()
 logMsg !lg !s = do
-    let !s' = s `mappend` char8 '\n'
-    atomicModifyIORef' (_queuedMessages lg) $ \d -> (d `mappend` s', ())
+    atomicModifyIORef' (_queuedMessages lg) $ \d -> (d `mappend` s, ())
     void $ tryPutMVar (_dataWaiting lg) ()
 
 
@@ -196,9 +197,7 @@ loggingThread (Logger queue notifier filePath _ errAct) unmask = do
                        logInternalError $ "Can't open log file \"" ++
                                           filePath ++ "\".\n"
                        logInternalError $ "Exception: " ++ show e ++ "\n"
-                       logInternalError $ "Logging to stderr instead. " ++
-                                          "**THIS IS BAD, YOU OUGHT TO " ++
-                                          "FIX THIS**\n\n"
+                       logInternalError $ "Logging to stderr instead. "
                        return stderr
 
     closeIt h = unless (h == stdout || h == stderr) $
