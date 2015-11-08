@@ -4,6 +4,7 @@
 module Snap.Internal.Http.Server.Types
   ( ServerConfig(..)
   , PerSessionData(..)
+  , AccessLogFunc
   , DataFinishedHook
   , EscapeSnapHook
   , ExceptionHook
@@ -65,6 +66,8 @@ type ExceptionHook hookState = IORef hookState -> SomeException -> IO ()
 -- session, e.g. for websockets.
 type EscapeSnapHook hookState = IORef hookState -> IO ()
 
+type AccessLogFunc = Request -> Response -> Word64 -> IO ()
+
 
                              ---------------------
                              -- data structures --
@@ -73,7 +76,7 @@ type EscapeSnapHook hookState = IORef hookState -> IO ()
 -- | Data and services that all HTTP response handlers share.
 --
 data ServerConfig hookState = ServerConfig
-    { _logAccess             :: !(Request -> Response -> Word64 -> IO ())
+    { _logAccess             :: !AccessLogFunc
     , _logError              :: !(Builder -> IO ())
     , _onNewRequest          :: !(NewRequestHook hookState)
     , _onParse               :: !(ParseHook hookState)

@@ -9,7 +9,8 @@
 --
 module Snap.Internal.Http.Server.CmdlineConfig
   -- NOTE: also edit Snap.Http.Server.CmdlineConfig if you change these
-  ( CmdlineConfigLog(..)
+  ( CmdlineConfigAccessLog(..)
+  , CmdlineConfigErrLog(..)
   , CmdlineConfig(..)
   , ProxyType(..)
 
@@ -78,46 +79,47 @@ module Snap.Internal.Http.Server.CmdlineConfig
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception          (SomeException)
-import           Control.Monad              (when)
-import           Data.Bits                  ((.&.))
-import           Data.ByteString            (ByteString)
-import qualified Data.ByteString.Char8      as S
-import qualified Data.ByteString.Lazy.Char8 as L
-import qualified Data.CaseInsensitive       as CI
-import           Data.Function              (on)
-import           Data.List                  (foldl')
-import           Data.Maybe                 (isJust, isNothing)
+import           Control.Exception               (SomeException)
+import           Control.Monad                   (when)
+import           Data.Bits                       ((.&.))
+import           Data.ByteString                 (ByteString)
+import qualified Data.ByteString.Char8           as S
+import qualified Data.ByteString.Lazy.Char8      as L
+import qualified Data.CaseInsensitive            as CI
+import           Data.Function                   (on)
+import           Data.List                       (foldl')
+import           Data.Maybe                      (isJust, isNothing)
 #if !MIN_VERSION_base(4,8,0)
-import           Data.Monoid                (Monoid(..))
+import           Data.Monoid                     (Monoid (..))
 #endif
-import           Data.Monoid                (Last (Last, getLast))
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as T
+import           Data.Monoid                     (Last (Last, getLast))
+import qualified Data.Text                       as T
+import qualified Data.Text.Encoding              as T
 #if MIN_VERSION_base(4,7,0)
-import           Data.Typeable              (Typeable)
+import           Data.Typeable                   (Typeable)
 #else
-import           Data.Typeable              (TyCon, Typeable, Typeable1 (..), mkTyConApp, mkTyCon3)
+import           Data.Typeable                   (TyCon, Typeable, Typeable1 (..), mkTyCon3, mkTyConApp)
 #endif
-import           Network                    (Socket)
-import           Numeric                    (readOct, showOct)
+import           Network                         (Socket)
+import           Numeric                         (readOct, showOct)
 #if !MIN_VERSION_base(4,6,0)
-import           Prelude                    hiding (catch)
+import           Prelude                         hiding (catch)
 #endif
-import           System.Console.GetOpt      (ArgDescr (..), ArgOrder (Permute), OptDescr (..), getOpt, usageInfo)
-import           System.Environment         hiding (getEnv)
+import           System.Console.GetOpt           (ArgDescr (..), ArgOrder (Permute), OptDescr (..), getOpt, usageInfo)
+import           System.Environment              hiding (getEnv)
 #ifndef PORTABLE
-import           Data.Char                  (isAlpha)
-import           System.Posix.Env           (getEnv)
+import           Data.Char                       (isAlpha)
+import           System.Posix.Env                (getEnv)
 #endif
-import           System.Exit                (exitFailure)
-import           System.IO                  (hPutStrLn, stderr)
+import           System.Exit                     (exitFailure)
+import           System.IO                       (hPutStrLn, stderr)
 ------------------------------------------------------------------------------
-import           Data.ByteString.Builder    (Builder, byteString, stringUtf8, toLazyByteString)
-import qualified System.IO.Streams          as Streams
+import           Data.ByteString.Builder         (Builder, byteString, stringUtf8, toLazyByteString)
+import qualified System.IO.Streams               as Streams
 ------------------------------------------------------------------------------
-import           Snap.Core                  (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
-import           Snap.Internal.Debug        (debug)
+import           Snap.Core                       (MonadSnap, Request (rqClientAddr, rqClientPort), emptyResponse, finishWith, getRequest, logError, setContentLength, setContentType, setResponseBody, setResponseStatus)
+import           Snap.Internal.Debug             (debug)
+import           Snap.Internal.Http.Server.Types (AccessLogFunc)
 
 
 ------------------------------------------------------------------------------
@@ -130,15 +132,28 @@ data ProxyType = NoProxy
   deriving (Show, Eq, Typeable)
 
 ------------------------------------------------------------------------------
--- | Data type representing the configuration of a logging target
-data CmdlineConfigLog = ConfigNoLog                     -- ^ no logging
-                      | ConfigFileLog FilePath          -- ^ log to text file
-                      | ConfigIoLog (Builder -> IO ())  -- ^ log custom IO handler
+-- | Data type representing the configuration of an error logging target
+data CmdlineConfigErrLog = ConfigNoErrLog                     -- ^ no logging
+                         | ConfigFileErrLog FilePath          -- ^ log to text file
+                         | ConfigIoErrLog (Builder -> IO ())  -- ^ log custom IO handler
 
-instance Show CmdlineConfigLog where
-    show ConfigNoLog       = "no log"
-    show (ConfigFileLog f) = "log to file " ++ show f
-    show (ConfigIoLog _)   = "custom logging handler"
+instance Show CmdlineConfigErrLog where
+    show ConfigNoErrLog       = "no log"
+    show (ConfigFileErrLog f) = "log to file " ++ show f
+    show (ConfigIoErrLog _)   = "custom logging handler"
+
+
+------------------------------------------------------------------------------
+-- | Data type representing the configuration of an error logging target
+data CmdlineConfigAccessLog =
+     ConfigNoAccessLog                -- ^ no logging
+   | ConfigFileAccessLog FilePath     -- ^ log to text file
+   | ConfigIoAccessLog AccessLogFunc  -- ^ log custom IO handler
+
+instance Show CmdlineConfigAccessLog where
+    show ConfigNoAccessLog       = "no log"
+    show (ConfigFileAccessLog f) = "log to file " ++ show f
+    show (ConfigIoAccessLog _)   = "custom logging handler"
 
 
 ------------------------------------------------------------------------------
@@ -199,8 +214,8 @@ instance Show CmdlineConfigLog where
 -- this is the norm) are filled in with default values from 'defaultConfig'.
 data CmdlineConfig m a = CmdlineConfig
     { hostname       :: Maybe ByteString
-    , accessLog      :: Maybe CmdlineConfigLog
-    , errorLog       :: Maybe CmdlineConfigLog
+    , accessLog      :: Maybe CmdlineConfigAccessLog
+    , errorLog       :: Maybe CmdlineConfigErrLog
     , locale         :: Maybe String
     , port           :: Maybe Int
     , bind           :: Maybe ByteString
@@ -343,8 +358,8 @@ instance Monoid (CmdlineConfig m a) where
 defaultCmdlineConfig :: MonadSnap m => CmdlineConfig m a
 defaultCmdlineConfig = mempty
     { hostname       = Just "localhost"
-    , accessLog      = Just $ ConfigFileLog "log/access.log"
-    , errorLog       = Just $ ConfigFileLog "log/error.log"
+    , accessLog      = Just $ ConfigFileAccessLog "log/access.log"
+    , errorLog       = Just $ ConfigFileErrLog "log/error.log"
     , locale         = Just "en_US"
     , compression    = Just True
     , verbose        = Just True
@@ -366,11 +381,11 @@ getHostname       :: CmdlineConfig m a -> Maybe ByteString
 getHostname = hostname
 
 -- | Path to the access log
-getAccessLog      :: CmdlineConfig m a -> Maybe CmdlineConfigLog
+getAccessLog      :: CmdlineConfig m a -> Maybe CmdlineConfigAccessLog
 getAccessLog = accessLog
 
 -- | Path to the error log
-getErrorLog       :: CmdlineConfig m a -> Maybe CmdlineConfigLog
+getErrorLog       :: CmdlineConfig m a -> Maybe CmdlineConfigErrLog
 getErrorLog = errorLog
 
 -- | Gets the locale to use. Locales are used on Unix only, to set the
@@ -459,10 +474,10 @@ getStartupHook = startupHook
 setHostname       :: ByteString              -> CmdlineConfig m a -> CmdlineConfig m a
 setHostname x c = c { hostname = Just x }
 
-setAccessLog      :: CmdlineConfigLog               -> CmdlineConfig m a -> CmdlineConfig m a
+setAccessLog      :: CmdlineConfigAccessLog  -> CmdlineConfig m a -> CmdlineConfig m a
 setAccessLog x c = c { accessLog = Just x }
 
-setErrorLog       :: CmdlineConfigLog               -> CmdlineConfig m a -> CmdlineConfig m a
+setErrorLog       :: CmdlineConfigErrLog     -> CmdlineConfig m a -> CmdlineConfig m a
 setErrorLog x c = c { errorLog = Just x }
 
 setLocale         :: String                  -> CmdlineConfig m a -> CmdlineConfig m a
@@ -613,16 +628,16 @@ optDescrs defaults =
              (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey
     , Option "" ["access-log"]
-             (ReqArg (Just . setConfig setAccessLog . ConfigFileLog) "PATH")
+             (ReqArg (Just . setConfig setAccessLog . ConfigFileAccessLog) "PATH")
              $ "access log" ++ defaultC getAccessLog
     , Option "" ["error-log"]
-             (ReqArg (Just . setConfig setErrorLog . ConfigFileLog) "PATH")
+             (ReqArg (Just . setConfig setErrorLog . ConfigFileErrLog) "PATH")
              $ "error log" ++ defaultC getErrorLog
     , Option "" ["no-access-log"]
-             (NoArg $ Just $ setConfig setAccessLog ConfigNoLog)
+             (NoArg $ Just $ setConfig setAccessLog ConfigNoAccessLog)
              "don't have an access log"
     , Option "" ["no-error-log"]
-             (NoArg $ Just $ setConfig setErrorLog ConfigNoLog)
+             (NoArg $ Just $ setConfig setErrorLog ConfigNoErrLog)
              "don't have an error log"
     , Option "c" ["compression"]
              (NoArg $ Just $ setConfig setCompression True)

@@ -1,4 +1,5 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types        #-}
 
 ------------------------------------------------------------------------------
 -- | This module exports the 'Config' datatype, which you can use to configure
@@ -6,7 +7,8 @@
 --
 module Snap.Http.Server.CmdlineConfig
   ( CmdlineConfig
-  , CmdlineConfigLog(..)
+  , CmdlineConfigAccessLog(..)
+  , CmdlineConfigErrLog(..)
   , ProxyType
 
   , emptyCmdlineConfig
@@ -14,8 +16,6 @@ module Snap.Http.Server.CmdlineConfig
   , cmdlineConfig
   , extendedCmdlineConfig
   , completeCmdlineConfig
-
-  , generateServerConfig
 
   , optDescrs
   , fmapOpt
@@ -79,12 +79,27 @@ module Snap.Http.Server.CmdlineConfig
 
 ------------------------------------------------------------------------------
 import qualified Control.Exception                       as E
+import           Control.Monad                           (when)
+import           Data.ByteString                         (ByteString)
+import           Data.ByteString.Builder                 (Builder)
+import qualified Data.ByteString.Char8                   as S
 import           Data.IORef                              (IORef)
 import qualified Data.IORef                              as IORef
+import           Data.Maybe                              (catMaybes, fromJust, fromMaybe)
+import qualified Data.Text                               as T
+import qualified Data.Text.Encoding                      as T
+import           Data.Word                               (Word64)
+import           Network                                 (Socket)
+import           Snap.Core                               (MonadSnap (..), Request, Response, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
 import           Snap.Internal.Http.Server.Cleanup       (Cleanup, WithCleanup, runCleanup)
 import qualified Snap.Internal.Http.Server.Cleanup       as Cleanup
 import           Snap.Internal.Http.Server.CmdlineConfig
-
+import qualified Snap.Internal.Http.Server.Socket        as Sock
+import qualified Snap.Internal.Http.Server.TLS           as TLS
+import           Snap.Internal.Http.Server.Types         (AcceptFunc, ServerConfig (..))
+import qualified Snap.Types.Headers                      as H
+import           System.FastLogger                       (combinedLogEntry)
+import           System.IO                               (hPutStrLn, stderr)
 
 ------------------------------------------------------------------------------
 -- | Configure Snap in direct / non-proxying mode.
@@ -108,11 +123,9 @@ haProxy = HaProxy
 
 
 ------------------------------------------------------------------------------
-listeners :: CmdlineConfig m a -> IO [(ByteString, Socket, AcceptFunc, CmdlineConfig m a)]
-listeners conf = TLS.withTLS $ do
-  let fs = catMaybes [httpListener, httpsListener, unixListener]
-  mapM (\(str, mkAfunc, cfg) -> do (sock, afunc) <- mkAfunc
-                                   return $! (str, sock, afunc, cfg)) fs
+listeners :: CmdlineConfig m a -> IO [(ByteString, IO (Socket, AcceptFunc), Bool)]
+listeners conf = TLS.withTLS $!
+                 return $! catMaybes [httpListener, httpsListener, unixListener]
   where
     httpsListener = do
         b         <- getSSLBind conf
@@ -126,7 +139,7 @@ listeners conf = TLS.withTLS $ do
                          , bshow p ]
                , do (sock, ctx) <- TLS.bindHttps b p cert chainCert key
                     return (sock, TLS.httpsAcceptFunc sock ctx)
-               , conf { isSecure = True }
+               , True
                )
     httpListener = do
         p <- getPort conf
@@ -139,7 +152,7 @@ listeners conf = TLS.withTLS $ do
                     if getProxyType conf == Just HaProxy
                       then return (sock, Sock.haProxyAcceptFunc sock)
                       else return (sock, Sock.httpAcceptFunc sock)
-               , conf
+               , False
                )
     unixListener = do
         path <- getUnixSocket conf
@@ -147,7 +160,7 @@ listeners conf = TLS.withTLS $ do
         return ( T.encodeUtf8 . T.pack  $ "unix:" ++ path
                , do sock <- Sock.bindUnixSocket accessMode path
                     return (sock, Sock.httpAcceptFunc sock)
-               , conf
+               , False
                )
 
 
@@ -187,8 +200,13 @@ toServerConfig :: MonadSnap m
                -> IO [(ServerConfig s, AcceptFunc, IO ())]
                -- ^ server config, accept function, cleanup action
 toServerConfig cmdline0 = do
-    let output = when (fromJust $ getVerbose cmdline) . hPutStrLn stderr
     cmdline <- completeCmdlineConfig cmdline0
+    let output = when (fromJust $ getVerbose cmdline) . hPutStrLn stderr
 
-    let logAccess = getAccessLog
+    let logAccess = getAccessLog cmdline
+    let logErr = getErrorLog cmdline
     undefined
+
+------------------------------------------------------------------------------
+bshow :: (Show a) => a -> ByteString
+bshow = S.pack . show

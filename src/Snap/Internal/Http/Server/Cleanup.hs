@@ -1,4 +1,6 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes                 #-}
 module Snap.Internal.Http.Server.Cleanup
   ( Cleanup
   , WithCleanup
@@ -8,9 +10,12 @@ module Snap.Internal.Http.Server.Cleanup
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Applicative              ((<$>))
+#if !MIN_VERSION_base(4,8,0)
+import           Control.Applicative              (Applicative, (<$>))
+#endif
 import qualified Control.Exception                as E
-import           Control.Monad.Reader             (ReaderT, ask)
+import           Control.Monad                    (join)
+import qualified Control.Monad.Reader             as R
 import           Control.Monad.Trans              (lift)
 import           Data.IORef                       (IORef, modifyIORef, newIORef, readIORef)
 import           Snap.Internal.Http.Server.Common (eatException)
@@ -26,26 +31,28 @@ newtype Cleanup a = Cleanup (R.ReaderT CleanupData IO a)
 
 register :: WithCleanup a -> Cleanup a
 register w = Cleanup $ do
-    reg <- _register <$> ask
+    reg <- _register <$> R.ask
     lift $ reg w
 
 io :: IO a -> Cleanup a
 io m = Cleanup $ do
-    res <- _restore <$> ask
+    res <- _restore <$> R.ask
     lift $ res m
 
 runCleanup :: Cleanup a -> IO (a, IO ())
 runCleanup (Cleanup m) = E.mask $ \restore -> do
     ref <- newIORef (return $! ())
     let cd = CleanupData (reg restore ref) restore
-    x <- runReaderT m cd `onException` join (readIORef ref)
+    x <- R.runReaderT m cd `E.onException` join (readIORef ref)
     act <- readIORef ref
     return $! (x, act)
   where
     reg :: forall r .
            (forall a . IO a -> IO a)
+        -> IORef (IO ())
         -> WithCleanup r
         -> IO r
     reg restore ref (create, destroy) =
-        E.bracketOnError (restore create) destroy $ \v ->
+        E.bracketOnError (restore create) destroy $ \v -> do
             modifyIORef ref (>> eatException (destroy v))
+            return v
