@@ -20,7 +20,6 @@ module Snap.Http.Server.CmdlineConfig
   , defaultCmdlineConfig
   , cmdlineConfig
   , extendedCmdlineConfig
-  , completeCmdlineConfig
 
   -- * Evaluating command-line configs
   , toServerConfig
@@ -96,7 +95,6 @@ module Snap.Http.Server.CmdlineConfig
   ) where
 
 ------------------------------------------------------------------------------
-import qualified Control.Exception                       as E
 import           Control.Monad                           (mapM, when)
 import           Data.ByteString                         (ByteString)
 import           Data.ByteString.Builder                 (Builder, byteString, stringUtf8, toLazyByteString)
@@ -278,8 +276,7 @@ toServerConfig :: MonadSnap m
                -> CmdlineConfig m a    -- ^ command line configuration
                -> Cleanup [(ByteString, ServerConfig s, AcceptFunc)]
                -- ^ bind address, server config, accept function
-toServerConfig template cmdline0 = do
-    cmdline <- Cleanup.io $ completeCmdlineConfig cmdline0
+toServerConfig template cmdline = do
     let vlog = when (fromMaybe False (getVerbose cmdline)) . verboseLog
 
     logAccess <- startAccessLogger vlog

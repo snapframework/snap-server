@@ -20,50 +20,32 @@ module Snap.Http.Server
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Applicative                     ((<$>), (<|>))
-import           Control.Concurrent                      (killThread, newEmptyMVar, newMVar, putMVar, readMVar, withMVar)
+import           Control.Concurrent                      (killThread, newEmptyMVar, putMVar, readMVar)
 import           Control.Concurrent.Extended             (forkIOLabeledWithUnmaskBs)
-import           Control.Exception                       (SomeException, bracket, catch, finally, mask, mask_)
-import qualified Control.Exception.Lifted                as L
-import           Control.Monad                           (liftM, when)
-import           Control.Monad.Trans                     (MonadIO)
-import           Data.ByteString.Builder                 (toLazyByteString)
+import           Control.Exception                       (bracket, finally, mask)
+import qualified Control.Exception.Lifted                as E
+import           Control.Monad                           (when)
 import           Data.ByteString.Char8                   (ByteString)
 import qualified Data.ByteString.Char8                   as S
-import qualified Data.ByteString.Lazy.Char8              as L
-import           Data.Maybe                              (catMaybes, fromJust, fromMaybe)
-import qualified Data.Text                               as T
-import qualified Data.Text.Encoding                      as T
+import           Data.Maybe                              (fromJust)
 import           Data.Version                            (showVersion)
-import           Data.Word                               (Word64)
-import           Network.Socket                          (Socket, sClose)
-import           Prelude                                 (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, fst, id, mapM, mapM_, maybe, snd, unzip3, zip, ($), ($!), (++), (.))
-import           System.IO                               (hFlush, hPutStrLn, stderr)
+import           Prelude                                 (Bool (..), IO, Monad (..), String, const, flip, fst, id, map, mapM, mapM_, maybe, null, snd, zip, ($), ($!), (++), (.))
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
 ------------------------------------------------------------------------------
-import           Data.ByteString.Builder                 (Builder, toLazyByteString)
-------------------------------------------------------------------------------
 import qualified Paths_snap_server                       as V
-import           Snap.Core                               (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.CmdlineConfig
+import           Snap.Core                               (MonadSnap (..), Snap)
+import           Snap.Http.Server.CmdlineConfig          (toServerConfig)
 import           Snap.Http.Server.Config
-import qualified Snap.Http.Server.Config                 as Config
-import           Snap.Internal.Debug                     (debug)
-import           Snap.Internal.Http.Server.CmdlineConfig (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
+import           Snap.Internal.Http.Server.Cleanup       (Cleanup)
+import qualified Snap.Internal.Http.Server.Cleanup       as Cleanup
+import           Snap.Internal.Http.Server.CmdlineConfig (CmdlineConfig, ProxyType (..), cmdlineConfig, defaultCmdlineConfig, getCompression, getErrorHandler, getLocale, getProxyType)
 import           Snap.Internal.Http.Server.Session       (httpAcceptLoop, snapToServerHandler)
-import qualified Snap.Internal.Http.Server.Socket        as Sock
-import qualified Snap.Internal.Http.Server.TLS           as TLS
-import           Snap.Internal.Http.Server.Types         (AcceptFunc, ServerConfig, ServerHandler)
-import qualified Snap.Types.Headers                      as H
 import           Snap.Util.GZip                          (withCompression)
 import           Snap.Util.Proxy                         (behindProxy)
 import qualified Snap.Util.Proxy                         as Proxy
-import           System.FastLogger                       (combinedLogEntry, logMsg, newLoggerWithCustomErrorFunction, stopLogger, timestampedLogEntry)
 ------------------------------------------------------------------------------
--- FIXME
-import           Prelude                                 (error)
 
 ------------------------------------------------------------------------------
 -- | A short string describing the Snap server version
@@ -75,8 +57,8 @@ snapServerVersion = S.pack $! showVersion V.version
 rawHttpServe :: ServerHandler s                 -- ^ server handler
              -> [(ServerConfig s, AcceptFunc)]  -- ^ server config and accept
                                                 --   functions
-             -> IO ()
-rawHttpServe h cfgloops = do
+             -> Cleanup ()
+rawHttpServe h cfgloops = Cleanup.io $ do
     mvars <- mapM (const newEmptyMVar) cfgloops
     mask $ \restore -> bracket (mapM runLoop $ mvars `zip` cfgloops)
                                (\mvTids -> do
@@ -99,111 +81,20 @@ rawHttpServe h cfgloops = do
 -- This function is like 'httpServe' except it doesn't setup compression,
 -- reverse proxy address translation (via 'Snap.Util.Proxy.behindProxy'), or
 -- the error handler; this allows it to be used from 'MonadSnap'.
-simpleHttpServe :: MonadSnap m => CmdlineConfig m a -> Snap () -> IO ()
-simpleHttpServe config handler = do
-  error "unimplemented"
-{-
-    conf <- completeCmdlineConfig config
-    let output = when (fromJust $ getVerbose conf) . hPutStrLn stderr
-    (descrs, sockets, afuncs) <- unzip3 <$> listeners conf
-    mapM_ (output . ("Listening on " ++) . S.unpack) descrs
-
-    go conf sockets afuncs `finally` (mask_ $ do
-        output "\nShutting down.."
-        mapM_ (eatException . sClose) sockets)
-
-  where
-    eatException :: IO a -> IO ()
-    eatException act =
-        let r0 = return $! ()
-        in (act >> r0) `catch` \(_::SomeException) -> r0
-
-    --------------------------------------------------------------------------
-    -- FIXME: this logging code *sucks*
-    --------------------------------------------------------------------------
-    debugE :: (MonadIO m) => Builder -> m ()
-    debugE s = debug $ "Error: " ++ L.unpack (toLazyByteString s)
-
-    --------------------------------------------------------------------------
-    logE :: Maybe (Builder -> IO ()) -> Builder -> IO ()
-    logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
-
-    --------------------------------------------------------------------------
-    logE' :: (Builder -> IO ()) -> Builder -> IO ()
-    logE' logger s = (timestampedLogEntry s) >>= logger
-
-    --------------------------------------------------------------------------
-    logA :: Maybe (Builder -> IO ())
-         -> Request
-         -> Response
-         -> Word64
-         -> IO ()
-    logA alog = maybe (\_ _ _ -> return $! ()) logA' alog
-
-    --------------------------------------------------------------------------
-    logA' logger req rsp cl = do
-        let hdrs      = rqHeaders req
-        let host      = rqClientAddr req
-        let user      = Nothing -- TODO we don't do authentication yet
-        let (v, v')   = rqVersion req
-        let ver       = S.concat [ "HTTP/", bshow v, ".", bshow v' ]
-        let method    = bshow (rqMethod req)
-        let reql      = S.intercalate " " [ method, rqURI req, ver ]
-        let status    = rspStatus rsp
-        let referer   = H.lookup "referer" hdrs
-        let userAgent = fromMaybe "-" $ H.lookup "user-agent" hdrs
-
-        msg <- combinedLogEntry host user reql status cl referer userAgent
-        logger msg
-
-    --------------------------------------------------------------------------
-    go conf sockets afuncs = do
-        let tout = fromMaybe 60 $ Config.getDefaultTimeout conf
+simpleHttpServe :: MonadSnap m
+                => ServerConfig hookState
+                -> CmdlineConfig m a
+                -> Snap ()
+                -> IO ()
+simpleHttpServe defaultServerConfig cmdline handler = do
+    maybe (return $! ()) setUnicodeLocale $ getLocale cmdline
+    Cleanup.runCleanup $ do
+        backends <- toServerConfig defaultServerConfig cmdline
+        -- TODO: throw a proper exception here.
+        when (null backends) $ fail "No backends configured."
         let shandler = snapToServerHandler handler
-
-        setUnicodeLocale $ fromJust $ getLocale conf
-
-        withLoggers (fromJust $ getAccessLog conf)
-                    (fromJust $ getErrorLog conf) $ \(alog, elog) -> do
-            let scfg = Config.setDefaultTimeout tout .
-                       Config.setLocalHostname (fromJust $ getHostname conf) .
-                       Config.setLogAccess (logA alog) .
-                       Config.setLogError (logE elog) $
-                       Config.emptyServerConfig
-            maybe (return $! ())
-                  ($ mkStartupInfo sockets conf)
-                  (getStartupHook conf)
-            rawHttpServe shandler scfg afuncs
-
-    --------------------------------------------------------------------------
-    mkStartupInfo sockets conf =
-        setStartupSockets sockets $
-        setStartupConfig conf emptyStartupInfo
-
-    --------------------------------------------------------------------------
-    maybeSpawnLogger f (ConfigFileLog fp) =
-        liftM Just $ newLoggerWithCustomErrorFunction f fp
-    maybeSpawnLogger _ _                  = return Nothing
-
-    --------------------------------------------------------------------------
-    maybeIoLog (ConfigIoLog a) = Just a
-    maybeIoLog _               = Nothing
-
-    --------------------------------------------------------------------------
-    withLoggers afp efp act =
-        bracket (do mvar <- newMVar ()
-                    let f s = withMVar mvar
-                                (const $ S.hPutStr stderr s >> hFlush stderr)
-                    alog <- maybeSpawnLogger f afp
-                    elog <- maybeSpawnLogger f efp
-                    return (alog, elog))
-                (\(alog, elog) -> do
-                    maybe (return ()) stopLogger alog
-                    maybe (return ()) stopLogger elog)
-                (\(alog, elog) -> act ( liftM logMsg alog <|> maybeIoLog afp
-                                      , liftM logMsg elog <|> maybeIoLog efp))
-
--}
+        let cfgAndFuncs = map (\(!_,!a,!b) -> (a,b)) backends
+        rawHttpServe shandler cfgAndFuncs
 {-# INLINE simpleHttpServe #-}
 
 
@@ -214,13 +105,16 @@ simpleHttpServe config handler = do
 -- the 'CmdlineConfig' passed in. This function never returns; to shut down the HTTP
 -- server, kill the controlling thread.
 httpServe :: CmdlineConfig Snap a -> Snap () -> IO ()
-httpServe config handler0 = do
-    conf <- completeCmdlineConfig config
-    let !handler = chooseProxy conf
-    let serve    = compress conf . catch500 conf $ handler
-    simpleHttpServe conf serve
+httpServe cmdline handler0 = do
+    let !handler = chooseProxy cmdline
+    -- TODO: refactor handler wrapping into separate function of type
+    -- "CmdlineConfig m a -> m a -> m a"
+    let serve    = compress cmdline . catch500 cmdline $ handler
+    simpleHttpServe emptyServerConfig cmdline serve
 
   where
+    -- TODO: refactor this into the function that wraps snap handlers
+    -- TODO: this should happen at a lower level (simpleHttpServe?)
     chooseProxy conf = maybe handler0
                              (\ptype -> pickProxy ptype handler0)
                              (getProxyType conf)
@@ -232,7 +126,7 @@ httpServe config handler0 = do
 
 ------------------------------------------------------------------------------
 catch500 :: MonadSnap m => CmdlineConfig m a -> m () -> m ()
-catch500 conf = flip L.catch $ fromJust $ getErrorHandler conf
+catch500 conf = flip E.catch $ fromJust $ getErrorHandler conf
 
 
 ------------------------------------------------------------------------------
@@ -274,7 +168,3 @@ setUnicodeLocale lang = mapM_ (\k -> setEnv k (lang ++ ".UTF-8") True)
 #else
 setUnicodeLocale = const $ return ()
 #endif
-
-------------------------------------------------------------------------------
-bshow :: (Show a) => a -> ByteString
-bshow = S.pack . show

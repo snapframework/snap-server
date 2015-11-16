@@ -19,7 +19,6 @@ module Snap.Internal.Http.Server.CmdlineConfig
 
   , cmdlineConfig
   , extendedCmdlineConfig
-  , completeCmdlineConfig
 
   , optDescrs
   , fmapOpt
@@ -41,6 +40,7 @@ module Snap.Internal.Http.Server.CmdlineConfig
   , getSSLKey
   , getSSLPort
   , getVerbose
+    -- FIXME: remove getStartupHook, replace with something better
   , getStartupHook
   , getUnixSocket
   , getUnixSocketAccessMode
@@ -80,7 +80,6 @@ module Snap.Internal.Http.Server.CmdlineConfig
 
 ------------------------------------------------------------------------------
 import           Control.Exception               (SomeException)
-import           Control.Monad                   (when)
 import           Data.Bits                       ((.&.))
 import           Data.ByteString                 (ByteString)
 import qualified Data.ByteString.Char8           as S
@@ -88,7 +87,6 @@ import qualified Data.ByteString.Lazy.Char8      as L
 import qualified Data.CaseInsensitive            as CI
 import           Data.Function                   (on)
 import           Data.List                       (foldl')
-import           Data.Maybe                      (isJust, isNothing)
 #if !MIN_VERSION_base(4,8,0)
 import           Data.Monoid                     (Monoid (..))
 #endif
@@ -560,28 +558,6 @@ setStartupConfig x c = c { startupHookConfig = x }
 
 
 ------------------------------------------------------------------------------
-completeCmdlineConfig :: (MonadSnap m) => CmdlineConfig m a -> IO (CmdlineConfig m a)
-completeCmdlineConfig config = do
-    when noPort $ hPutStrLn stderr
-        "no port specified, defaulting to port 8000"
-
-    return $! cfg `mappend` cfg'
-
-  where
-    cfg = defaultCmdlineConfig `mappend` config
-
-    sslVals = map ($ cfg) [ isJust . getSSLPort
-                          , isJust . getSSLBind
-                          , isJust . getSSLKey
-                          , isJust . getSSLCert ]
-
-    sslValid   = and sslVals
-    noPort = isNothing (getPort cfg) && not sslValid
-
-    cfg' = emptyCmdlineConfig { port = if noPort then Just 8000 else Nothing }
-
-
-------------------------------------------------------------------------------
 bsFromString :: String -> ByteString
 bsFromString = T.encodeUtf8 . T.pack
 
@@ -795,11 +771,11 @@ extendedCmdlineConfig opts combiningFunction defaults = do
 
 #ifndef PORTABLE
     lang <- getEnv "LANG"
-    completeCmdlineConfig $ mconcat [ defaults
-                                    , mempty {locale = fmap upToUtf8 lang}
-                                    , result ]
+    return $! mconcat [ defaults
+                      , mempty {locale = fmap upToUtf8 lang}
+                      , result ]
 #else
-    completeCmdlineConfig $ mconcat [defaults, result]
+    return $! mconcat [defaults, result]
 #endif
 
   where
