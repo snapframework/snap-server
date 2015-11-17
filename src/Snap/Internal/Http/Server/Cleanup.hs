@@ -10,7 +10,7 @@ module Snap.Internal.Http.Server.Cleanup
 
 ------------------------------------------------------------------------------
 #if !MIN_VERSION_base(4,8,0)
-import           Control.Applicative              (Applicative, (<$>))
+import           Control.Applicative              (Applicative)
 #endif
 import qualified Control.Exception                as E
 import           Control.Monad                    (join)
@@ -20,9 +20,8 @@ import           Data.IORef                       (IORef, modifyIORef, newIORef,
 import           Snap.Internal.Http.Server.Common (eatException)
 
 ------------------------------------------------------------------------------
-type WithCleanup a = (IO a, a -> IO ())
 data CleanupData = CleanupData {
-    _register :: forall r . WithCleanup r -> IO r,
+    _register :: forall r . IO r -> (r -> IO ()) -> IO r,
     _restore  :: forall a . IO a -> IO a
     }
 
@@ -38,7 +37,7 @@ newtype Cleanup a = Cleanup (R.ReaderT CleanupData IO a)
 cleanup :: IO a -> (a -> IO ()) -> Cleanup a
 cleanup create destroy = Cleanup $ do
     reg <- R.asks _register
-    lift $ reg (create, destroy)
+    lift $ reg create destroy
 
 
 ------------------------------------------------------------------------------
@@ -64,9 +63,10 @@ runCleanup (Cleanup m) = E.mask $ \restore -> do
     reg :: forall r .
            (forall a . IO a -> IO a)
         -> IORef (IO ())
-        -> WithCleanup r
         -> IO r
-    reg restore ref (create, destroy) =
-        E.bracketOnError (restore create) destroy $ \v -> do
+        -> (r -> IO ())
+        -> IO r
+    reg restore ref create destroy =
+        E.bracketOnError (restore create) (eatException . destroy) $ \v -> do
             modifyIORef ref (`E.finally` eatException (destroy v))
             return $! v
