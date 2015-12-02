@@ -24,7 +24,7 @@ module Snap.Http.Server.CmdlineConfig
   -- * Evaluating command-line configs
   , listeners
   , toServerConfig
-  , startListener
+  , startBackend
 
   -- * GetOpt support
   , optDescrs
@@ -275,17 +275,17 @@ verboseLog s = do
 
 
 ------------------------------------------------------------------------------
-startListener :: (Builder -> IO ())            -- ^ startup verbose logging
-                                               -- action
-              -> ServerConfig s
-              -> ByteString                    -- ^ descr. of bind address
-              -> Bool                          -- ^ treat this listener as
-                                               -- secure?
-              -> Cleanup (Socket, AcceptFunc)  -- ^ action initializing the
-                                               -- socket and providing the
-                                               -- accept function
-              -> Cleanup (Backend s)
-startListener vlog scfg0 name secure start = do
+startBackend :: (Builder -> IO ())            -- ^ startup verbose logging
+                                              -- action
+             -> ServerConfig s
+             -> ByteString                    -- ^ descr. of bind address
+             -> Bool                          -- ^ treat this listener as
+                                              -- secure?
+             -> Cleanup (Socket, AcceptFunc)  -- ^ action initializing the
+                                              -- socket and providing the
+                                              -- accept function
+             -> Cleanup (Backend s)
+startBackend vlog scfg0 name secure start = do
     Cleanup.io $ vlog $ "listening on " `mappend` byteString name
     let scfg = scfg0 { _isSecure = secure }
     (_, acceptFunc) <- start

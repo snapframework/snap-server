@@ -36,7 +36,7 @@ import           System.Posix.Env
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                       as V
 import           Snap.Core                               (MonadSnap (..), Snap)
-import           Snap.Http.Server.CmdlineConfig          (listeners, startListener, toServerConfig)
+import           Snap.Http.Server.CmdlineConfig          (listeners, startBackend, toServerConfig)
 import           Snap.Http.Server.Config
 import           Snap.Internal.Http.Server.Cleanup       (Cleanup)
 import qualified Snap.Internal.Http.Server.Cleanup       as Cleanup
@@ -93,7 +93,7 @@ simpleHttpServe defaultServerConfig cmdline handler = do
     Cleanup.runCleanup $ do
         (scfg, vlog) <- toServerConfig defaultServerConfig cmdline
         backends <- forM (listeners cmdline) $ \(name, start, secure) ->
-            startListener vlog scfg name secure start
+            startBackend vlog scfg name secure start
         -- TODO: throw a proper exception here.
         when (null backends) $ fail "No backends configured."
         let shandler = snapToServerHandler handler
