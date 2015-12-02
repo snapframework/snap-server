@@ -24,24 +24,25 @@ import           Control.Concurrent                      (killThread, newEmptyMV
 import           Control.Concurrent.Extended             (forkIOLabeledWithUnmaskBs)
 import           Control.Exception                       (bracket, finally, mask)
 import qualified Control.Exception.Lifted                as E
-import           Control.Monad                           (when)
+import           Control.Monad                           (forM, when)
 import           Data.ByteString.Char8                   (ByteString)
 import qualified Data.ByteString.Char8                   as S
 import           Data.Maybe                              (fromJust)
 import           Data.Version                            (showVersion)
-import           Prelude                                 (Bool (..), IO, Monad (..), String, const, flip, fst, id, map, mapM, mapM_, maybe, null, snd, zip, ($), ($!), (++), (.))
+import           Prelude                                 (Bool (..), IO, Monad (..), String, const, flip, fst, id, mapM, mapM_, maybe, null, snd, zip, ($), ($!), (++), (.))
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                       as V
 import           Snap.Core                               (MonadSnap (..), Snap)
-import           Snap.Http.Server.CmdlineConfig          (toServerConfig)
+import           Snap.Http.Server.CmdlineConfig          (listeners, startListener, toServerConfig)
 import           Snap.Http.Server.Config
 import           Snap.Internal.Http.Server.Cleanup       (Cleanup)
 import qualified Snap.Internal.Http.Server.Cleanup       as Cleanup
 import           Snap.Internal.Http.Server.CmdlineConfig (CmdlineConfig, ProxyType (..), cmdlineConfig, defaultCmdlineConfig, getCompression, getErrorHandler, getLocale, getProxyType)
 import           Snap.Internal.Http.Server.Session       (httpAcceptLoop, snapToServerHandler)
+import           Snap.Internal.Http.Server.Types         (Backend (..))
 import           Snap.Util.GZip                          (withCompression)
 import           Snap.Util.Proxy                         (behindProxy)
 import qualified Snap.Util.Proxy                         as Proxy
@@ -55,19 +56,20 @@ snapServerVersion = S.pack $! showVersion V.version
 
 ------------------------------------------------------------------------------
 rawHttpServe :: ServerHandler s                 -- ^ server handler
-             -> [(ServerConfig s, AcceptFunc)]  -- ^ server config and accept
-                                                --   functions
+             -> [Backend s]                       -- ^ backends
              -> Cleanup ()
-rawHttpServe h cfgloops = Cleanup.io $ do
-    mvars <- mapM (const newEmptyMVar) cfgloops
-    mask $ \restore -> bracket (mapM runLoop $ mvars `zip` cfgloops)
+rawHttpServe h backends = Cleanup.io $ do
+    mvars <- mapM (const newEmptyMVar) backends
+    mask $ \restore -> bracket (mapM runLoop $ mvars `zip` backends)
                                (\mvTids -> do
                                    mapM_ (killThread . snd) mvTids
                                    mapM_ (readMVar . fst) mvTids)
                                (const $ restore $ mapM_ readMVar mvars)
   where
     -- parents and children have a mutual suicide pact
-    runLoop (mvar, (cfg, loop)) = do
+    runLoop (mvar, backend) = do
+        let cfg  = _backendServerConfig backend
+        let loop = _backendAcceptFunc backend
         tid <- forkIOLabeledWithUnmaskBs
                "snap-server http master thread" $
                \r -> (r $ httpAcceptLoop h cfg loop) `finally` putMVar mvar ()
@@ -89,12 +91,14 @@ simpleHttpServe :: MonadSnap m
 simpleHttpServe defaultServerConfig cmdline handler = do
     maybe (return $! ()) setUnicodeLocale $ getLocale cmdline
     Cleanup.runCleanup $ do
-        backends <- toServerConfig defaultServerConfig cmdline
+        (scfg, vlog) <- toServerConfig defaultServerConfig cmdline
+        backends <- forM (listeners cmdline) $ \(name, start, secure) ->
+            startListener vlog scfg name secure start
         -- TODO: throw a proper exception here.
         when (null backends) $ fail "No backends configured."
         let shandler = snapToServerHandler handler
-        let cfgAndFuncs = map (\(!_,!a,!b) -> (a,b)) backends
-        rawHttpServe shandler cfgAndFuncs
+        rawHttpServe shandler backends
+  where
 {-# INLINE simpleHttpServe #-}
 
 

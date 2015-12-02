@@ -4,6 +4,7 @@
 module Snap.Internal.Http.Server.Types
   ( ServerConfig(..)
   , PerSessionData(..)
+  , Backend(..)
   , AccessLogFunc
   , ErrorLogFunc
   , DataFinishedHook
@@ -79,6 +80,21 @@ type ErrorLogFunc = Builder -> IO ()
                              -- data structures --
                              ---------------------
 ------------------------------------------------------------------------------
+newtype AcceptFunc = AcceptFunc {
+  runAcceptFunc :: (forall a . IO a -> IO a)         -- exception restore function
+                    -> IO ( SendFileHandler          -- what to do on sendfile
+                          , ByteString               -- local address
+                          , Int                      -- local port
+                          , ByteString               -- remote address
+                          , Int                      -- remote port
+                          , InputStream ByteString   -- socket read end
+                          , OutputStream ByteString  -- socket write end
+                          , IO ()                    -- cleanup action
+                          )
+  }
+
+
+------------------------------------------------------------------------------
 -- | Data and services that all HTTP response handlers share.
 --
 data ServerConfig hookState = ServerConfig
@@ -139,19 +155,11 @@ data PerSessionData = PerSessionData
     }
 
 
-------------------------------------------------------------------------------
-newtype AcceptFunc = AcceptFunc {
-  runAcceptFunc :: (forall a . IO a -> IO a)         -- exception restore function
-                    -> IO ( SendFileHandler          -- what to do on sendfile
-                          , ByteString               -- local address
-                          , Int                      -- local port
-                          , ByteString               -- remote address
-                          , Int                      -- remote port
-                          , InputStream ByteString   -- socket read end
-                          , OutputStream ByteString  -- socket write end
-                          , IO ()                    -- cleanup action
-                          )
-  }
+data Backend s = Backend {
+      _backendServerConfig :: ServerConfig s
+    , _backendAcceptFunc   :: AcceptFunc
+    , _backendBindAddress  :: !ByteString
+    }
 
                              --------------------
                              -- function types --

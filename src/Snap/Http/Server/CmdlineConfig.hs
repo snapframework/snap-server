@@ -22,8 +22,9 @@ module Snap.Http.Server.CmdlineConfig
   , extendedCmdlineConfig
 
   -- * Evaluating command-line configs
+  , listeners
   , toServerConfig
-
+  , startListener
 
   -- * GetOpt support
   , optDescrs
@@ -95,7 +96,7 @@ module Snap.Http.Server.CmdlineConfig
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Monad                           (mapM, when)
+import           Control.Monad                           (when)
 import           Data.ByteString                         (ByteString)
 import           Data.ByteString.Builder                 (Builder, byteString, stringUtf8, toLazyByteString)
 import qualified Data.ByteString.Builder.Extra           as Builder (flush)
@@ -108,14 +109,14 @@ import qualified Data.Text.Encoding                      as T
 import           Data.Word                               (Word64)
 import           Network                                 (Socket)
 import qualified Network.Socket                          as N
-import           Prelude                                 (Bool (..), IO, Maybe (..), Show, const, return, show, ($), ($!), (++), (.), (==), (>>=))
+import           Prelude                                 (Bool (..), IO, Maybe (..), Show, const, fst, return, show, ($), ($!), (++), (.), (==), (>>=))
 import           Snap.Core                               (MonadSnap (..), Request, Response, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
 import           Snap.Internal.Http.Server.Cleanup       (Cleanup)
 import qualified Snap.Internal.Http.Server.Cleanup       as Cleanup
 import           Snap.Internal.Http.Server.CmdlineConfig
 import qualified Snap.Internal.Http.Server.Socket        as Sock
 import qualified Snap.Internal.Http.Server.TLS           as TLS
-import           Snap.Internal.Http.Server.Types         (AcceptFunc, AccessLogFunc, ErrorLogFunc, ServerConfig (..))
+import           Snap.Internal.Http.Server.Types         (AcceptFunc, AccessLogFunc, Backend (..), ErrorLogFunc, ServerConfig (..))
 import qualified Snap.Types.Headers                      as H
 import qualified System.FastLogger                       as Log
 import qualified System.IO.Streams                       as Streams
@@ -144,7 +145,7 @@ haProxy = HaProxy
 
 ------------------------------------------------------------------------------
 listeners :: CmdlineConfig m a
-          -> [(ByteString, IO (Socket, AcceptFunc), Bool)]
+          -> [(ByteString, Cleanup (Socket, AcceptFunc), Bool)]
 listeners conf = catMaybes [httpListener, httpsListener, unixListener]
   where
     httpsListener = do
@@ -157,8 +158,10 @@ listeners conf = catMaybes [httpListener, httpsListener, unixListener]
                          , b
                          , ":"
                          , bshow p ]
-               , do (sock, ctx) <- TLS.bindHttps b p cert chainCert key
-                    return (sock, TLS.httpsAcceptFunc sock ctx)
+               , do (sock, ctx) <- Cleanup.cleanup
+                                       (TLS.bindHttps b p cert chainCert key)
+                                       (N.close . fst)
+                    return $! (sock, TLS.httpsAcceptFunc sock ctx)
                , True
                )
     httpListener = do
@@ -168,7 +171,7 @@ listeners conf = catMaybes [httpListener, httpsListener, unixListener]
                           , b
                           , ":"
                           , bshow p ]
-               , do sock <- Sock.bindSocket b p
+               , do sock <- Cleanup.cleanup (Sock.bindSocket b p) N.close
                     if getProxyType conf == Just HaProxy
                       then return (sock, Sock.haProxyAcceptFunc sock)
                       else return (sock, Sock.httpAcceptFunc sock)
@@ -178,7 +181,8 @@ listeners conf = catMaybes [httpListener, httpsListener, unixListener]
         path <- getUnixSocket conf
         let accessMode = getUnixSocketAccessMode conf
         return ( T.encodeUtf8 . T.pack  $ "unix:" ++ path
-               , do sock <- Sock.bindUnixSocket accessMode path
+               , do sock <- Cleanup.cleanup
+                               (Sock.bindUnixSocket accessMode path) N.close
                     return (sock, Sock.httpAcceptFunc sock)
                , False
                )
@@ -271,11 +275,28 @@ verboseLog s = do
 
 
 ------------------------------------------------------------------------------
+startListener :: (Builder -> IO ())            -- ^ startup verbose logging
+                                               -- action
+              -> ServerConfig s
+              -> ByteString                    -- ^ descr. of bind address
+              -> Bool                          -- ^ treat this listener as
+                                               -- secure?
+              -> Cleanup (Socket, AcceptFunc)  -- ^ action initializing the
+                                               -- socket and providing the
+                                               -- accept function
+              -> Cleanup (Backend s)
+startListener vlog scfg0 name secure start = do
+    Cleanup.io $ vlog $ "listening on " `mappend` byteString name
+    let scfg = scfg0 { _isSecure = secure }
+    (_, acceptFunc) <- start
+    return $! Backend scfg acceptFunc name
+
+
+------------------------------------------------------------------------------
 toServerConfig :: MonadSnap m
                => ServerConfig s       -- ^ default server config
                -> CmdlineConfig m a    -- ^ command line configuration
-               -> Cleanup [(ByteString, ServerConfig s, AcceptFunc)]
-               -- ^ bind address, server config, accept function
+               -> Cleanup (ServerConfig s, Builder -> IO ())
 toServerConfig template cmdline = do
     let vlog = when (fromMaybe False (getVerbose cmdline)) . verboseLog
 
@@ -293,15 +314,24 @@ toServerConfig template cmdline = do
                         , _localHostname  = lhost
                         , _defaultTimeout = tout
                         }
-    mapM (startListener vlog scfg) $ listeners cmdline
+    return $! (scfg, vlog)
 
-  where
-    startListener vlog scfg0 (name, start, secure) = do
-        Cleanup.io $ vlog $ "listening on " `mappend` byteString name
-        let scfg = scfg0 { _isSecure = secure }
-        let abort = \(sock, _) -> N.close sock
-        (_, acceptFunc) <- Cleanup.cleanup start abort
-        return $! (name, scfg, acceptFunc)
+
+------------------------------------------------------------------------------
+-- toServerConfig :: MonadSnap m
+--                => ServerConfig s       -- ^ default server config
+--                -> CmdlineConfig m a    -- ^ command line configuration
+--                -> Cleanup [Backend s]
+-- toServerConfig template cmdline = do
+--     mapM (startListener vlog scfg) $ listeners cmdline
+
+--   where
+--     startListener vlog scfg0 (name, start, secure) = do
+--         Cleanup.io $ vlog $ "listening on " `mappend` byteString name
+--         let scfg = scfg0 { _isSecure = secure }
+--         let abort = \(sock, _) -> N.close sock
+--         (_, acceptFunc) <- Cleanup.cleanup start abort
+--         return $! (name, scfg, acceptFunc)
 
 
 ------------------------------------------------------------------------------
