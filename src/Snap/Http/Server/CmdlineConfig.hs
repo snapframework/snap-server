@@ -24,7 +24,6 @@ module Snap.Http.Server.CmdlineConfig
   -- * Evaluating command-line configs
   , listeners
   , toServerConfig
-  , startBackend
 
   -- * GetOpt support
   , optDescrs
@@ -111,15 +110,16 @@ import           Network                                 (Socket)
 import qualified Network.Socket                          as N
 import           Prelude                                 (Bool (..), IO, Maybe (..), Show, const, fst, return, show, ($), ($!), (++), (.), (==), (>>=))
 import           Snap.Core                               (MonadSnap (..), Request, Response, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
+import qualified Snap.Http.Server.Config                 as Config
 import           Snap.Internal.Http.Server.Cleanup       (Cleanup)
 import qualified Snap.Internal.Http.Server.Cleanup       as Cleanup
 import           Snap.Internal.Http.Server.CmdlineConfig
 import qualified Snap.Internal.Http.Server.Socket        as Sock
-import qualified Snap.Internal.Http.Server.TLS           as TLS
 import           Snap.Internal.Http.Server.Types         (AcceptFunc, AccessLogFunc, Backend (..), ErrorLogFunc, ServerConfig (..))
 import qualified Snap.Types.Headers                      as H
 import qualified System.FastLogger                       as Log
 import qualified System.IO.Streams                       as Streams
+
 
 ------------------------------------------------------------------------------
 -- | Configure Snap in direct / non-proxying mode.
@@ -148,44 +148,27 @@ listeners :: CmdlineConfig m a
           -> [(ByteString, Cleanup (Socket, AcceptFunc), Bool)]
 listeners conf = catMaybes [httpListener, httpsListener, unixListener]
   where
+    acceptFunc = if getProxyType conf == Just HaProxy
+                   then Sock.haProxyAcceptFunc
+                   else Sock.httpAcceptFunc
+
     httpsListener = do
         b         <- getSSLBind conf
         p         <- getSSLPort conf
         cert      <- getSSLCert conf
         chainCert <- getSSLChainCert conf
         key       <- getSSLKey conf
-        return ( S.concat [ "https://"
-                         , b
-                         , ":"
-                         , bshow p ]
-               , do (sock, ctx) <- Cleanup.cleanup
-                                       (TLS.bindHttps b p cert chainCert key)
-                                       (N.close . fst)
-                    return $! (sock, TLS.httpsAcceptFunc sock ctx)
-               , True
-               )
+        return $! Config.httpsListener b p cert chainCert key
+
     httpListener = do
         p <- getPort conf
         b <- getBind conf
-        return ( S.concat [ "http://"
-                          , b
-                          , ":"
-                          , bshow p ]
-               , do sock <- Cleanup.cleanup (Sock.bindSocket b p) N.close
-                    if getProxyType conf == Just HaProxy
-                      then return (sock, Sock.haProxyAcceptFunc sock)
-                      else return (sock, Sock.httpAcceptFunc sock)
-               , False
-               )
+        return $! Config.httpListener b p acceptFunc
+
     unixListener = do
         path <- getUnixSocket conf
         let accessMode = getUnixSocketAccessMode conf
-        return ( T.encodeUtf8 . T.pack  $ "unix:" ++ path
-               , do sock <- Cleanup.cleanup
-                               (Sock.bindUnixSocket accessMode path) N.close
-                    return (sock, Sock.httpAcceptFunc sock)
-               , False
-               )
+        return $! Config.unixListener path accessMode acceptFunc
 
 
 ------------------------------------------------------------------------------
@@ -272,24 +255,6 @@ verboseLog s = do
     s' <- Log.timestampedLogEntry s
     let x = S.concat $ L.toChunks $ toLazyByteString s'
     Streams.write (Just x) Streams.stderr
-
-
-------------------------------------------------------------------------------
-startBackend :: (Builder -> IO ())            -- ^ startup verbose logging
-                                              -- action
-             -> ServerConfig s
-             -> ByteString                    -- ^ descr. of bind address
-             -> Bool                          -- ^ treat this listener as
-                                              -- secure?
-             -> Cleanup (Socket, AcceptFunc)  -- ^ action initializing the
-                                              -- socket and providing the
-                                              -- accept function
-             -> Cleanup (Backend s)
-startBackend vlog scfg0 name secure start = do
-    Cleanup.io $ vlog $ "listening on " `mappend` byteString name
-    let scfg = scfg0 { _isSecure = secure }
-    (_, acceptFunc) <- start
-    return $! Backend scfg acceptFunc name
 
 
 ------------------------------------------------------------------------------

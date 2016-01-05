@@ -413,7 +413,7 @@ getSSLBind = sslbind
 getSSLCert        :: CmdlineConfig m a -> Maybe FilePath
 getSSLCert = sslcert
 
--- | Path to the SSL certificate file
+-- | Indicates that the certificate file contains a certificate chain.
 getSSLChainCert   :: CmdlineConfig m a -> Maybe Bool
 getSSLChainCert = sslchaincert
 
@@ -460,6 +460,8 @@ getOther = other
 getProxyType :: CmdlineConfig m a -> Maybe ProxyType
 getProxyType = proxyType
 
+-- TODO(greg): remove
+--
 -- | A startup hook is run after the server initializes but before user request
 -- processing begins. The server passes, through a 'StartupInfo' object, the
 -- startup hook a list of the sockets it is listening on and the final
@@ -526,33 +528,47 @@ setOther x c = c { other = Just x }
 setProxyType      :: ProxyType               -> CmdlineConfig m a -> CmdlineConfig m a
 setProxyType x c = c { proxyType = Just x }
 
+-- TODO(greg): remove
+--
 setStartupHook    :: (StartupInfo m a -> IO ()) -> CmdlineConfig m a -> CmdlineConfig m a
 setStartupHook x c = c { startupHook = Just x }
 
 
 ------------------------------------------------------------------------------
 
+-- TODO(greg): remove
+--
 -- | Arguments passed to 'setStartupHook'.
 data StartupInfo m a = StartupInfo
     { startupHookConfig  :: CmdlineConfig m a
     , startupHookSockets :: [Socket]
     }
 
+-- TODO(greg): remove
+--
 emptyStartupInfo :: StartupInfo m a
 emptyStartupInfo = StartupInfo emptyCmdlineConfig []
 
+-- TODO(greg): remove
+--
 -- | The 'Socket's opened by the server. There will be two 'Socket's for SSL
 -- connections, and one otherwise.
 getStartupSockets :: StartupInfo m a -> [Socket]
 getStartupSockets = startupHookSockets
 
+-- TODO(greg): remove
+--
 -- The 'CmdlineConfig', after any command line parsing has been performed.
 getStartupConfig :: StartupInfo m a -> CmdlineConfig m a
 getStartupConfig = startupHookConfig
 
+-- TODO(greg): remove
+--
 setStartupSockets :: [Socket] -> StartupInfo m a -> StartupInfo m a
 setStartupSockets x c = c { startupHookSockets = x }
 
+-- TODO(greg): remove
+--
 setStartupConfig :: CmdlineConfig m a -> StartupInfo m a -> StartupInfo m a
 setStartupConfig x c = c { startupHookConfig = x }
 

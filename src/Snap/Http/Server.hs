@@ -36,7 +36,7 @@ import           System.Posix.Env
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                       as V
 import           Snap.Core                               (MonadSnap (..), Snap)
-import           Snap.Http.Server.CmdlineConfig          (listeners, startBackend, toServerConfig)
+import           Snap.Http.Server.CmdlineConfig          (listeners, toServerConfig)
 import           Snap.Http.Server.Config
 import           Snap.Internal.Http.Server.Cleanup       (Cleanup)
 import qualified Snap.Internal.Http.Server.Cleanup       as Cleanup
@@ -56,7 +56,7 @@ snapServerVersion = S.pack $! showVersion V.version
 
 ------------------------------------------------------------------------------
 rawHttpServe :: ServerHandler s                 -- ^ server handler
-             -> [Backend s]                       -- ^ backends
+             -> [Backend s]                     -- ^ backends
              -> Cleanup ()
 rawHttpServe h backends = Cleanup.io $ do
     mvars <- mapM (const newEmptyMVar) backends

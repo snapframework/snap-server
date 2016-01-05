@@ -5,6 +5,7 @@ module Snap.Internal.Http.Server.Types
   ( ServerConfig(..)
   , PerSessionData(..)
   , Backend(..)
+  , Listener
   , AccessLogFunc
   , ErrorLogFunc
   , DataFinishedHook
@@ -24,17 +25,18 @@ module Snap.Internal.Http.Server.Types
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Exception                (SomeException)
-import           Data.ByteString                  (ByteString)
-import           Data.IORef                       (IORef)
-import           Data.Word                        (Word64)
-import           Network.Socket                   (Socket)
+import           Control.Exception                 (SomeException)
+import           Data.ByteString                   (ByteString)
+import           Data.IORef                        (IORef)
+import           Data.Word                         (Word64)
+import           Network.Socket                    (Socket)
 ------------------------------------------------------------------------------
-import           Data.ByteString.Builder          (Builder)
-import           Data.ByteString.Builder.Internal (Buffer)
-import           System.IO.Streams                (InputStream, OutputStream)
+import           Data.ByteString.Builder           (Builder)
+import           Data.ByteString.Builder.Internal  (Buffer)
+import           System.IO.Streams                 (InputStream, OutputStream)
 ------------------------------------------------------------------------------
-import           Snap.Core                        (Request, Response)
+import           Snap.Core                         (Request, Response)
+import           Snap.Internal.Http.Server.Cleanup (Cleanup)
 
 
 ------------------------------------------------------------------------------
@@ -160,6 +162,9 @@ data Backend s = Backend {
     , _backendAcceptFunc   :: AcceptFunc
     , _backendBindAddress  :: !ByteString
     }
+
+type Listener = (ByteString, Cleanup (Socket, AcceptFunc), Bool)
+
 
                              --------------------
                              -- function types --

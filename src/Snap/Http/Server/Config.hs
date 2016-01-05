@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Types used by the Snap HTTP Server.
@@ -61,19 +62,37 @@ module Snap.Http.Server.Config
   , ServerHandler
   , AcceptFunc
 
+  -- * Backends and listeners
+  , Backend
+  , Listener
+  , httpListener
+  , httpsListener
+  , unixListener
+  , startBackend
+
   -- * Socket types
   , SocketConfig(..)
   ) where
 
 ------------------------------------------------------------------------------
-import           Data.ByteString                 (ByteString)
-import           Data.IORef                      (readIORef)
-import           Data.Word                       (Word64)
+import           Data.ByteString.Builder           (Builder, byteString)
+import           Data.ByteString.Char8             (ByteString)
+import qualified Data.ByteString.Char8             as S
+import           Data.IORef                        (readIORef)
+import           Data.Monoid                       (mappend)
+import qualified Data.Text                         as T
+import qualified Data.Text.Encoding                as T
+import           Data.Word                         (Word64)
+import           Network.Socket                    (Socket)
+import qualified Network.Socket                    as N
 ------------------------------------------------------------------------------
-import           Data.ByteString.Builder         (Builder)
+import           Snap.Core                         (Request, Response)
+import           Snap.Internal.Http.Server.Cleanup (Cleanup)
+import qualified Snap.Internal.Http.Server.Cleanup as Cleanup
+import qualified Snap.Internal.Http.Server.Socket  as Sock
+import qualified Snap.Internal.Http.Server.TLS     as TLS
+import           Snap.Internal.Http.Server.Types   (AcceptFunc, Backend (..), DataFinishedHook, EscapeSnapHook, ExceptionHook, Listener, NewRequestHook, ParseHook, PerSessionData (_isNewConnection, _localAddress, _localPort, _remoteAddress, _remotePort, _twiddleTimeout), SendFileHandler, ServerConfig (..), ServerHandler, SocketConfig (..), UserHandlerFinishedHook)
 ------------------------------------------------------------------------------
-import           Snap.Core                       (Request, Response)
-import           Snap.Internal.Http.Server.Types (AcceptFunc, DataFinishedHook, EscapeSnapHook, ExceptionHook, NewRequestHook, ParseHook, PerSessionData (_isNewConnection, _localAddress, _localPort, _remoteAddress, _remotePort, _twiddleTimeout), SendFileHandler, ServerConfig (..), ServerHandler, SocketConfig (..), UserHandlerFinishedHook)
 
 
                           ---------------------------
@@ -307,3 +326,73 @@ getRemoteAddress psd = _remoteAddress psd
 ------------------------------------------------------------------------------
 getRemotePort :: PerSessionData -> Int
 getRemotePort psd = _remotePort psd
+
+
+------------------------------------------------------------------------------
+-- | Start up an HTTP server backend.
+startBackend :: (Builder -> IO ())            -- ^ startup verbose logging
+                                              -- action
+             -> ServerConfig s                -- ^ server config
+             -> ByteString                    -- ^ descr. of bind address
+             -> Bool                          -- ^ treat this listener as
+                                              -- secure?
+             -> Cleanup (Socket, AcceptFunc)  -- ^ action initializing the
+                                              -- socket and providing the
+                                              -- accept function
+             -> Cleanup (Backend s)
+startBackend vlog scfg0 name secure start = do
+    Cleanup.io $ vlog $ "listening on " `mappend` byteString name
+    let scfg = scfg0 { _isSecure = secure }
+    (_, acceptFunc) <- start
+    return $! Backend scfg acceptFunc name
+
+
+------------------------------------------------------------------------------
+httpListener :: ByteString               -- ^ bind address
+             -> Int                      -- ^ port
+             -> (Socket -> AcceptFunc)   -- ^ AcceptFunc to run on the socket,
+                                         --   typically either httpAcceptFunc
+                                         --   or haProxyAcceptFunc
+             -> Listener
+httpListener b p acceptFunc = (desc, initialize, False)
+  where
+    desc = S.concat ["http://", b, ":", bshow p]
+    initialize = do sock <- Cleanup.cleanup (Sock.bindSocket b p) N.close
+                    return (sock, acceptFunc sock)
+
+
+------------------------------------------------------------------------------
+httpsListener :: ByteString      -- ^ bind address
+              -> Int             -- ^ port
+              -> FilePath        -- ^ path to certificate file
+              -> Bool            -- ^ does the cert file contain a certificate
+                                 --   chain?
+              -> FilePath        -- ^ path to key file
+              -> Listener
+httpsListener b p cert chainCert key = (desc, initialize, True)
+  where
+    desc = S.concat ["https://", b, ":", bshow p]
+    initialize = do (sock, ctx) <- Cleanup.cleanup
+                                       (TLS.bindHttps b p cert chainCert key)
+                                       (N.close . fst)
+                    return $! (sock, TLS.httpsAcceptFunc sock ctx)
+
+
+------------------------------------------------------------------------------
+unixListener :: FilePath        -- ^ path to unix socket
+             -> Maybe Int       -- ^ file mode (if specified)
+             -> (Socket -> AcceptFunc)   -- ^ AcceptFunc to run on the socket,
+                                         --   typically either httpAcceptFunc
+                                         --   or haProxyAcceptFunc
+             -> Listener
+unixListener path accessMode acceptFunc = (desc, initialize, False)
+  where
+    desc = T.encodeUtf8 . T.pack  $ "unix:" ++ path
+    initialize = do sock <- Cleanup.cleanup
+                               (Sock.bindUnixSocket accessMode path) N.close
+                    return (sock, acceptFunc sock)
+
+
+------------------------------------------------------------------------------
+bshow :: (Show a) => a -> ByteString
+bshow = S.pack . show
