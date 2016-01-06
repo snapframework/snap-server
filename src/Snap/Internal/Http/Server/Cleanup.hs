@@ -56,9 +56,9 @@ runCleanup (Cleanup m) = E.mask $ \restore -> do
     let cd = CleanupData (reg restore ref) restore
     x <- R.runReaderT m cd `E.onException` runRef ref
     runRef ref
-    E.evaluate x
+    return $! x
   where
-    runRef ref = join (readIORef ref)
+    runRef ref = eatException $ join (readIORef ref)
 
     reg :: forall r .
            (forall a . IO a -> IO a)
@@ -66,7 +66,7 @@ runCleanup (Cleanup m) = E.mask $ \restore -> do
         -> IO r
         -> (r -> IO ())
         -> IO r
-    reg restore ref create destroy =
-        E.bracketOnError (restore create) (eatException . destroy) $ \v -> do
-            modifyIORef ref (`E.finally` eatException (destroy v))
-            return $! v
+    reg restore ref create destroy = do
+        v <- restore create
+        modifyIORef ref (destroy v `E.finally`)
+        return v

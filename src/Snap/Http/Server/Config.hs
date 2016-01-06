@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -340,7 +341,7 @@ startBackend :: (Builder -> IO ())            -- ^ startup verbose logging
                                               -- socket and providing the
                                               -- accept function
              -> Cleanup (Backend s)
-startBackend vlog scfg0 name secure start = do
+startBackend vlog scfg0 !name secure start = do
     Cleanup.io $ vlog $ "listening on " `mappend` byteString name
     let scfg = scfg0 { _isSecure = secure }
     (_, acceptFunc) <- start

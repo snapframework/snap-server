@@ -11,9 +11,12 @@ import           Network                                        (withSocketsDo)
 import           System.Environment
 import           Test.Framework                                 (defaultMain, testGroup)
 ------------------------------------------------------------------------------
+import           Snap.Internal.Http.Server.Cleanup              (Cleanup)
+import qualified Snap.Internal.Http.Server.Cleanup              as Cleanup
 import qualified Snap.Internal.Http.Server.TLS                  as TLS
 ------------------------------------------------------------------------------
 import qualified Snap.Internal.Http.Server.Address.Tests        as Address
+import qualified Snap.Internal.Http.Server.Cleanup.Tests        as Cleanup
 import qualified Snap.Internal.Http.Server.Parser.Tests         as Parser
 import qualified Snap.Internal.Http.Server.Session.Tests        as Session
 import qualified Snap.Internal.Http.Server.Socket.Tests         as Socket
@@ -27,28 +30,20 @@ import qualified Test.Blackbox
 
 ------------------------------------------------------------------------------
 main :: IO ()
-main = withSocketsDo $ TLS.withTLS $ eatException $
-       E.bracket (Test.Blackbox.startTestServers)
-                 cleanup
-                 (\tinfos -> do
-                     let blackboxTests = bbox tinfos
-                     defaultMain $ tests ++ blackboxTests
-                 )
+main = withSocketsDo $ TLS.withTLS $ Cleanup.runCleanup $ do
+           servers <- Test.Blackbox.startTestServers
+           Cleanup.io $ defaultMain $ tests ++ bbox servers
   where
-    cleanup (x, y, m) = do
-        let backends = [x, y] ++ maybeToList m
-        mapM_ (killThread . (\(a, _, _) -> a)) backends
-        mapM_ (takeMVar . (\(_, _, a) -> a)) backends
-
-    bbox ((_, port, _), (_, port2, _), m) =
+    bbox (port, portProxy, portSSL) =
         [ testGroup "Blackbox" $
           concat [ Test.Blackbox.tests port
-                 , Test.Blackbox.haTests port2
-                 , Test.Blackbox.ssltests $ fmap (\(_,x,_) -> x) m
+                 , Test.Blackbox.haTests portProxy
+                 , Test.Blackbox.ssltests portSSL
                  ]
         ]
 
     tests = [ testGroup "Address" Address.tests
+            , testGroup "Cleanup" Cleanup.tests
             , testGroup "Parser" Parser.tests
 #ifdef HAS_SENDFILE
             , testGroup "SendFile" SendFile.tests

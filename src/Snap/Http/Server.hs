@@ -22,14 +22,14 @@ module Snap.Http.Server
 ------------------------------------------------------------------------------
 import           Control.Concurrent                      (killThread, newEmptyMVar, putMVar, readMVar)
 import           Control.Concurrent.Extended             (forkIOLabeledWithUnmaskBs)
-import           Control.Exception                       (bracket, finally, mask)
+import           Control.Exception                       (finally)
 import qualified Control.Exception.Lifted                as E
 import           Control.Monad                           (forM, when)
 import           Data.ByteString.Char8                   (ByteString)
 import qualified Data.ByteString.Char8                   as S
 import           Data.Maybe                              (fromJust)
 import           Data.Version                            (showVersion)
-import           Prelude                                 (Bool (..), IO, Monad (..), String, const, flip, fst, id, mapM, mapM_, maybe, null, snd, zip, ($), ($!), (++), (.))
+import           Prelude                                 (Bool (..), IO, Monad (..), String, flip, id, mapM_, maybe, null, ($), ($!), (++), (.))
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
@@ -58,22 +58,20 @@ snapServerVersion = S.pack $! showVersion V.version
 rawHttpServe :: ServerHandler s                 -- ^ server handler
              -> [Backend s]                     -- ^ backends
              -> Cleanup ()
-rawHttpServe h backends = Cleanup.io $ do
-    mvars <- mapM (const newEmptyMVar) backends
-    mask $ \restore -> bracket (mapM runLoop $ mvars `zip` backends)
-                               (\mvTids -> do
-                                   mapM_ (killThread . snd) mvTids
-                                   mapM_ (readMVar . fst) mvTids)
-                               (const $ restore $ mapM_ readMVar mvars)
+rawHttpServe h backends = mapM_ spawnLoop backends
   where
-    -- parents and children have a mutual suicide pact
-    runLoop (mvar, backend) = do
-        let cfg  = _backendServerConfig backend
-        let loop = _backendAcceptFunc backend
-        tid <- forkIOLabeledWithUnmaskBs
-               "snap-server http master thread" $
-               \r -> (r $ httpAcceptLoop h cfg loop) `finally` putMVar mvar ()
-        return (mvar, tid)
+    spawnLoop backend =
+        Cleanup.cleanup
+           (do let cfg  = _backendServerConfig backend
+               let loop = _backendAcceptFunc backend
+               let desc = _backendBindAddress backend
+               mv <- newEmptyMVar
+               tid <- forkIOLabeledWithUnmaskBs
+                        (S.append "snap-server http master thread for " desc) $
+                        \r -> (r $ httpAcceptLoop h cfg loop)
+                                  `finally` putMVar mv ()
+               return (mv, tid))
+           (\(mv, tid) -> killThread tid `finally` readMVar mv)
 
 
 ------------------------------------------------------------------------------

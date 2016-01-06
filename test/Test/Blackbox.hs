@@ -15,10 +15,10 @@ module Test.Blackbox
 import           Control.Applicative                  ((<$>))
 import           Control.Arrow                        (first)
 import           Control.Concurrent                   (MVar, ThreadId, forkIO, forkIOWithUnmask, killThread, newEmptyMVar, putMVar, takeMVar, threadDelay, tryPutMVar)
-import           Control.Exception                    (bracket, bracketOnError, finally, mask_)
+import           Control.Exception                    (bracket, bracketOnError, evaluate, finally, mask_)
 import           Control.Monad                        (forM_, forever, void, when)
 import qualified Data.ByteString.Base16               as B16
-import           Data.ByteString.Builder              (byteString)
+import           Data.ByteString.Builder              (byteString, toLazyByteString)
 import           Data.ByteString.Char8                (ByteString)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
@@ -30,7 +30,7 @@ import qualified Network.Http.Client                  as HTTP
 import qualified Network.Http.Types                   as HTTP
 import qualified Network.Socket                       as N
 import qualified Network.Socket.ByteString            as NB
-import           Prelude                              (Bool (..), Eq (..), IO, Int, Maybe (..), Show (..), String, concat, concatMap, const, dropWhile, elem, flip, fromIntegral, fst, head, id, map, mapM_, maybe, min, not, null, otherwise, putStrLn, replicate, return, reverse, uncurry, ($), ($!), (*), (++), (.), (^))
+import           Prelude                              (Bool (..), Eq (..), IO, Int, Maybe (..), Show (..), String, concat, concatMap, const, dropWhile, elem, flip, fromIntegral, fst, head, id, map, mapM_, maybe, min, not, null, otherwise, putStrLn, replicate, return, reverse, uncurry, ($), ($!), (*), (++), (.), (>>), (^))
 import qualified Prelude
 ------------------------------------------------------------------------------
 #ifdef OPENSSL
@@ -47,7 +47,11 @@ import           Test.QuickCheck.Monadic              (forAllM, monadicIO)
 import qualified Test.QuickCheck.Monadic              as QC
 import qualified Test.QuickCheck.Property             as QC
 ------------------------------------------------------------------------------
+import qualified Snap.Http.Server                     as Server
+import qualified Snap.Http.Server.Config              as Config
 import           Snap.Internal.Debug                  (debug)
+import           Snap.Internal.Http.Server.Cleanup    (Cleanup)
+import qualified Snap.Internal.Http.Server.Cleanup    as Cleanup
 import           Snap.Internal.Http.Server.Session    (httpAcceptLoop, snapToServerHandler)
 import qualified Snap.Internal.Http.Server.Socket     as Sock
 import qualified Snap.Internal.Http.Server.TLS        as TLS
@@ -91,25 +95,30 @@ testFunctions = [ testPong
                 , testChunkedHead
                 ]
 
+
 ------------------------------------------------------------------------------
-startServer :: Types.ServerConfig hookState
-            -> IO a
-            -> (a -> N.Socket)
-            -> (a -> Types.AcceptFunc)
-            -> IO (ThreadId, Int, MVar ())
-startServer config bind projSock afunc =
-    bracketOnError bind (N.close . projSock) forkServer
+startTestHandler :: Types.Listener
+                 -> Types.ServerConfig hookState
+                 -> Cleanup Int
+startTestHandler (desc, initialize, secure) scfg = do
+    portmv <- Cleanup.io $ newEmptyMVar
+    backend <- Config.startBackend
+                    forceBuilder
+                    scfg
+                    desc
+                    secure
+                    (wrapInit portmv)
+    Server.rawHttpServe (snapToServerHandler testHandler) [backend]
+    Cleanup.io $ takeMVar portmv
+
   where
-    forkServer a = do
-        mv <- newEmptyMVar
-        port <- fromIntegral <$> N.socketPort (projSock a)
-        tid <- forkIO $
-               eatException $
-               (httpAcceptLoop (snapToServerHandler testHandler)
-                               config
-                               (afunc a)
-                  `finally` putMVar mv ())
-        return (tid, port, mv)
+    forceBuilder b = void $ evaluate $ L.length $ toLazyByteString b
+    wrapInit mvar = do
+        out@(sock, acceptFunc) <- initialize
+        Cleanup.io $ do
+            p <- fromIntegral <$> N.socketPort sock
+            putMVar mvar p
+        return out
 
 
 ------------------------------------------------------------------------------
@@ -118,31 +127,19 @@ startServer config bind projSock afunc =
 data TestServerType = NormalTest | ProxyTest | SSLTest
   deriving (Show)
 
-startTestSocketServer :: TestServerType -> IO (ThreadId, Int, MVar ())
+startTestSocketServer :: TestServerType -> Cleanup Int
 startTestSocketServer serverType = do
-  putStrLn $ "Blackbox: starting " ++ show serverType ++ " server"
-  case serverType of
-    NormalTest -> startServer emptyServerConfig bindSock id Sock.httpAcceptFunc
-    ProxyTest  -> startServer emptyServerConfig bindSock id Sock.haProxyAcceptFunc
-    SSLTest    -> startServer emptyServerConfig bindSSL fst
-                              (uncurry TLS.httpsAcceptFunc)
+    Cleanup.io $ putStrLn $ "Blackbox: starting " ++ show serverType
+                            ++ " server"
+    startTestHandler listener emptyServerConfig
   where
-    bindSSL = do
-        sockCtx <- TLS.bindHttps "127.0.0.1"
-                                 (fromIntegral N.aNY_PORT)
-                                 "test/cert.pem"
-                                 False
-                                 "test/key.pem"
-#ifdef OPENSSL
-        -- Set client code not to verify
-        HTTP.modifyContextSSL $ \ctx -> do
-            SSL.contextSetVerificationMode ctx SSL.VerifyNone
-            return ctx
-#endif
-        return sockCtx
-
-    bindSock = Sock.bindSocket "127.0.0.1" (fromIntegral N.aNY_PORT)
-
+    listener = case serverType of
+       NormalTest -> Config.httpListener "127.0.0.1" (fromIntegral N.aNY_PORT)
+                                         Sock.httpAcceptFunc
+       ProxyTest  -> Config.httpListener "127.0.0.1" (fromIntegral N.aNY_PORT)
+                                         Sock.haProxyAcceptFunc
+       SSLTest    -> Config.httpsListener "127.0.0.1" (fromIntegral N.aNY_PORT)
+                                          "test/cert.pem" False "test/key.pem"
     logAccess !_ !_ !_             = return ()
     logError !_                    = return ()
     onStart !_                     = return ()
@@ -671,15 +668,21 @@ testServerHeader ssl port name =
 
 
 ------------------------------------------------------------------------------
-startTestServers :: IO ((ThreadId, Int, MVar ()),
-                        (ThreadId, Int, MVar ()),
-                        Maybe (ThreadId, Int, MVar ()))
+startTestServers :: Cleanup (Int, Int, Maybe Int)
+                       -- ^ (normal port, proxy port, (maybe) ssl port)
 startTestServers = do
+#ifdef OPENSSL
+    -- Set HTTP client code not to verify certs
+    Cleanup.io $ HTTP.modifyContextSSL $ \ctx -> do
+            SSL.contextSetVerificationMode ctx SSL.VerifyNone
+            return ctx
+#endif
     x <- startTestSocketServer NormalTest
     y <- startTestSocketServer ProxyTest
+    z <-
 #ifdef OPENSSL
-    z <- startTestSocketServer SSLTest
-    return (x, y, Just z)
+         Just <$> startTestSocketServer SSLTest
 #else
-    return (x, y, Nothing)
+         return $! Nothing
 #endif
+    return (x, y, z)
