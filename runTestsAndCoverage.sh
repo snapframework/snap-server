@@ -17,6 +17,7 @@ mkdir -p $DIR
 EXCLUDES='Main
 Paths_snap_server
 Snap.Internal.Http.Server.Address.Tests
+Snap.Internal.Http.Server.Cleanup.Tests
 Snap.Internal.Http.Server.Parser.Tests
 Snap.Internal.Http.Server.Session.Tests
 Snap.Internal.Http.Server.Socket.Tests
