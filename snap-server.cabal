@@ -166,10 +166,12 @@ Test-suite testsuite
 
   other-modules:
     Paths_snap_server,
+    Control.Concurrent.Extended
     Snap.Http.Server,
     Snap.Http.Server.Config,
     Snap.Http.Server.Types,
     Snap.Internal.Http.Server.Address,
+    Snap.Internal.Http.Server.Address.Tests
     Snap.Internal.Http.Server.Clock,
     Snap.Internal.Http.Server.Common,
     Snap.Internal.Http.Server.Config,
