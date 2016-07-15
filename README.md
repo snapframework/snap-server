@@ -63,3 +63,4 @@ From here you can invoke the testsuite by running:
     $ ./runTestsAndCoverage.sh
 
 The testsuite generates an `hpc` test coverage report in `test/dist/hpc`.
+
