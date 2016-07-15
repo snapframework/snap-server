@@ -655,7 +655,7 @@ sendResponse !writeEnd !defaultTimeout !tickle !buffer !sendfileHandler !forceCo
                     -- content-length, use that instead.
                     SendFile f (Just (st, _)) ->
                         whenSendFile sendfileHandler buffer headerBuilder rsp f st
-    return $! nBodyBytes - fromIntegral hlen
+    return $! nBodyBytes
 
 
 --------------------------------------------------------------------------
