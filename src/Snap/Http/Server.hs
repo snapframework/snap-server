@@ -46,7 +46,9 @@ import           Data.ByteString.Builder           (Builder, toLazyByteString)
 ------------------------------------------------------------------------------
 import qualified Paths_snap_server                 as V
 import           Snap.Core                         (MonadSnap (..), Request, Response, Snap, rqClientAddr, rqHeaders, rqMethod, rqURI, rqVersion, rspStatus)
-import           Snap.Http.Server.Config           (Config, ConfigLog (..), commandLineConfig, completeConfig, defaultConfig, getAccessLog, getBind, getCompression, getDefaultTimeout, getErrorHandler, getErrorLog, getHostname, getLocale, getOther, getPort, getProxyType, getSSLBind, getSSLCert, getSSLChainCert, getSSLKey, getSSLPort, getStartupHook, getUnixSocket, getUnixSocketAccessMode, getVerbose)
+-- Don't use explicit imports for Snap.Http.Server.Config because we're
+-- re-exporting everything.
+import           Snap.Http.Server.Config
 import qualified Snap.Http.Server.Types            as Ty
 import           Snap.Internal.Debug               (debug)
 import           Snap.Internal.Http.Server.Config  (ProxyType (..), emptyStartupInfo, setStartupConfig, setStartupSockets)
