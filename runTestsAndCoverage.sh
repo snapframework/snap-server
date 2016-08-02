@@ -7,9 +7,9 @@ export LANG=C
 
 rm -Rf testsuite.tix
 
-./dist/build/testsuite/testsuite -j4 -a1000 $*
+./dist-newstyle/build/snap-server-1.0.0.0/build/testsuite/testsuite -j4 -a1000 $*
 
-DIR=dist/hpc
+DIR=dist-newstyle/hpc
 
 rm -Rf $DIR
 mkdir -p $DIR
