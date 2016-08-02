@@ -1,0 +1,3 @@
+packages: .
+
+optional-packages: deps/snap-core deps/io-streams deps/io-streams-haproxy

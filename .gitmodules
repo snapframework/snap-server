@@ -1,0 +1,9 @@
+[submodule "deps/snap-core"]
+	path = deps/snap-core
+	url = https://github.com/snapframework/snap-core
+[submodule "deps/io-streams"]
+	path = deps/io-streams
+	url = https://github.com/snapframework/io-streams
+[submodule "deps/io-streams-haproxy"]
+	path = deps/io-streams-haproxy
+	url = https://github.com/snapframework/io-streams-haproxy
