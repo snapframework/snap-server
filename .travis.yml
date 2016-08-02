@@ -64,6 +64,5 @@ script:
  - cabal new-build --disable-tests --disable-benchmarks
  - rm -rf ./dist-newstyle
  - cabal new-build ${TEST} ${BENCH}
- - ./runTestsAndCoverage.sh
 
 # EOF
