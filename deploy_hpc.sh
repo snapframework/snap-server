@@ -45,6 +45,17 @@ git pull
 
 # Now let's go have some fun with the cloned repo
 cd $OUT
+
+# Get the deploy key by using Travis's stored variables to decrypt deploy_key_snap_code_coverage.enc
+ENCRYPTED_KEY_VAR="encrypted_${ENCRYPTION_LABEL}_key"
+ENCRYPTED_IV_VAR="encrypted_${ENCRYPTION_LABEL}_iv"
+ENCRYPTED_KEY=${!ENCRYPTED_KEY_VAR}
+ENCRYPTED_IV=${!ENCRYPTED_IV_VAR}
+openssl aes-256-cbc -K $ENCRYPTED_KEY -iv $ENCRYPTED_IV -in ../deploy_key_snap_code_coverage.enc -out deploy_key_snap_code_coverage -d
+chmod 600 deploy_key_snap_code_coverage
+eval `ssh-agent -s`
+ssh-add deploy_key_snap_code_coverage
+
 git config user.name "Travis CI"
 git config user.email "$COMMIT_AUTHOR_EMAIL"
 
@@ -57,22 +68,15 @@ git config user.email "$COMMIT_AUTHOR_EMAIL"
 
 # Commit the "changes", i.e. the new version.
 # The delta will show diffs between new and old versions.
+
+# Last ditch pull just in case.  There should be no conflicts because each GHC
+# version is writing to a different directory.
+git pull -s ours
+
+rm -fr hpc-ghc-$GHCVER
 mv hpc hpc-ghc-$GHCVER
 git add -A
 git commit -m "Deploy to GitHub Pages: ${SHA}"
 
-# Get the deploy key by using Travis's stored variables to decrypt deploy_key_snap_code_coverage.enc
-ENCRYPTED_KEY_VAR="encrypted_${ENCRYPTION_LABEL}_key"
-ENCRYPTED_IV_VAR="encrypted_${ENCRYPTION_LABEL}_iv"
-ENCRYPTED_KEY=${!ENCRYPTED_KEY_VAR}
-ENCRYPTED_IV=${!ENCRYPTED_IV_VAR}
-openssl aes-256-cbc -K $ENCRYPTED_KEY -iv $ENCRYPTED_IV -in ../deploy_key_snap_code_coverage.enc -out deploy_key_snap_code_coverage -d
-chmod 600 deploy_key_snap_code_coverage
-eval `ssh-agent -s`
-ssh-add deploy_key_snap_code_coverage
-
-# Last ditch pull just in case.  There should be no conflicts because each GHC
-# version is writing to a different directory.
-git pull 
 # Now that we're all set up, we can push.
 git push $SSH_REPO $TARGET_BRANCH
