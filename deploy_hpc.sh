@@ -63,8 +63,8 @@ git config user.email "$COMMIT_AUTHOR_EMAIL"
 # version is writing to a different directory.
 git pull -s ours origin $TARGET_BRANCH
 
-rm -fr hpc-ghc-$GHCVER
-mv hpc hpc-ghc-$GHCVER
+rm -fr snap-server/hpc-ghc-$GHCVER
+mv hpc snap-server/hpc-ghc-$GHCVER
 git add -A
 git commit -m "Deploy to GitHub Pages: ${SHA}" || true
 
