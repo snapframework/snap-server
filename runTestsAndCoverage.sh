@@ -10,10 +10,11 @@ rm -Rf testsuite.tix
 # TODO How do we find the executable without knowing the version number in dist-newstyle?
 ./dist-newstyle/build/snap-server-1.0.0.0/build/testsuite/testsuite -j4 -a1000 $*
 
-DIR=dist-newstyle/hpc
+DIR="./dist-newstyle/hpc"
 
 rm -Rf $DIR
 mkdir -p $DIR
+mkdir -p out
 
 EXCLUDES='Main
 Paths_snap_server
@@ -39,10 +40,10 @@ hpc markup $EXCL --destdir=$DIR testsuite
 
 rm -f testsuite.tix
 
-cat <<EOF
-
 #TODO only copy hpc results if this script is called from deploy_hpc.sh
 cp -r $DIR out/
+
+cat <<EOF
 
 Test coverage report written to $DIR.
 EOF
