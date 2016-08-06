@@ -42,7 +42,6 @@ cd ..
 # Run our compile script
 doCompile
 git pull 
-mv hpc hpc-ghc-$GHCVER
 
 # Now let's go have some fun with the cloned repo
 cd $OUT
@@ -58,6 +57,7 @@ git config user.email "$COMMIT_AUTHOR_EMAIL"
 
 # Commit the "changes", i.e. the new version.
 # The delta will show diffs between new and old versions.
+mv hpc hpc-ghc-$GHCVER
 git add -A
 git commit -m "Deploy to GitHub Pages: ${SHA}"
 
