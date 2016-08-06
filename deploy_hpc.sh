@@ -58,15 +58,15 @@ git config user.email "$COMMIT_AUTHOR_EMAIL"
 git add -A
 git commit -m "Deploy to GitHub Pages: ${SHA}"
 
-# Get the deploy key by using Travis's stored variables to decrypt deploy_key_snap_server.enc
+# Get the deploy key by using Travis's stored variables to decrypt deploy_key_snap_code_coverage.enc
 ENCRYPTED_KEY_VAR="encrypted_${ENCRYPTION_LABEL}_key"
 ENCRYPTED_IV_VAR="encrypted_${ENCRYPTION_LABEL}_iv"
 ENCRYPTED_KEY=${!ENCRYPTED_KEY_VAR}
 ENCRYPTED_IV=${!ENCRYPTED_IV_VAR}
-openssl aes-256-cbc -K $ENCRYPTED_KEY -iv $ENCRYPTED_IV -in deploy_key_snap_server.enc -out deploy_key_snap_server -d
-chmod 600 deploy_key_snap_server
+openssl aes-256-cbc -K $ENCRYPTED_KEY -iv $ENCRYPTED_IV -in ../deploy_key_snap_code_coverage.enc -out deploy_key_snap_code_coverage -d
+chmod 600 deploy_key_snap_code_coverage
 eval `ssh-agent -s`
-ssh-add deploy_key_snap_server
+ssh-add deploy_key_snap_code_coverage
 
 # Now that we're all set up, we can push.
 git push $SSH_REPO $TARGET_BRANCH
