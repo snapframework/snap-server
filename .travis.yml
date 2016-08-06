@@ -11,15 +11,21 @@ cache:
 before_cache:
   - rm -fv $HOME/.cabal/packages/hackage.haskell.org/build-reports.log
   - rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
-  - openssl aes-256-cbc -K $encrypted_7498769252d8_key -iv $encrypted_7498769252d8_iv -in deploy_key_snap_server.enc -out deploy_key_snap_server -d
+  - openssl aes-256-cbc -K $encrypted_3d4a52bc5710_key -iv $encrypted_3d4a52bc5710_iv -in deploy_key_snap_server.enc -out deploy_key_snap_server -d
 
 env:
   global:
-    - ENCRYPTION_LABEL: "7498769252d8"
-    - COMMIT_AUTHOR_EMAIL: "imalsogreg@gmail.com"
+    - ENCRYPTION_LABEL: "3d4a52bc5710"
+    - COMMIT_AUTHOR_EMAIL: "mightybyte@gmail.com"
 
 matrix:
   include:
+    - env: CABALVER=1.24 GHCVER=7.4.2
+      compiler: ": #GHC 7.4.2"
+      addons: {apt: {packages: [cabal-install-1.24,ghc-7.4.2,pandoc], sources: [hvr-ghc]}}
+    - env: CABALVER=1.24 GHCVER=7.6.3
+      compiler: ": #GHC 7.6.3"
+      addons: {apt: {packages: [cabal-install-1.24,ghc-7.6.3,pandoc], sources: [hvr-ghc]}}
     - env: CABALVER=1.24 GHCVER=7.8.4
       compiler: ": #GHC 7.8.4"
       addons: {apt: {packages: [cabal-install-1.24,ghc-7.8.4], sources: [hvr-ghc]}}
