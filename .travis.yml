@@ -11,7 +11,7 @@ cache:
 before_cache:
   - rm -fv $HOME/.cabal/packages/hackage.haskell.org/build-reports.log
   - rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
-  - openssl aes-256-cbc -K $encrypted_7498769252d8_key -iv $encrypted_7498769252d8_iv -in deploy_key_snap_server.enc -out ~/deploy_key_snap_server -d
+  - openssl aes-256-cbc -K $encrypted_7498769252d8_key -iv $encrypted_7498769252d8_iv -in deploy_key_snap_server.enc -out deploy_key_snap_server -d
 
 env:
   global:
