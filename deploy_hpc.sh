@@ -2,6 +2,7 @@
 
 set -e # Exit with nonzero exit code if anything fails
 
+GHCVER=$1
 SOURCE_BRANCH="master"
 TARGET_BRANCH="gh-pages"
 OUT=out
@@ -40,6 +41,8 @@ cd ..
 
 # Run our compile script
 doCompile
+git pull 
+mv hpc hpc-ghc-$GHCVER
 
 # Now let's go have some fun with the cloned repo
 cd $OUT
@@ -68,5 +71,8 @@ chmod 600 deploy_key_snap_code_coverage
 eval `ssh-agent -s`
 ssh-add deploy_key_snap_code_coverage
 
+# Last ditch pull just in case.  There should be no conflicts because each GHC
+# version is writing to a different directory.
+git pull 
 # Now that we're all set up, we can push.
 git push $SSH_REPO $TARGET_BRANCH
