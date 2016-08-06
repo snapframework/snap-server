@@ -61,7 +61,7 @@ git config user.email "$COMMIT_AUTHOR_EMAIL"
 
 # Last ditch pull just in case.  There should be no conflicts because each GHC
 # version is writing to a different directory.
-git pull -s ours
+git pull -s ours origin $TARGET_BRANCH
 
 rm -fr hpc-ghc-$GHCVER
 mv hpc hpc-ghc-$GHCVER
