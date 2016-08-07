@@ -25,6 +25,7 @@ Snap.Internal.Http.Server.Socket.Tests
 Snap.Internal.Http.Server.TimeoutManager.Tests
 Snap.Test.Common
 System.IO.Streams.Internal.Search
+System.IO.Streams.Internal.Network
 System.SendFile.Tests
 Test.Blackbox
 Test.Common.Rot13
