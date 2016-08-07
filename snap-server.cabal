@@ -148,12 +148,10 @@ Library
       System.SendFile,
       System.SendFile.FreeBSD
 
-  ghc-prof-options: -prof -auto
-
   if impl(ghc >= 6.12.0)
-    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fno-warn-unused-do-bind
+    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -fno-warn-unused-do-bind
   else
-    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
 
   if flag(debug)
     cpp-options: -DLABEL_THREADS
@@ -284,10 +282,9 @@ Test-suite testsuite
     c-sources: test/cbits/errno_util.c
 
   cpp-options: -DTESTSUITE
-  ghc-prof-options: -prof -auto
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
-               -fno-warn-unused-do-bind -fhpc -threaded
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
+               -fno-warn-unused-do-bind -threaded
 
 
 Benchmark benchmark
@@ -313,9 +310,8 @@ Benchmark benchmark
     snap-core                           >= 1.0     && < 1.1,
     vector                              >= 0.7     && < 0.12
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -rtsopts
-  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
@@ -404,9 +400,8 @@ Executable snap-test-pong-server
     unix-compat                         >= 0.2      && < 0.5,
     vector                              >= 0.7      && < 0.12
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -threaded -rtsopts
-  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
@@ -498,9 +493,8 @@ Executable snap-test-server
     unix-compat                         >= 0.2      && < 0.5,
     vector                              >= 0.7      && < 0.12
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -threaded -rtsopts
-  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
