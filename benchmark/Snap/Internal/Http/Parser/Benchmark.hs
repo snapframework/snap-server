@@ -20,7 +20,7 @@ parseGet s = do
     return $! ()
 
 
-benchmarks :: Benchmark
+benchmarks :: C.Benchmark
 benchmarks = C.bgroup "parser"
              [ C.bench "firefoxget" $ C.whnfIO $! replicateM_ 1000
                                                $! parseGet parseGetData
