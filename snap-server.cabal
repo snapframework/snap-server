@@ -148,6 +148,8 @@ Library
       System.SendFile,
       System.SendFile.FreeBSD
 
+  ghc-prof-options: -prof -auto
+
   if impl(ghc >= 6.12.0)
     ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fno-warn-unused-do-bind
   else
@@ -192,32 +194,32 @@ Test-suite testsuite
     Test.Common.TestHandler
 
   build-depends:
-    attoparsec,
-    base,
+    attoparsec                          >= 0.12     && < 0.14,
+    base                                >= 4        && < 5,
     base16-bytestring                   >= 0.1      && < 0.2,
-    blaze-builder,
-    bytestring-builder,
-    bytestring,
-    case-insensitive,
-    clock,
-    containers,
+    blaze-builder                       >= 0.4      && < 0.5,
+    bytestring-builder                  >= 0.10.4   && < 0.11,
+    bytestring                          >= 0.9.1    && < 0.11,
+    case-insensitive                    >= 1.1      && < 1.3,
+    clock                               >= 0.7.1    && < 0.8,
+    containers                          >= 0.3      && < 0.6,
     directory                           >= 1.0      && < 1.3,
-    filepath,
-    io-streams,
-    io-streams-haproxy,
-    lifted-base,
+    filepath                            >= 1.1      && < 2.0,
+    io-streams                          >= 1.3      && < 1.4,
+    io-streams-haproxy                  >= 1.0      && < 1.1,
+    lifted-base                         >= 0.1      && < 0.3,
     monad-control                       >= 1.0      && < 1.1,
-    mtl,
-    network,
-    old-locale,
+    mtl                                 >= 2.0      && < 2.3,
+    network                             >= 2.3      && < 2.7,
+    old-locale                          >= 1.0      && < 1.1,
     random                              >= 1.0      && < 1.2,
-    snap-core,
-    text,
+    snap-core                           >= 1.0      && < 1.1,
+    text                                >= 0.11     && < 1.3,
     threads                             >= 0.5      && < 0.6,
-    time,
+    time                                >= 1.0      && < 1.7,
     transformers                        >= 0.3      && < 0.6,
-    unix-compat,
-    vector,
+    unix-compat                         >= 0.2      && < 0.5,
+    vector                              >= 0.7      && < 0.12,
 
     HUnit                               >= 1.2      && < 2,
     QuickCheck                          >= 2.3.0.2  && < 3,
@@ -282,6 +284,7 @@ Test-suite testsuite
     c-sources: test/cbits/errno_util.c
 
   cpp-options: -DTESTSUITE
+  ghc-prof-options: -prof -auto
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -fhpc -threaded
@@ -299,19 +302,20 @@ Benchmark benchmark
     Snap.Internal.Http.Server.Parser
 
   build-depends:
-    attoparsec,
-    base,
-    blaze-builder,
-    bytestring,
-    bytestring-builder,
+    attoparsec                          >= 0.12    && < 0.14,
+    base                                >= 4       && < 5,
+    blaze-builder                       >= 0.4     && < 0.5,
+    bytestring                          >= 0.9     && < 0.11,
+    bytestring-builder                  >= 0.10.4  && < 0.11,
     criterion                           >= 0.6     && < 1.2,
-    io-streams,
-    io-streams-haproxy,
-    snap-core,
-    vector
+    io-streams                          >= 1.3     && < 1.4,
+    io-streams-haproxy                  >= 1.0     && < 1.1,
+    snap-core                           >= 1.0     && < 1.1,
+    vector                              >= 0.7     && < 0.12
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -rtsopts
+  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
@@ -380,28 +384,29 @@ Executable snap-test-pong-server
                    openssl-streams      >= 1.1      && < 1.3
 
   build-depends:
-    attoparsec,
-    base,
-    blaze-builder,
-    bytestring,
-    bytestring-builder,
-    case-insensitive,
-    clock,
-    containers,
-    io-streams,
-    io-streams-haproxy,
-    lifted-base,
-    mtl,
-    network,
-    old-locale,
-    snap-core,
-    text,
-    time,
-    unix-compat,
-    vector
+    attoparsec                          >= 0.12     && < 0.14,
+    base                                >= 4        && < 5,
+    blaze-builder                       >= 0.4      && < 0.5,
+    bytestring                          >= 0.9.1    && < 0.11,
+    bytestring-builder                  >= 0.10.4   && < 0.11,
+    case-insensitive                    >= 1.1      && < 1.3,
+    clock                               >= 0.7.1    && < 0.8,
+    containers                          >= 0.3      && < 0.6,
+    io-streams                          >= 1.3      && < 1.4,
+    io-streams-haproxy                  >= 1.0      && < 1.1,
+    lifted-base                         >= 0.1      && < 0.3,
+    mtl                                 >= 2.0      && < 2.3,
+    network                             >= 2.3      && < 2.7,
+    old-locale                          >= 1.0      && < 1.1,
+    snap-core                           >= 1.0      && < 1.1,
+    text                                >= 0.11     && < 1.3,
+    time                                >= 1.0      && < 1.7,
+    unix-compat                         >= 0.2      && < 0.5,
+    vector                              >= 0.7      && < 0.12
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -threaded -rtsopts
+  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
@@ -471,30 +476,31 @@ Executable snap-test-server
       System.SendFile.FreeBSD
 
   build-depends:
-    attoparsec,
-    base,
-    blaze-builder,
-    bytestring,
-    bytestring-builder,
-    case-insensitive,
-    clock,
-    containers,
+    attoparsec                          >= 0.12     && < 0.14,
+    base                                >= 4        && < 5,
+    blaze-builder                       >= 0.4      && < 0.5,
+    bytestring                          >= 0.9.1    && < 0.11,
+    bytestring-builder                  >= 0.10.4   && < 0.11,
+    case-insensitive                    >= 1.1      && < 1.3,
+    clock                               >= 0.7.1    && < 0.8,
+    containers                          >= 0.3      && < 0.6,
     directory                           >= 1.1      && < 1.3,
-    io-streams,
-    io-streams-haproxy,
-    lifted-base,
-    mtl,
-    network,
-    old-locale,
-    snap-core,
-    text,
-    time,
+    io-streams                          >= 1.3      && < 1.4,
+    io-streams-haproxy                  >= 1.0      && < 1.1,
+    lifted-base                         >= 0.1      && < 0.3,
+    mtl                                 >= 2.0      && < 2.3,
+    network                             >= 2.3      && < 2.7,
+    old-locale                          >= 1.0      && < 1.1,
+    snap-core                           >= 1.0      && < 1.1,
+    text                                >= 0.11     && < 1.3,
+    time                                >= 1.0      && < 1.7,
     transformers                        >= 0.3      && < 0.6,
-    unix-compat,
-    vector
+    unix-compat                         >= 0.2      && < 0.5,
+    vector                              >= 0.7      && < 0.12
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
                -fno-warn-unused-do-bind -threaded -rtsopts
+  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
