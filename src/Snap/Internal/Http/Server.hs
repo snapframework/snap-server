@@ -75,7 +75,6 @@ import qualified Snap.Types.Headers                      as H
 
 import qualified Paths_snap_server                       as V
 
-
 ------------------------------------------------------------------------------
 -- | The handler has to return the request object because we have to clear the
 -- HTTP request body before we send the response. If the handler consumes the
