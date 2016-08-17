@@ -70,14 +70,13 @@ script:
  # TODO Run deploy_hpc.sh when we get the test coverage travis integration working
  # - ./deploy_hpc.sh $GHCVER
 
- # Ignore the following section until dependencies are on hackage
- # # Check that the resulting source distribution can be built w/o and w tests
- # - SRC_BASENAME=$(cabal info . | awk '{print $2;exit}')
- # - tar -C dist/ -xf dist/$SRC_BASENAME.tar.gz
- # - "echo 'packages: *.cabal' > dist/$SRC_BASENAME/cabal.project"
- # - cd dist/$SRC_BASENAME/
- # - cabal new-build --disable-tests --disable-benchmarks
- # - rm -rf ./dist-newstyle
- # - cabal new-build ${TEST} ${BENCH}
+ # Check that the resulting source distribution can be built w/o and w tests
+ - SRC_BASENAME=$(cabal info . | awk '{print $2;exit}')
+ - tar -C dist/ -xf dist/$SRC_BASENAME.tar.gz
+ - "echo 'packages: *.cabal' > dist/$SRC_BASENAME/cabal.project"
+ - cd dist/$SRC_BASENAME/
+ - cabal new-build --disable-tests --disable-benchmarks
+ - rm -rf ./dist-newstyle
+ - cabal new-build ${TEST} ${BENCH}
 
 # EOF
