@@ -25,12 +25,14 @@ import qualified Data.CaseInsensitive              as CI
 import           Data.IORef                        (IORef, newIORef, readIORef, writeIORef)
 import qualified Data.Map                          as Map
 import           Data.Maybe                        (isNothing)
+#if !MIN_VERSION_base(4,6,0)
 import           Data.Monoid                       (mappend)
+#endif
 import           Data.Time.Clock.POSIX             (posixSecondsToUTCTime)
 import           Data.Typeable                     (Typeable)
 import           Data.Word                         (Word64)
 import qualified Network.Http.Client               as Http
-import           System.IO.Streams                 (InputStream, OutputStream)
+import           System.IO.Streams                 (InputStream, OutputStream, makeOutputStream)
 import qualified System.IO.Streams                 as Streams
 import qualified System.IO.Streams.Concurrent      as Streams
 import qualified System.IO.Streams.Debug           as Streams
@@ -43,12 +45,15 @@ import           Test.HUnit                        (assertBool, assertEqual)
 import           Snap.Core                         (Cookie (Cookie, cookieName, cookieValue), Request (rqContentLength, rqCookies, rqHostName, rqLocalHostname, rqPathInfo, rqQueryString, rqURI), Snap, addResponseCookie, escapeHttp, getHeader, getRequest, getsRequest, modifyResponse, readRequestBody, rqParam, rqPostParam, rqQueryParam, sendFile, sendFilePartial, setContentLength, setHeader, setResponseBody, setResponseStatus, terminateConnection, writeBS, writeBuilder, writeLBS)
 import           Snap.Http.Server.Types            (emptyServerConfig, getDefaultTimeout, getIsSecure, getLocalAddress, getLocalHostname, getLocalPort, getLogAccess, getLogError, getNumAcceptLoops, getOnDataFinished, getOnEscape, getOnException, getOnNewRequest, getOnParse, getOnUserHandlerFinished, getRemoteAddress, getRemotePort, getTwiddleTimeout, isNewConnection, setDefaultTimeout, setIsSecure, setLocalHostname, setLogAccess, setLogError, setNumAcceptLoops, setOnDataFinished, setOnEscape, setOnException, setOnNewRequest, setOnParse, setOnUserHandlerFinished)
 import           Snap.Internal.Http.Server.Date    (getLogDateString)
-import           Snap.Internal.Http.Server.Session (BadRequestException (..), LengthRequiredException (..), TerminateSessionException (..), httpAcceptLoop, httpSession, snapToServerHandler)
+import           Snap.Internal.Http.Server.Session (BadRequestException (..), LengthRequiredException (..), TerminateSessionException (..), httpAcceptLoop, httpSession, snapToServerHandler, sendResponse)
 import qualified Snap.Internal.Http.Server.TLS     as TLS
 import           Snap.Internal.Http.Server.Types   (AcceptFunc (AcceptFunc), PerSessionData (PerSessionData, _isNewConnection), SendFileHandler, ServerConfig (_logError))
+import           Snap.Internal.Http.Types          (Request(..), Method(..), Response(..))
+import qualified Snap.Internal.Http.Types          as SnapHttpTypes
 import           Snap.Test                         (RequestBuilder)
 import qualified Snap.Test                         as T
 import           Snap.Test.Common                  (coverShowInstance, coverTypeableInstance, expectException)
+import qualified Snap.Types.Headers         as H
 #ifdef OPENSSL
 import qualified Network.Socket                    as N
 #endif
@@ -82,6 +87,7 @@ tests = [ testPong
         , testSendFile
         , testBasicAcceptLoop
         , testTrivials
+        , testBodySize
 #ifdef OPENSSL
         , testTLSKeyMismatch
 #else
@@ -121,6 +127,42 @@ testCoverTLSStubs = testCase "session/tls-stubs" $ do
     expectException $ TLS.sendFileFunc u u u u u u u
 #endif
 
+mkDefaultRequest :: IO Request
+mkDefaultRequest = do
+    b <- Streams.fromList $! []
+    return $ Request "localhost"
+                     "127.0.0.1"
+                     60000
+                     "127.0.0.1"
+                     8080
+                     "localhost"
+                     False
+                     H.empty
+                     b
+                     Nothing
+                     GET
+                     (1,1)
+                     []
+                     ""
+                     "/"
+                     "/"
+                     ""
+                     Map.empty
+                     Map.empty
+                     Map.empty
+
+testBodySize :: Test
+testBodySize = testCase "session/bodySize" $ do
+    req <- mkDefaultRequest
+    outputStream <- makeOutputStream (const (return ()))
+    let tickle = const (return ())
+    let sendfileHandler _ _ _ _ _ = return ()
+    forceConnectionClose <- newIORef True
+    let rspbody = SnapHttpTypes.Stream return
+    let rsp = Response H.empty Map.empty Nothing rspbody 200 "" False
+    buf <- newBuffer 10
+    size <- sendResponse outputStream 100 tickle buf sendfileHandler forceConnectionClose req rsp
+    assertEqual "responseSize" 123 size
 
 ------------------------------------------------------------------------------
 testPong :: Test

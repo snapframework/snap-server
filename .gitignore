@@ -1,6 +1,7 @@
 dist
 dist-newstyle
 cabal-dev
+.stack-work
 .hpc
 *.o
 *.hi

@@ -9,6 +9,7 @@ module Snap.Internal.Http.Server.Session
   ( httpAcceptLoop
   , httpSession
   , snapToServerHandler
+  , sendResponse
   , BadRequestException(..)
   , LengthRequiredException(..)
   , TerminateSessionException(..)
@@ -526,7 +527,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                             headers rsp1
         let rsp = updateHeaders (const hdrs) rsp1
         writeIORef forceConnectionClose cc'
-        bytesSent <- sendResponse req rsp `E.catch`
+        bytesSent <- sendResponse writeEnd defaultTimeout tickle buffer sendfileHandler forceConnectionClose req rsp `E.catch`
                      catchUserException hookState "sending-response" req
         dataFinishedHook hookState req rsp
         logAccess req rsp bytesSent
@@ -578,117 +579,83 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         eatException $ exceptionHook hookState e
         terminateSession e
 
-    --------------------------------------------------------------------------
-    sendResponse :: Request -> Response -> IO Word64
-    sendResponse !req !rsp = {-# SCC "httpSession/sendResponse" #-} do
-        let !v          = rqVersion req
-        let !hdrs'      = renderCookies rsp (headers rsp)
-        let !code       = rspStatus rsp
-        let body        = rspBody rsp
-        let needChunked = rqMethod req /= HEAD
-                            && isNothing (rspContentLength rsp)
-                            && code /= 204
-                            && code /= 304
+-- | If the response contains a content-length, make sure the response body
+-- StreamProc doesn't yield more (or fewer) than the given number of bytes.
+limitRspBody :: Int                      -- ^ header length
+             -> Response                 -- ^ response
+             -> OutputStream ByteString  -- ^ write end of socket
+             -> IO (OutputStream ByteString)
+limitRspBody hlen rsp os = maybe (return os) f $ rspContentLength rsp
+  where
+    f cl = Streams.giveExactly (fromIntegral hlen + fromIntegral cl) os
+{-# INLINE limitRspBody #-}
 
-        let (hdrs'', body', shouldClose) = if needChunked
-                                             then noCL req hdrs' body
-                                             else (hdrs', body, False)
+whenSendFile :: SendFileHandler
+             -> Buffer
+             -> Builder     -- ^ headers
+             -> Response    -- ^ response
+             -> FilePath    -- ^ file to serve
+             -> Word64      -- ^ file start offset
+             -> IO Word64   -- ^ returns number of bytes written
+whenSendFile sendfileHandler buffer headerString rsp filePath offset = do
+    let !cl = fromJust $ rspContentLength rsp
+    sendfileHandler buffer headerString filePath offset cl
+    return cl
+{-# INLINE whenSendFile #-}
 
-        when shouldClose $ writeIORef forceConnectionClose $! True
-        let hdrPrim       = mkHeaderPrim v rsp hdrs''
-        let hlen          = size hdrPrim
-        let headerBuilder = primFixed hdrPrim $! ()
+noCL :: Request
+     -> Headers
+     -> ResponseBody
+     -> (Headers, ResponseBody, Bool)
+noCL req hdrs body =
+    if v == (1,1)
+      then let origBody = rspBodyToEnum body
+               body'    = \os -> do
+                             os' <- writeChunkedTransferEncoding os
+                             origBody os'
+           in ( H.set "transfer-encoding" "chunked" hdrs
+              , Stream body'
+              , False)
+      else
+        -- We've already noted that we have to close the socket earlier in
+        -- runServerHandler.
+        (hdrs, body, True)
+  where
+    v = rqVersion req
+{-# INLINE noCL #-}
 
-        nBodyBytes <- case body' of
-                        Stream s ->
-                            whenStream headerBuilder hlen rsp s
-                        SendFile f Nothing ->
-                            whenSendFile headerBuilder rsp f 0
-                        -- ignore end length here because we know we had a
-                        -- content-length, use that instead.
-                        SendFile f (Just (st, _)) ->
-                            whenSendFile headerBuilder rsp f st
-        return $! nBodyBytes - fromIntegral hlen
+sendResponse :: OutputStream ByteString -> Int -> ((Int -> Int) -> IO ()) -> Buffer
+             -> SendFileHandler -> IORef Bool -> Request -> Response
+             -> IO Word64
+sendResponse !writeEnd !defaultTimeout !tickle !buffer !sendfileHandler !forceConnectionClose !req !rsp = {-# SCC "httpSession/sendResponse" #-} do
+    let !v          = rqVersion req
+    let !hdrs'      = renderCookies rsp (headers rsp)
+    let !code       = rspStatus rsp
+    let body        = rspBody rsp
+    let needChunked = rqMethod req /= HEAD
+                        && isNothing (rspContentLength rsp)
+                        && code /= 204
+                        && code /= 304
 
-    --------------------------------------------------------------------------
-    noCL :: Request
-         -> Headers
-         -> ResponseBody
-         -> (Headers, ResponseBody, Bool)
-    noCL req hdrs body =
-        if v == (1,1)
-          then let origBody = rspBodyToEnum body
-                   body'    = \os -> do
-                                 os' <- writeChunkedTransferEncoding os
-                                 origBody os'
-               in ( H.set "transfer-encoding" "chunked" hdrs
-                  , Stream body'
-                  , False)
-          else
-            -- We've already noted that we have to close the socket earlier in
-            -- runServerHandler.
-            (hdrs, body, True)
-      where
-        v = rqVersion req
-    {-# INLINE noCL #-}
+    let (hdrs'', body', shouldClose) = if needChunked
+                                         then noCL req hdrs' body
+                                         else (hdrs', body, False)
 
-    --------------------------------------------------------------------------
-    -- | If the response contains a content-length, make sure the response body
-    -- StreamProc doesn't yield more (or fewer) than the given number of bytes.
-    limitRspBody :: Int                      -- ^ header length
-                 -> Response                 -- ^ response
-                 -> OutputStream ByteString  -- ^ write end of socket
-                 -> IO (OutputStream ByteString)
-    limitRspBody hlen rsp os = maybe (return os) f $ rspContentLength rsp
-      where
-        f cl = Streams.giveExactly (fromIntegral hlen + fromIntegral cl) os
-    {-# INLINE limitRspBody #-}
+    when shouldClose $ writeIORef forceConnectionClose $! True
+    let hdrPrim       = mkHeaderPrim v rsp hdrs''
+    let hlen          = size hdrPrim
+    let headerBuilder = primFixed hdrPrim $! ()
 
-    --------------------------------------------------------------------------
-    whenStream :: Builder       -- ^ headers
-               -> Int           -- ^ header length
-               -> Response      -- ^ response
-               -> StreamProc    -- ^ output body
-               -> IO Word64      -- ^ returns number of bytes written
-    whenStream headerString hlen rsp body = do
-        -- note:
-        --
-        --  * precondition here is that we have a content-length and that we're
-        --    not using chunked transfer encoding.
-        --
-        --  * "headerString" includes http status line.
-        --
-        -- If you're transforming the request body, you have to manage your own
-        -- timeouts.
-        let t = if rspTransformingRqBody rsp
-                  then return $! ()
-                  else tickle $ max defaultTimeout
-        writeEnd0 <- Streams.ignoreEof writeEnd
-        (writeEnd1, getCount) <- Streams.countOutput writeEnd0
-        writeEnd2 <- limitRspBody hlen rsp writeEnd1
-        writeEndB <- Streams.unsafeBuilderStream (return buffer) writeEnd2 >>=
-                     Streams.contramapM (\x -> t >> return x)
-
-        Streams.write (Just headerString) writeEndB
-        writeEnd' <- body writeEndB
-        Streams.write Nothing writeEnd'
-        -- Just in case the user handler didn't.
-        Streams.write Nothing writeEnd1
-        n <- getCount
-        return $! fromIntegral n - fromIntegral hlen
-    {-# INLINE whenStream #-}
-
-    --------------------------------------------------------------------------
-    whenSendFile :: Builder     -- ^ headers
-                 -> Response    -- ^ response
-                 -> FilePath    -- ^ file to serve
-                 -> Word64      -- ^ file start offset
-                 -> IO Word64   -- ^ returns number of bytes written
-    whenSendFile headerString rsp filePath offset = do
-        let !cl = fromJust $ rspContentLength rsp
-        sendfileHandler buffer headerString filePath offset cl
-        return cl
-    {-# INLINE whenSendFile #-}
+    nBodyBytes <- case body' of
+                    Stream s ->
+                        whenStream buffer writeEnd defaultTimeout tickle headerBuilder hlen rsp s
+                    SendFile f Nothing ->
+                        whenSendFile sendfileHandler buffer headerBuilder rsp f 0
+                    -- ignore end length here because we know we had a
+                    -- content-length, use that instead.
+                    SendFile f (Just (st, _)) ->
+                        whenSendFile sendfileHandler buffer headerBuilder rsp f st
+    return $! nBodyBytes
 
 
 --------------------------------------------------------------------------
@@ -717,6 +684,42 @@ mkHeaderLine outVer r =
     reason = rspStatusReason r
     len = 12 + S.length outCodeStr + S.length reason
 
+whenStream :: Buffer
+           -> OutputStream ByteString
+           -> Int
+           -> ((Int -> Int) -> IO ())
+           -> Builder       -- ^ headers
+           -> Int           -- ^ header length
+           -> Response      -- ^ response
+           -> StreamProc    -- ^ output body
+           -> IO Word64      -- ^ returns number of bytes written
+whenStream buffer writeEnd defaultTimeout tickle headerString hlen rsp body = do
+    -- note:
+    --
+    --  * precondition here is that we have a content-length and that we're
+    --    not using chunked transfer encoding.
+    --
+    --  * "headerString" includes http status line.
+    --
+    -- If you're transforming the request body, you have to manage your own
+    -- timeouts.
+    let t = if rspTransformingRqBody rsp
+              then return $! ()
+              else tickle $ max defaultTimeout
+    writeEnd0 <- Streams.ignoreEof writeEnd
+    (writeEnd1, getCount) <- Streams.countOutput writeEnd0
+    writeEnd2 <- limitRspBody hlen rsp writeEnd1
+    writeEndB <- Streams.unsafeBuilderStream (return buffer) writeEnd2 >>=
+                 Streams.contramapM (\x -> t >> return x)
+
+    Streams.write (Just headerString) writeEndB
+    writeEnd' <- body writeEndB
+    Streams.write Nothing writeEnd'
+    -- Just in case the user handler didn't.
+    Streams.write Nothing writeEnd1
+    n <- getCount
+    return $! fromIntegral n - fromIntegral hlen
+{-# INLINE whenStream #-}
 
 ------------------------------------------------------------------------------
 mkHeaderPrim :: HttpVersion -> Response -> Headers -> FixedPrim ()
