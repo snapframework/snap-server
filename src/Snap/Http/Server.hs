@@ -48,6 +48,7 @@ import           Snap.Util.Proxy                         (behindProxy)
 import qualified Snap.Util.Proxy                         as Proxy
 ------------------------------------------------------------------------------
 
+
 ------------------------------------------------------------------------------
 -- | A short string describing the Snap server version
 snapServerVersion :: ByteString

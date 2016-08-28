@@ -1,6 +1,8 @@
 Snap Framework HTTP Server Library
 ----------------------------------
 
+[![Build Status](https://travis-ci.org/snapframework/snap-server.svg?branch=master)](https://travis-ci.org/snapframework/snap-server)
+
 This is the Snap Framework HTTP Server library.  For more information about
 Snap, read the `README.SNAP.md` or visit the Snap project website at
 http://www.snapframework.com/.

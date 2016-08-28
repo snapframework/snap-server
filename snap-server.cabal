@@ -1,5 +1,5 @@
 name:           snap-server
-version:        1.0.0.0
+version:        1.0.1.0
 synopsis:       A web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -92,7 +92,7 @@ Library
     bytestring                          >= 0.9.1    && < 0.11,
     bytestring-builder                  >= 0.10.4   && < 0.11,
     case-insensitive                    >= 1.1      && < 1.3,
-    clock                               >= 0.4.1    && < 0.6,
+    clock                               >= 0.7.1    && < 0.8,
     containers                          >= 0.3      && < 0.6,
     filepath                            >= 1.1      && < 2.0,
     io-streams                          >= 1.3      && < 1.4,
@@ -103,7 +103,7 @@ Library
     old-locale                          >= 1.0      && < 1.1,
     snap-core                           >= 1.0      && < 1.1,
     text                                >= 0.11     && < 1.3,
-    time                                >= 1.0      && < 1.6,
+    time                                >= 1.0      && < 1.7,
     unix-compat                         >= 0.2      && < 0.5,
     vector                              >= 0.7      && < 0.12
 
@@ -149,12 +149,10 @@ Library
       System.SendFile,
       System.SendFile.FreeBSD
 
-  ghc-prof-options: -prof -auto
-
   if impl(ghc >= 6.12.0)
-    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fno-warn-unused-do-bind
+    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -fno-warn-unused-do-bind
   else
-    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+    ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
 
   if flag(debug)
     cpp-options: -DLABEL_THREADS
@@ -204,7 +202,7 @@ Test-suite testsuite
     bytestring-builder                  >= 0.10.4   && < 0.11,
     bytestring                          >= 0.9.1    && < 0.11,
     case-insensitive                    >= 1.1      && < 1.3,
-    clock                               >= 0.4.1    && < 0.6,
+    clock                               >= 0.7.1    && < 0.8,
     containers                          >= 0.3      && < 0.6,
     directory                           >= 1.0      && < 1.3,
     filepath                            >= 1.1      && < 2.0,
@@ -219,8 +217,8 @@ Test-suite testsuite
     snap-core                           >= 1.0      && < 1.1,
     text                                >= 0.11     && < 1.3,
     threads                             >= 0.5      && < 0.6,
-    time                                >= 1.0      && < 1.6,
-    transformers                        >= 0.3      && < 0.5,
+    time                                >= 1.0      && < 1.7,
+    transformers                        >= 0.3      && < 0.6,
     unix-compat                         >= 0.2      && < 0.5,
     vector                              >= 0.7      && < 0.12,
 
@@ -287,10 +285,9 @@ Test-suite testsuite
     c-sources: test/cbits/errno_util.c
 
   cpp-options: -DTESTSUITE
-  ghc-prof-options: -prof -auto
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
-               -fno-warn-unused-do-bind -fhpc -threaded
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
+               -fno-warn-unused-do-bind -threaded
 
 
 Benchmark benchmark
@@ -316,9 +313,8 @@ Benchmark benchmark
     snap-core                           >= 1.0     && < 1.1,
     vector                              >= 0.7     && < 0.12
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -rtsopts
-  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
@@ -393,7 +389,7 @@ Executable snap-test-pong-server
     bytestring                          >= 0.9.1    && < 0.11,
     bytestring-builder                  >= 0.10.4   && < 0.11,
     case-insensitive                    >= 1.1      && < 1.3,
-    clock                               >= 0.4.1    && < 0.6,
+    clock                               >= 0.7.1    && < 0.8,
     containers                          >= 0.3      && < 0.6,
     io-streams                          >= 1.3      && < 1.4,
     io-streams-haproxy                  >= 1.0      && < 1.1,
@@ -403,13 +399,12 @@ Executable snap-test-pong-server
     old-locale                          >= 1.0      && < 1.1,
     snap-core                           >= 1.0      && < 1.1,
     text                                >= 0.11     && < 1.3,
-    time                                >= 1.0      && < 1.6,
+    time                                >= 1.0      && < 1.7,
     unix-compat                         >= 0.2      && < 0.5,
     vector                              >= 0.7      && < 0.12
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -threaded -rtsopts
-  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,
@@ -485,7 +480,7 @@ Executable snap-test-server
     bytestring                          >= 0.9.1    && < 0.11,
     bytestring-builder                  >= 0.10.4   && < 0.11,
     case-insensitive                    >= 1.1      && < 1.3,
-    clock                               >= 0.4.1    && < 0.6,
+    clock                               >= 0.7.1    && < 0.8,
     containers                          >= 0.3      && < 0.6,
     directory                           >= 1.1      && < 1.3,
     io-streams                          >= 1.3      && < 1.4,
@@ -496,14 +491,13 @@ Executable snap-test-server
     old-locale                          >= 1.0      && < 1.1,
     snap-core                           >= 1.0      && < 1.1,
     text                                >= 0.11     && < 1.3,
-    time                                >= 1.0      && < 1.6,
-    transformers                        >= 0.3      && < 0.5,
+    time                                >= 1.0      && < 1.7,
+    transformers                        >= 0.3      && < 0.6,
     unix-compat                         >= 0.2      && < 0.5,
     vector                              >= 0.7      && < 0.12
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -threaded -rtsopts
-  ghc-prof-options: -prof -auto
 
   other-extensions:
     BangPatterns,

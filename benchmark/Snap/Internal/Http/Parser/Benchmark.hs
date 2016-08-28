@@ -8,7 +8,7 @@ module Snap.Internal.Http.Parser.Benchmark
   where
 
 import           Control.Monad
-import           Criterion.Main                   hiding (run)
+import qualified Criterion.Main                   as C
 import qualified Data.ByteString                  as S
 import           Snap.Internal.Http.Parser.Data
 import           Snap.Internal.Http.Server.Parser
@@ -20,8 +20,8 @@ parseGet s = do
     return $! ()
 
 
-benchmarks :: Benchmark
-benchmarks = bgroup "parser"
-             [ bench "firefoxget" $ whnfIO $! replicateM_ 1000
-                                           $! parseGet parseGetData
+benchmarks :: C.Benchmark
+benchmarks = C.bgroup "parser"
+             [ C.bench "firefoxget" $ C.whnfIO $! replicateM_ 1000
+                                               $! parseGet parseGetData
              ]

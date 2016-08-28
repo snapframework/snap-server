@@ -608,7 +608,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
                         -- content-length, use that instead.
                         SendFile f (Just (st, _)) ->
                             whenSendFile headerBuilder rsp f st
-        return $! nBodyBytes - fromIntegral hlen
+        return $! nBodyBytes
 
     --------------------------------------------------------------------------
     noCL :: Request
