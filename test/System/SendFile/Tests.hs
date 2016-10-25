@@ -148,13 +148,13 @@ data SendFileCallLog = SendFileCallLog {
       _sf_fd1 :: Fd
     , _sf_fd2 :: Fd
     , _sf_off :: COff
-    , _sf_sz  :: COff
+    , _sf_sz  :: CSize
     }
   deriving (Eq, Show, Ord)
 
 
 ------------------------------------------------------------------------------
-sendFileMockSendFunc :: MVar [IO CSize]          -- ^ sample outputs
+sendFileMockSendFunc :: MVar [IO CInt]          -- ^ sample outputs
                      -> MVar [SendFileCallLog]   -- ^ log of calls
                      -> Fd -> Fd -> COff -> CSize -> Ptr () -> Ptr COff
                      -> CInt -> IO CInt
@@ -162,8 +162,7 @@ sendFileMockSendFunc sampleData callLog !fd1 !fd2 !off !clen !_ !pbytes !_ = do
     modifyMVar_ callLog (return . (++ [SendFileCallLog fd1 fd2 off clen]))
     x <- modifyMVar sampleData $ \xs -> return $!
             if null xs then ([], return Nothing) else (tail xs, fmap Just $! head xs)
-    x >>= maybe (c_set_errno eCONNRESET >> return (-1))
-                (\l -> poke pbytes (fromIntegral l) >> return 0)
+    x >>= maybe (c_set_errno eCONNRESET >> return (-1)) return
 
 
 #elif defined(OSX)

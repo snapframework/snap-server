@@ -12,7 +12,7 @@ module System.SendFile.FreeBSD
 import           Control.Concurrent    (threadWaitWrite)
 import           Data.Int
 import           Data.Word
-import           Foreign.C.Error       (throwErrnoIfMinus1RetryMayBlock)
+import           Foreign.C.Error       (throwErrnoIfMinus1RetryMayBlock_)
 #if __GLASGOW_HASKELL__ >= 703
 import           Foreign.C.Types       (CInt (..), CSize (..))
 #else
@@ -31,6 +31,8 @@ import           System.Posix.Types    (COff, Fd)
 
 ------------------------------------------------------------------------------
 sendFile :: Fd -> Fd -> Word64 -> Word64 -> IO Int64
+sendFile = sendFileImpl c_sendfile_freebsd threadWaitWrite
+{-# INLINE sendFile #-}
 
 
 ------------------------------------------------------------------------------
