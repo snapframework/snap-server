@@ -77,7 +77,9 @@ simpleHttpServe config handler = do
                           (listeners conf)
                           (fromJust $ getHostname  conf)
                           alog
+                          (getAccessLogHandler conf)
                           elog
+                          (getErrorLogHandler conf)
                           (\sockets -> let dat = mkStartupInfo sockets conf
                                        in maybe (return ())
                                                 ($ dat)

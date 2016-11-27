@@ -93,6 +93,15 @@ type ServerHandler = (ByteString -> IO ())
 ------------------------------------------------------------------------------
 type ServerMonad = StateT ServerState (Iteratee ByteString IO)
 
+------------------------------------------------------------------------------
+-- | This handler may be used (in conjunction with setErrorLogHandler) to write out error logs in a 
+-- custom manner.
+type ErrorLogHandler = ByteString -> IO ByteString
+
+------------------------------------------------------------------------------
+-- | This handler may be used (in conjunction with setAccessLogHandler) to write out access logs in a
+-- custom manner.
+type AccessLogHandler = Request -> Response -> IO ByteString
 
 ------------------------------------------------------------------------------
 data ListenPort =
@@ -155,11 +164,13 @@ httpServe :: Int                         -- ^ default timeout
           -> [ListenPort]                -- ^ ports to listen on
           -> ByteString                  -- ^ local hostname (server name)
           -> Maybe (ByteString -> IO ()) -- ^ access log action
+          -> Maybe AccessLogHandler
           -> Maybe (ByteString -> IO ()) -- ^ error log action
+          -> Maybe ErrorLogHandler
           -> ([Socket] -> IO ())         -- ^ initialisation
           -> ServerHandler               -- ^ handler procedure
           -> IO ()
-httpServe defaultTimeout ports localHostname alog' elog' initial handler =
+httpServe defaultTimeout ports localHostname alog' alh elog' elh initial handler =
     withSocketsDo $ spawnAll alog' elog' `catches` errorHandlers
 
   where
@@ -170,7 +181,7 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
 
     --------------------------------------------------------------------------
     sslException (e@(TLS.TLSException msg)) = do
-        logE elog' msg
+        logE errorHandle elog' msg
         SC.hPutStrLn stderr msg
         throw e
 
@@ -183,14 +194,14 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
                     "Error on startup: \n"
                   , T.encodeUtf8 $ T.pack $ show e
                   ]
-        logE elog' msg
+        logE errorHandle elog' msg
         SC.hPutStrLn stderr msg
         throw e
 
     --------------------------------------------------------------------------
     spawnAll alog elog = {-# SCC "httpServe/spawnAll" #-} do
 
-        logE elog $ S.concat [ "Server.httpServe: START, binding to "
+        logE errorHandle elog $ S.concat [ "Server.httpServe: START, binding to "
                              , bshow ports ]
 
         let isHttps p = case p of { (HttpsPort _ _ _ _ _) -> True; _ -> False;}
@@ -203,51 +214,32 @@ httpServe defaultTimeout ports localHostname alog' elog' initial handler =
         nports <- mapM bindPort ports
         let socks = map (\x -> case x of ListenHttp s -> s; ListenHttps s _ -> s) nports
 
-        (simpleEventLoop defaultTimeout nports numCapabilities (logE elog) (initial socks)
-                    $ runHTTP defaultTimeout alog elog handler localHostname)
+        (simpleEventLoop defaultTimeout nports numCapabilities (logE errorHandle elog) (initial socks)
+                    $ runHTTP defaultTimeout alog alh elog elh handler localHostname)
           `finally` do
-            logE elog "Server.httpServe: SHUTDOWN"
+            logE errorHandle elog "Server.httpServe: SHUTDOWN"
 
             if initHttps
                 then TLS.stopTLS
                 else return ()
 
-            logE elog "Server.httpServe: BACKEND STOPPED"
+            logE errorHandle elog "Server.httpServe: BACKEND STOPPED"
 
     --------------------------------------------------------------------------
     bindPort (HttpPort  baddr port         ) = bindHttp  baddr port
     bindPort (HttpsPort baddr port cert chainCert key) =
         TLS.bindHttps baddr port cert chainCert key
 
+    errorHandle = fromMaybe defaultErrorLogHandler elh
+
 
 ------------------------------------------------------------------------------
 debugE :: (MonadIO m) => ByteString -> m ()
 debugE s = debug $ "Server: " ++ (map w2c $ S.unpack s)
 
-
 ------------------------------------------------------------------------------
-logE :: Maybe (ByteString -> IO ()) -> ByteString -> IO ()
-logE elog = maybe debugE (\l s -> debugE s >> logE' l s) elog
-
-
-------------------------------------------------------------------------------
-logE' :: (ByteString -> IO ()) -> ByteString -> IO ()
-logE' logger s = (timestampedLogEntry s) >>= logger
-
-
-------------------------------------------------------------------------------
-bshow :: (Show a) => a -> ByteString
-bshow = toBS . show
-
-
-------------------------------------------------------------------------------
-logA :: Maybe (ByteString -> IO ()) -> Request -> Response -> IO ()
-logA alog = maybe (\_ _ -> return ()) logA' alog
-
-
-------------------------------------------------------------------------------
-logA' :: (ByteString -> IO ()) -> Request -> Response -> IO ()
-logA' logger req rsp = do
+defaultAccessLogHandler :: AccessLogHandler
+defaultAccessLogHandler req rsp = do
     let hdrs      = rqHeaders req
     let host      = rqRemoteAddr req
     let user      = Nothing -- TODO we don't do authentication yet
@@ -260,14 +252,43 @@ logA' logger req rsp = do
     let referer   = maybe Nothing (Just . head) $ H.lookup "referer" hdrs
     let userAgent = maybe "-" head $ H.lookup "user-agent" hdrs
 
-    msg <- combinedLogEntry host user reql status cl referer userAgent
-    logger msg
+    combinedLogEntry host user reql status cl referer userAgent
+
+------------------------------------------------------------------------------
+defaultErrorLogHandler :: ErrorLogHandler
+defaultErrorLogHandler = timestampedLogEntry
+
+------------------------------------------------------------------------------
+logE :: ErrorLogHandler -> Maybe (ByteString -> IO ()) -> ByteString -> IO ()
+logE elh elog = maybe debugE (\l s -> debugE s >> logE' elh l s) elog
+
+
+------------------------------------------------------------------------------
+logE' :: ErrorLogHandler -> (ByteString -> IO ()) -> ByteString -> IO ()
+logE' elh logger s = logger =<< elh s
+
+
+------------------------------------------------------------------------------
+bshow :: (Show a) => a -> ByteString
+bshow = toBS . show
+
+
+------------------------------------------------------------------------------
+logA :: AccessLogHandler -> Maybe (ByteString -> IO ()) -> Request -> Response -> IO ()
+logA alh alog = maybe (\_ _ -> return ()) (logA' alh) alog
+
+
+------------------------------------------------------------------------------
+logA' :: AccessLogHandler -> (ByteString -> IO ()) -> Request -> Response -> IO ()
+logA' alh logger req rsp = logger =<< alh req rsp
 
 
 ------------------------------------------------------------------------------
 runHTTP :: Int                           -- ^ default timeout
         -> Maybe (ByteString -> IO ())   -- ^ access logger
+        -> Maybe AccessLogHandler
         -> Maybe (ByteString -> IO ())   -- ^ error logger
+        -> Maybe ErrorLogHandler
         -> ServerHandler                 -- ^ handler procedure
         -> ByteString                    -- ^ local host name
         -> SessionInfo                   -- ^ session port information
@@ -277,7 +298,7 @@ runHTTP :: Int                           -- ^ default timeout
                                          -- ^ sendfile end
         -> ((Int -> Int) -> IO ())       -- ^ timeout tickler
         -> IO ()
-runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
+runHTTP defaultTimeout alog alh elog elh handler lh sinfo readEnd writeEnd onSendFile
         tickle =
     go `catches` [ Handler $ \(_ :: TerminatedBeforeHandlerException) -> do
                        return ()
@@ -288,7 +309,7 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
                  , Handler $ \(e :: AsyncException) -> do
                        throwIO e
                  , Handler $ \(e :: SomeException) ->
-                       logE elog $ toByteString $ lmsg e
+                       logE errorHandle elog $ toByteString $ lmsg e
                  ]
 
   where
@@ -301,7 +322,7 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
 
     go = do
         buf <- allocBuffer 16384
-        let iter1 = runServerMonad lh sinfo (logA alog) (logE elog) $
+        let iter1 = runServerMonad lh sinfo (logA accessHandle alog) (logE errorHandle elog) $
                                    httpSession defaultTimeout writeEnd buf
                                                onSendFile tickle handler
         let iter = iterateeDebugWrapper "httpSession iteratee" iter1
@@ -313,6 +334,9 @@ runHTTP defaultTimeout alog elog handler lh sinfo readEnd writeEnd onSendFile
         debug "runHTTP/go: running..."
         run_ $ readEnd step
         debug "runHTTP/go: finished"
+
+    accessHandle = fromMaybe defaultAccessLogHandler alh
+    errorHandle = fromMaybe defaultErrorLogHandler elh
 
 
 ------------------------------------------------------------------------------
