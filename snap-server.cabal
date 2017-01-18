@@ -104,7 +104,7 @@ Library
     text                                >= 0.11     && < 1.3,
     time                                >= 1.0      && < 1.7,
     unix-compat                         >= 0.2      && < 0.5,
-    vector                              >= 0.7      && < 0.12
+    vector                              >= 0.7      && < 0.13
 
   other-extensions:
     BangPatterns,
@@ -217,7 +217,7 @@ Test-suite testsuite
     time                                >= 1.0      && < 1.7,
     transformers                        >= 0.3      && < 0.6,
     unix-compat                         >= 0.2      && < 0.5,
-    vector                              >= 0.7      && < 0.12,
+    vector                              >= 0.7      && < 0.13,
 
     HUnit                               >= 1.2      && < 2,
     QuickCheck                          >= 2.3.0.2  && < 3,
@@ -308,7 +308,7 @@ Benchmark benchmark
     io-streams                          >= 1.3     && < 1.4,
     io-streams-haproxy                  >= 1.0     && < 1.1,
     snap-core                           >= 1.0     && < 1.1,
-    vector                              >= 0.7     && < 0.12
+    vector                              >= 0.7     && < 0.13
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -rtsopts
@@ -398,7 +398,7 @@ Executable snap-test-pong-server
     text                                >= 0.11     && < 1.3,
     time                                >= 1.0      && < 1.7,
     unix-compat                         >= 0.2      && < 0.5,
-    vector                              >= 0.7      && < 0.12
+    vector                              >= 0.7      && < 0.13
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -threaded -rtsopts
@@ -491,7 +491,7 @@ Executable snap-test-server
     time                                >= 1.0      && < 1.7,
     transformers                        >= 0.3      && < 0.6,
     unix-compat                         >= 0.2      && < 0.5,
-    vector                              >= 0.7      && < 0.12
+    vector                              >= 0.7      && < 0.13
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -threaded -rtsopts
