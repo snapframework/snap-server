@@ -751,7 +751,7 @@ sendResponse req rsp0 buffer writeEnd' onSendFile = do
     --------------------------------------------------------------------------
     noCL :: Response -> (Response, Bool)
     noCL r =
-        if rqMethod req == HEAD
+        if rqMethod req == HEAD || rspStatus r == 304 || rspStatus r == 204
           then let r' = r { rspBody = Enum $ enumBuilder mempty }
                in (r', False)
           else if rspHttpVersion r >= (1,1)
