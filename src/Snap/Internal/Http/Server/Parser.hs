@@ -31,7 +31,7 @@ import           Control.Applicative              ((<$>))
 import           Control.Exception                (Exception, throwIO)
 import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
-import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, skipWhile, take)
+import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, skipWhile, take, (<?>))
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (ByteString (..), c2w, memchr, w2c)
 #if MIN_VERSION_bytestring(0, 10, 6)
@@ -58,7 +58,7 @@ import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
-import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat, (<?>))
+import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat)
 import           Snap.Types.Headers               (Headers)
 import qualified Snap.Types.Headers               as H
 
