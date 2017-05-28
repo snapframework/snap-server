@@ -19,10 +19,10 @@ module Snap.Internal.Http.Server.TimeoutManager
 ------------------------------------------------------------------------------
 import           Control.Exception                (evaluate, finally)
 import qualified Control.Exception                as E
-import           Control.Monad                    (Monad ((>>=), return), mapM_, void, when)
+import           Control.Monad                    (Monad (return, (>>=)), mapM_, void, when)
 import qualified Data.ByteString.Char8            as S
 import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
-import           Prelude                          (Bool, Double, IO, Int, Show (..), const, fromIntegral, max,  null, otherwise, round, ($), ($!), (+), (++), (-), (.), (<=), (==))
+import           Prelude                          (Bool, Double, IO, Int, Show (..), const, fromIntegral, max, null, otherwise, round, ($), ($!), (+), (++), (-), (.), (<=), (==))
 ------------------------------------------------------------------------------
 import           Control.Concurrent               (MVar, newEmptyMVar, putMVar, readMVar, takeMVar, tryPutMVar)
 ------------------------------------------------------------------------------
@@ -172,8 +172,8 @@ modify th f = do
 -- | Cancel a timeout.
 cancel :: TimeoutThread -> IO ()
 cancel h = E.uninterruptibleMask_ $ do
-    T.cancel $ _thread h
     writeIORef (_state h) canceled
+    T.cancel $ _thread h
 {-# INLINE cancel #-}
 
 

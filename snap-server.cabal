@@ -1,5 +1,5 @@
 name:           snap-server
-version:        1.0.2.0
+version:        1.0.2.2
 synopsis:       A web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in

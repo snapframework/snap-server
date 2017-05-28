@@ -192,8 +192,10 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
             connClose <- newIORef False
             newConn   <- newIORef True
             let twiddleTimeout = unsafePerformIO $ do
-                    th <- readMVar thMVar
-                    return $ TM.modify th
+                                   th <- readMVar thMVar
+                                   return $! TM.modify th
+            let cleanupTimeout = do th <- readMVar thMVar
+                                    return $! TM.cancel th
 
             let !psd = PerSessionData connClose
                                       twiddleTimeout
@@ -205,7 +207,9 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
                                       remotePort
                                       readEnd
                                       writeEnd
-            restore (session psd) `E.finally` cleanup
+            restore (session psd)
+                `E.finally` cleanup
+                `E.finally` cleanupTimeout
 
     --------------------------------------------------------------------------
     session psd = do

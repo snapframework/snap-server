@@ -1,6 +1,7 @@
 dist
 dist-newstyle
 cabal-dev
+cabal.project.local
 .hpc
 *.o
 *.hi
