@@ -509,7 +509,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     {-# INLINE runServerHandler #-}
     runServerHandler !hookState !req = {-# SCC "httpSession/runServerHandler" #-} do
-        (_, rsp0) <- serverHandler config sessionData req
+        (req0, rsp0) <- serverHandler config sessionData req
         userHandlerFinishedHook hookState req rsp0
 
         -- check whether we should close the connection after sending the
@@ -533,7 +533,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         bytesSent <- sendResponse req rsp `E.catch`
                      catchUserException hookState "sending-response" req
         dataFinishedHook hookState req rsp
-        logAccess req rsp bytesSent
+        logAccess req0 rsp bytesSent
         return $! not cc'
 
     --------------------------------------------------------------------------
