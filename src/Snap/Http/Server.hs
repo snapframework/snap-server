@@ -35,7 +35,7 @@ import qualified Data.Text                         as T
 import qualified Data.Text.Encoding                as T
 import           Data.Version                      (showVersion)
 import           Data.Word                         (Word64)
-import           Network.Socket                    (Socket, sClose)
+import           Network.Socket                    (Socket, close)
 import           Prelude                           (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, fst, id, mapM, mapM_, maybe, snd, unzip3, zip, ($), ($!), (++), (.))
 import           System.IO                         (hFlush, hPutStrLn, stderr)
 #ifndef PORTABLE
@@ -105,7 +105,7 @@ simpleHttpServe config handler = do
 
     go conf sockets afuncs `finally` (mask_ $ do
         output "\nShutting down.."
-        mapM_ (eatException . sClose) sockets)
+        mapM_ (eatException . close) sockets)
 
   where
     eatException :: IO a -> IO ()

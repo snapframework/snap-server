@@ -135,7 +135,8 @@ httpsAcceptFunc boundSocket ctx =
         (remotePort, remoteHost) <- getAddress remoteAddr
         ssl                      <- restore (SSL.connection ctx sock)
 
-        restore (SSL.accept ssl)
+        restore (SSL.accept ssl) `onException` Socket.close sock
+
         (readEnd, writeEnd) <- SStreams.sslToStreams ssl
 
         let cleanup = (do Streams.write Nothing writeEnd
