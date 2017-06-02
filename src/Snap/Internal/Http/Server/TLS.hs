@@ -18,7 +18,7 @@ import qualified Data.ByteString.Char8             as S
 import           Data.Typeable                     (Typeable)
 import           Network.Socket                    (Socket)
 #ifdef OPENSSL
-import           Control.Exception                 (Exception, bracketOnError, finally, throwIO)
+import           Control.Exception                 (Exception, bracketOnError, finally, onException, throwIO)
 import           Control.Monad                     (when)
 import           Data.ByteString.Builder           (byteString)
 import qualified Network.Socket                    as Socket
