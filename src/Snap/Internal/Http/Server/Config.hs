@@ -560,7 +560,8 @@ completeConfig config = do
                           , isJust . getSSLCert ]
 
     sslValid   = and sslVals
-    noPort = isNothing (getPort cfg) && not sslValid
+    unixValid  = isJust $ unixsocket cfg
+    noPort = isNothing (getPort cfg) && not sslValid && not unixValid
 
     cfg' = emptyConfig { port = if noPort then Just 8000 else Nothing }
 
