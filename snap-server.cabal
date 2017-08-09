@@ -19,6 +19,8 @@ build-type:     Simple
 cabal-version:  >= 1.10
 homepage:       http://snapframework.com/
 category:       Web, Snap, IO-Streams
+tested-with: GHC==8.2.1, GHC==8.0.2, GHC==7.10.3, GHC==7.8.4, GHC==7.6.3, GHC==7.4.2
+
 
 extra-source-files:
   CONTRIBUTORS,
