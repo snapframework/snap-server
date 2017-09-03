@@ -1,3 +1,7 @@
+## 1.0.3.1
+
+Bump for `io-streams` 1.5.
+
 ## 1.0.3.0
 ### Dep bumps
   - criterion, time
