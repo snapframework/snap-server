@@ -192,8 +192,10 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
             connClose <- newIORef False
             newConn   <- newIORef True
             let twiddleTimeout = unsafePerformIO $ do
-                    th <- readMVar thMVar
-                    return $ TM.modify th
+                                   th <- readMVar thMVar
+                                   return $! TM.modify th
+            let cleanupTimeout = do th <- readMVar thMVar
+                                    return $! TM.cancel th
 
             let !psd = PerSessionData connClose
                                       twiddleTimeout
@@ -205,7 +207,9 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
                                       remotePort
                                       readEnd
                                       writeEnd
-            restore (session psd) `E.finally` cleanup
+            restore (session psd)
+                `E.finally` cleanup
+                `E.finally` cleanupTimeout
 
     --------------------------------------------------------------------------
     session psd = do
@@ -505,7 +509,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     {-# INLINE runServerHandler #-}
     runServerHandler !hookState !req = {-# SCC "httpSession/runServerHandler" #-} do
-        (_, rsp0) <- serverHandler config sessionData req
+        (req0, rsp0) <- serverHandler config sessionData req
         userHandlerFinishedHook hookState req rsp0
 
         -- check whether we should close the connection after sending the
@@ -529,7 +533,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         bytesSent <- sendResponse req rsp `E.catch`
                      catchUserException hookState "sending-response" req
         dataFinishedHook hookState req rsp
-        logAccess req rsp bytesSent
+        logAccess req0 rsp bytesSent
         return $! not cc'
 
     --------------------------------------------------------------------------

@@ -19,10 +19,10 @@ module Snap.Internal.Http.Server.TimeoutManager
 ------------------------------------------------------------------------------
 import           Control.Exception                (evaluate, finally)
 import qualified Control.Exception                as E
-import           Control.Monad                    (Monad ((>>=), return), mapM_, void)
+import           Control.Monad                    (Monad (return, (>>=)), mapM_, void, when)
 import qualified Data.ByteString.Char8            as S
 import           Data.IORef                       (IORef, newIORef, readIORef, writeIORef)
-import           Prelude                          (Bool, Double, IO, Int, Show (..), const, fromIntegral, max, max, min, null, otherwise, round, ($), ($!), (+), (++), (-), (.), (<=), (==))
+import           Prelude                          (Bool, Double, IO, Int, Show (..), const, fromIntegral, max, null, otherwise, round, ($), ($!), (+), (++), (-), (.), (<=), (==))
 ------------------------------------------------------------------------------
 import           Control.Concurrent               (MVar, newEmptyMVar, putMVar, readMVar, takeMVar, tryPutMVar)
 ------------------------------------------------------------------------------
@@ -172,8 +172,8 @@ modify th f = do
 -- | Cancel a timeout.
 cancel :: TimeoutThread -> IO ()
 cancel h = E.uninterruptibleMask_ $ do
-    T.cancel $ _thread h
     writeIORef (_state h) canceled
+    T.cancel $ _thread h
 {-# INLINE cancel #-}
 
 
@@ -193,40 +193,35 @@ managerThread tm restore = restore loop `finally` cleanup
     --------------------------------------------------------------------------
     loop = do
         now <- getTime
-        nextWakeup <- E.uninterruptibleMask $ \restore' -> do
+        E.uninterruptibleMask $ \restore' -> do
             handles <- atomicModifyIORef' threads (\x -> ([], x))
             if null handles
               then do restore' $ takeMVar morePlease
-                      return now
               else do
-                (handles', next) <- processHandles now handles
+                handles' <- processHandles now handles
                 atomicModifyIORef' threads (\x -> (handles' ++ x, ()))
                     >>= evaluate
-                return $! next
-        now' <- getTime
-        Clock.sleepFor $ max 0 (nextWakeup - now')
+        Clock.sleepFor pollInterval
         loop
 
     --------------------------------------------------------------------------
-    processHandles now handles = go handles [] (now + pollInterval)
+    processHandles now handles = go handles []
       where
-        go [] !kept !nextWakeup = return $! (kept, nextWakeup)
+        go [] !kept = return $! kept
 
-        go (x:xs) !kept !nextWakeup = do
+        go (x:xs) !kept = do
             !state <- readIORef $ _state x
-            (!kept', !next) <-
+            !kept' <-
                 if isCanceled state
                   then do b <- T.isFinished (_thread x)
                           return $! if b
-                                      then (kept, nextWakeup)
-                                      else ((x:kept), nextWakeup)
-                  else do t <- if state <= now
-                                 then do T.cancel (_thread x)
-                                         writeIORef (_state x) canceled
-                                         return nextWakeup
-                                 else return (min nextWakeup state)
-                          return ((x:kept), t)
-            go xs kept' next
+                                      then kept
+                                      else (x:kept)
+                  else do when (state <= now) $ do
+                            T.cancel (_thread x)
+                            writeIORef (_state x) canceled
+                          return (x:kept)
+            go xs kept'
 
     --------------------------------------------------------------------------
     destroyAll xs = do

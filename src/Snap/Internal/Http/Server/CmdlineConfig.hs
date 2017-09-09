@@ -80,6 +80,7 @@ module Snap.Internal.Http.Server.CmdlineConfig
 
 ------------------------------------------------------------------------------
 import           Control.Exception               (SomeException)
+import           Control.Monad                   (when)
 import           Data.Bits                       ((.&.))
 import           Data.ByteString                 (ByteString)
 import qualified Data.ByteString.Char8           as S
@@ -87,6 +88,8 @@ import qualified Data.ByteString.Lazy.Char8      as L
 import qualified Data.CaseInsensitive            as CI
 import           Data.Function                   (on)
 import           Data.List                       (foldl')
+import qualified Data.Map                        as Map
+import           Data.Maybe                      (isJust, isNothing)
 #if !MIN_VERSION_base(4,8,0)
 import           Data.Monoid                     (Monoid (..))
 #endif
@@ -708,7 +711,7 @@ optDescrs defaults =
 defaultErrorHandler :: MonadSnap m => SomeException -> m ()
 defaultErrorHandler e = do
     debug "Snap.Http.Server.CmdlineConfig errorHandler:"
-    req <- getRequest
+    req <- getsRequest blindParams
     let sm = smsg req
     debug $ toString sm
     logError sm
@@ -720,6 +723,10 @@ defaultErrorHandler e = do
                $ emptyResponse
 
   where
+    blindParams r = r { rqPostParams = rmValues $ rqPostParams r
+                      , rqParams     = rmValues $ rqParams r }
+    rmValues = Map.map (const ["..."])
+
     errBody os = Streams.write (Just msgB) os >> return os
 
     toByteString = S.concat . L.toChunks . toLazyByteString

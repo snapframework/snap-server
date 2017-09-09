@@ -20,16 +20,24 @@ module Snap.Http.Server
   ) where
 
 ------------------------------------------------------------------------------
-import           Control.Concurrent                      (killThread, newEmptyMVar, putMVar, readMVar)
+import           Control.Applicative                     ((<$>), (<|>))
+import           Control.Concurrent                      (killThread, newEmptyMVar, newMVar, putMVar, readMVar, withMVar)
 import           Control.Concurrent.Extended             (forkIOLabeledWithUnmaskBs)
-import           Control.Exception                       (finally)
-import qualified Control.Exception.Lifted                as E
-import           Control.Monad                           (forM, when)
+import           Control.Exception                       (SomeException, bracket, catch, finally, mask, mask_)
+import qualified Control.Exception.Lifted                as L
+import           Control.Monad                           (forM, liftM, when)
+import           Control.Monad.Trans                     (MonadIO)
 import           Data.ByteString.Char8                   (ByteString)
 import qualified Data.ByteString.Char8                   as S
-import           Data.Maybe                              (fromJust)
+import qualified Data.ByteString.Lazy.Char8              as L
+import           Data.Maybe                              (catMaybes, fromJust, fromMaybe)
+import qualified Data.Text                               as T
+import qualified Data.Text.Encoding                      as T
 import           Data.Version                            (showVersion)
-import           Prelude                                 (Bool (..), IO, Monad (..), String, flip, id, mapM_, maybe, null, ($), ($!), (++), (.))
+import           Data.Word                               (Word64)
+import           Network.Socket                          (Socket, close)
+import           Prelude                                 (Bool (..), Eq (..), IO, Maybe (..), Monad (..), Show (..), String, const, flip, fst, id, mapM, mapM_, maybe, null, snd, unzip3, zip, ($), ($!), (++), (.))
+import           System.IO                               (hFlush, hPutStrLn, stderr)
 #ifndef PORTABLE
 import           System.Posix.Env
 #endif
