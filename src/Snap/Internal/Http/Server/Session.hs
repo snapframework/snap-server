@@ -194,8 +194,7 @@ httpAcceptLoop serverHandler serverConfig acceptFunc = runLoops
             let twiddleTimeout = unsafePerformIO $ do
                                    th <- readMVar thMVar
                                    return $! TM.modify th
-            let cleanupTimeout = do th <- readMVar thMVar
-                                    return $! TM.cancel th
+            let cleanupTimeout = readMVar thMVar >>= TM.cancel
 
             let !psd = PerSessionData connClose
                                       twiddleTimeout

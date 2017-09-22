@@ -1,3 +1,7 @@
+## 1.0.3.2
+
+Fix a timeout cancellation bug. (#104)
+
 ## 1.0.3.1
 
 Bump for `io-streams` 1.5.
