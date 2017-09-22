@@ -1,3 +1,7 @@
+## 1.0.3.3
+
+Disable sendfile() on OSX (it's causing problems lately).
+
 ## 1.0.3.2
 
 Fix a timeout cancellation bug. (#104)

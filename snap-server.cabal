@@ -1,5 +1,5 @@
 name:           snap-server
-version:        1.0.3.2
+version:        1.0.3.3
 synopsis:       A web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -145,8 +145,15 @@ Library
       System.SendFile,
       System.SendFile.Linux
 
+-- Disabling sendfile() on OSX for now. See
+--
+-- https://github.com/snapframework/snap-core/issues/274 and
+-- https://github.com/snapframework/snap-core/issues/91
+--
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_UNIX_SOCKETS
+     cpp-options: -DHAS_UNIX_SOCKETS
+  -- if os(darwin) && !flag(portable)
+  --   cpp-options: -DOSX -DHAS_UNIX_SOCKETS
 
   if os(freebsd) && !flag(portable)
     cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
@@ -270,14 +277,15 @@ Test-suite testsuite
       System.SendFile.Tests
     c-sources: test/cbits/errno_util.c
 
-
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.Darwin,
-      System.SendFile.Tests
-    c-sources: test/cbits/errno_util.c
+     cpp-options: -DHAS_UNIX_SOCKETS
+--  if os(darwin) && !flag(portable)
+--    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+--    other-modules:
+--      System.SendFile,
+--      System.SendFile.Darwin,
+--      System.SendFile.Tests
+--    c-sources: test/cbits/errno_util.c
 
   if os(freebsd) && !flag(portable)
     cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
@@ -369,10 +377,12 @@ Executable snap-test-pong-server
       System.SendFile.Linux
 
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.Darwin
+     cpp-options: -DHAS_UNIX_SOCKETS
+--  if os(darwin) && !flag(portable)
+--    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+--    other-modules:
+--      System.SendFile,
+--      System.SendFile.Darwin
 
   if os(freebsd) && !flag(portable)
     cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
@@ -465,10 +475,12 @@ Executable snap-test-server
       System.SendFile.Linux
 
   if os(darwin) && !flag(portable)
-    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.Darwin
+     cpp-options: -DHAS_UNIX_SOCKETS
+  -- if os(darwin) && !flag(portable)
+  --   cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+  --   other-modules:
+  --     System.SendFile,
+  --     System.SendFile.Darwin
 
   if os(freebsd) && !flag(portable)
     cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
