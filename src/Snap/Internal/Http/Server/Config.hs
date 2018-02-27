@@ -92,6 +92,9 @@ import           Data.Maybe                 (isJust, isNothing)
 import           Data.Monoid                (Monoid (..))
 #endif
 import           Data.Monoid                (Last (Last, getLast))
+#if !MIN_VERSION_base(4,11,0)
+import           Data.Semigroup             (Semigroup (..))
+#endif
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as T
 #if MIN_VERSION_base(4,7,0)
@@ -286,31 +289,8 @@ emptyConfig = mempty
 
 
 ------------------------------------------------------------------------------
-instance Monoid (Config m a) where
-    mempty = Config
-        { hostname       = Nothing
-        , accessLog      = Nothing
-        , errorLog       = Nothing
-        , locale         = Nothing
-        , port           = Nothing
-        , bind           = Nothing
-        , sslport        = Nothing
-        , sslbind        = Nothing
-        , sslcert        = Nothing
-        , sslchaincert   = Nothing
-        , sslkey         = Nothing
-        , unixsocket     = Nothing
-        , unixaccessmode = Nothing
-        , compression    = Nothing
-        , verbose        = Nothing
-        , errorHandler   = Nothing
-        , defaultTimeout = Nothing
-        , other          = Nothing
-        , proxyType      = Nothing
-        , startupHook    = Nothing
-        }
-
-    a `mappend` b = Config
+instance Semigroup (Config m a) where
+    a <> b = Config
         { hostname       = ov hostname
         , accessLog      = ov accessLog
         , errorLog       = ov errorLog
@@ -335,6 +315,35 @@ instance Monoid (Config m a) where
       where
         ov :: (Config m a -> Maybe b) -> Maybe b
         ov f = getLast $! (mappend `on` (Last . f)) a b
+
+
+instance Monoid (Config m a) where
+    mempty = Config
+        { hostname       = Nothing
+        , accessLog      = Nothing
+        , errorLog       = Nothing
+        , locale         = Nothing
+        , port           = Nothing
+        , bind           = Nothing
+        , sslport        = Nothing
+        , sslbind        = Nothing
+        , sslcert        = Nothing
+        , sslchaincert   = Nothing
+        , sslkey         = Nothing
+        , unixsocket     = Nothing
+        , unixaccessmode = Nothing
+        , compression    = Nothing
+        , verbose        = Nothing
+        , errorHandler   = Nothing
+        , defaultTimeout = Nothing
+        , other          = Nothing
+        , proxyType      = Nothing
+        , startupHook    = Nothing
+        }
+
+#if !MIN_VERSION_base(4,11,0)
+    mappend = (<>)
+#endif
 
 
 ------------------------------------------------------------------------------

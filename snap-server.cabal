@@ -129,6 +129,9 @@ Library
     EmptyDataDecls,
     GeneralizedNewtypeDeriving
 
+  if !impl(ghc >= 8.0)
+    build-depends: semigroups >= 0.16 && < 0.19
+
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
   else
