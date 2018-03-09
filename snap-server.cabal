@@ -94,7 +94,7 @@ Library
 
   build-depends:
     attoparsec                          >= 0.12     && < 0.14,
-    base                                >= 4        && < 5,
+    base                                >= 4        && < 4.12,
     blaze-builder                       >= 0.4      && < 0.5,
     bytestring                          >= 0.9.1    && < 0.11,
     bytestring-builder                  >= 0.10.4   && < 0.11,
@@ -208,7 +208,7 @@ Test-suite testsuite
 
   build-depends:
     attoparsec                          >= 0.12     && < 0.14,
-    base                                >= 4        && < 5,
+    base                                >= 4        && < 4.12,
     base16-bytestring                   >= 0.1      && < 0.2,
     blaze-builder                       >= 0.4      && < 0.5,
     bytestring-builder                  >= 0.10.4   && < 0.11,
