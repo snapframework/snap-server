@@ -1,3 +1,11 @@
+## 1.1.0.0
+
+- Add support for GHC 8.4
+
+- Bump lower bound on base.  GHC 7.4 is no longer supported.
+
+- Make version bounds DRY
+
 ## 1.0.3.3
 
 Disable sendfile() on OSX (it's causing problems lately).
