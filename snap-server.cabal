@@ -211,7 +211,7 @@ Test-suite testsuite
     attoparsec,
     base,
     base16-bytestring                   >= 0.1      && < 0.2,
-    bsb-http-chunked
+    bsb-http-chunked,
     blaze-builder,
     bytestring-builder,
     bytestring,
