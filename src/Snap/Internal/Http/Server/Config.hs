@@ -39,6 +39,9 @@ module Snap.Internal.Http.Server.Config
   , getSSLChainCert
   , getSSLKey
   , getSSLPort
+  , getSSLClientVerify
+  , getSSLClientVerifyOnce
+  , getSSLCACert
   , getVerbose
   , getStartupHook
   , getUnixSocket
@@ -60,6 +63,9 @@ module Snap.Internal.Http.Server.Config
   , setSSLChainCert
   , setSSLKey
   , setSSLPort
+  , setSSLClientVerify
+  , setSSLClientVerifyOnce
+  , setSSLCACert
   , setVerbose
   , setUnixSocket
   , setUnixSocketAccessMode
@@ -212,6 +218,9 @@ data Config m a = Config
     , sslcert        :: Maybe FilePath
     , sslchaincert   :: Maybe Bool
     , sslkey         :: Maybe FilePath
+    , sslclientverify     :: Maybe Bool
+    , sslclientverifyonce :: Maybe Bool
+    , sslcacert      :: Maybe FilePath
     , unixsocket     :: Maybe FilePath
     , unixaccessmode :: Maybe Int
     , compression    :: Maybe Bool
@@ -251,6 +260,9 @@ instance Show (Config m a) where
                      , "sslcert: "        ++ _sslcert
                      , "sslchaincert: "   ++ _sslchaincert
                      , "sslkey: "         ++ _sslkey
+                     , "sslclientverify: "      ++ _sslclientverify
+                     , "sslclientverifyonce: "  ++ _sslclientverifyonce
+                     , "sslcacert: "      ++ _sslcacert
                      , "unixsocket: "     ++ _unixsocket
                      , "unixaccessmode: " ++ _unixaccessmode
                      , "compression: "    ++ _compression
@@ -271,6 +283,9 @@ instance Show (Config m a) where
         _sslcert        = show $ sslcert        c
         _sslchaincert   = show $ sslchaincert   c
         _sslkey         = show $ sslkey         c
+        _sslclientverify       = show $ sslclientverify     c
+        _sslclientverifyonce   = show $ sslclientverifyonce c
+        _sslcacert      = show $ sslcacert      c
         _compression    = show $ compression    c
         _verbose        = show $ verbose        c
         _defaultTimeout = show $ defaultTimeout c
@@ -302,6 +317,9 @@ instance Semigroup (Config m a) where
         , sslcert        = ov sslcert
         , sslchaincert   = ov sslchaincert
         , sslkey         = ov sslkey
+        , sslclientverify     = ov sslclientverify
+        , sslclientverifyonce = ov sslclientverifyonce
+        , sslcacert      = ov sslcacert
         , unixsocket     = ov unixsocket
         , unixaccessmode = ov unixaccessmode
         , compression    = ov compression
@@ -330,6 +348,9 @@ instance Monoid (Config m a) where
         , sslcert        = Nothing
         , sslchaincert   = Nothing
         , sslkey         = Nothing
+        , sslclientverify     = Nothing
+        , sslclientverifyonce = Nothing
+        , sslcacert      = Nothing
         , unixsocket     = Nothing
         , unixaccessmode = Nothing
         , compression    = Nothing
@@ -362,6 +383,9 @@ defaultConfig = mempty
     , sslcert        = Nothing
     , sslkey         = Nothing
     , sslchaincert   = Nothing
+    , sslclientverify     = Just False
+    , sslclientverifyonce = Just False
+    , sslcacert      = Nothing
     , defaultTimeout = Just 60
     }
 
@@ -415,6 +439,18 @@ getSSLChainCert = sslchaincert
 -- | Path to the SSL key file
 getSSLKey         :: Config m a -> Maybe FilePath
 getSSLKey = sslkey
+
+-- | Verify client SSL certificate
+getSSLClientVerify       :: Config m a -> Maybe Bool
+getSSLClientVerify = sslclientverify
+
+-- | Verify client SSL certificate only once
+getSSLClientVerifyOnce   :: Config m a -> Maybe Bool
+getSSLClientVerifyOnce = sslclientverifyonce
+
+-- | Path to the SSL CA certificate file
+getSSLCACert      :: Config m a -> Maybe FilePath
+getSSLCACert = sslcacert
 
 -- | File path to unix socket. Must be absolute path, but allows for symbolic
 -- links.
@@ -496,6 +532,15 @@ setSSLChainCert x c = c { sslchaincert = Just x }
 
 setSSLKey         :: FilePath                -> Config m a -> Config m a
 setSSLKey x c = c { sslkey = Just x }
+
+setSSLClientVerify      :: Bool              -> Config m a -> Config m a
+setSSLClientVerify x c = c { sslclientverify = Just x }
+
+setSSLClientVerifyOnce  :: Bool              -> Config m a -> Config m a
+setSSLClientVerifyOnce x c = c { sslclientverifyonce = Just x }
+
+setSSLCACert      :: FilePath                -> Config m a -> Config m a
+setSSLCACert x c = c { sslcacert = Just x }
 
 setUnixSocket     :: FilePath                -> Config m a -> Config m a
 setUnixSocket x c = c { unixsocket = Just x }
@@ -621,6 +666,16 @@ optDescrs defaults =
     , Option [] ["ssl-key"]
              (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey
+    , Option [] ["ssl-client-verify"]
+             (NoArg $ Just $ setConfig setSSLClientVerify True)
+             $ "server is required to verify client certificate" ++ defaultB getSSLClientVerify "verify client certificate" "do not verify client certificate"
+    , Option [] ["ssl-client-verify-once"]
+             (NoArg $ Just $ setConfig setSSLClientVerifyOnce True)
+             $ concat ["server is required to verify client certificate\n",
+                       "just once per open connection"] ++ defaultB getSSLClientVerifyOnce "verify client certificate once" "do not verify client certificate"
+    , Option "" ["ssl-ca-cert"]
+             (ReqArg (\s -> Just $ mempty { sslcacert = Just s}) "PATH")
+             $ "path to ssl CA certificate in PEM format" ++ defaultO sslcacert
     , Option "" ["access-log"]
              (ReqArg (Just . setConfig setAccessLog . ConfigFileLog) "PATH")
              $ "access log" ++ defaultC getAccessLog

@@ -98,14 +98,20 @@ testTLSKeyMismatch = testCase "session/tls-key-mismatch" $ do
                                     (fromIntegral N.aNY_PORT)
                                     "test/cert.pem"
                                     False
-                                    "test/bad_key.pem")
+                                    "test/bad_key.pem"
+                                    False
+                                    False
+                                    "")
                               (N.close . fst)
                               (const $ return ())
     expectException $ bracket (TLS.bindHttps "127.0.0.1"
                                     (fromIntegral N.aNY_PORT)
                                     "test/cert.pem"
                                     True
-                                    "test/bad_key.pem")
+                                    "test/bad_key.pem"
+                                    False
+                                    False
+                                    "")
                               (N.close . fst)
                               (const $ return ())
 #else

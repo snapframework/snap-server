@@ -215,11 +215,14 @@ listeners conf = TLS.withTLS $ do
         cert <- getSSLCert conf
         chainCert <- getSSLChainCert conf
         key  <- getSSLKey conf
+        let verify = fromMaybe False (getSSLClientVerify conf)
+        let verify_once = fromMaybe False (getSSLClientVerifyOnce conf)
+        let ca_cert = fromMaybe "" (getSSLCACert conf)
         return (S.concat [ "https://"
                          , b
                          , ":"
                          , bshow p ],
-                do (sock, ctx) <- TLS.bindHttps b p cert chainCert key
+                do (sock, ctx) <- TLS.bindHttps b p cert chainCert key verify verify_once ca_cert
                    return (sock, TLS.httpsAcceptFunc sock ctx)
                 )
     httpListener = do
