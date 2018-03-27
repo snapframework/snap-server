@@ -244,8 +244,7 @@ Test-suite testsuite
     parallel                            >= 3        && < 4,
     test-framework                      >= 0.8.0.3  && < 0.9,
     test-framework-hunit                >= 0.2.7    && < 0.4,
-    test-framework-quickcheck2          >= 0.2.12.1 && < 0.4,
-    Cabal
+    test-framework-quickcheck2          >= 0.2.12.1 && < 0.4
 
   other-extensions:
     BangPatterns,
