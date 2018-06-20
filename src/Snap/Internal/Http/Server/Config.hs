@@ -768,7 +768,9 @@ commandLineConfig defaults = extendedCommandLineConfig (optDescrs defaults) f de
 
 extendedCommandLineConfig :: MonadSnap m
                           => [OptDescr (Maybe (Config m a))]
-                             -- ^ User options.
+                             -- ^ Full list of command line options (combine
+                             -- yours with 'optDescrs' to extend Snap's default
+                             -- set of options)
                           -> (a -> a -> a)
                              -- ^ State for multiple invoked user command-line
                              -- options will be combined using this function.
