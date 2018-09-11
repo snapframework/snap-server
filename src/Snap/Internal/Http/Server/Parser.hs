@@ -26,41 +26,41 @@ module Snap.Internal.Http.Server.Parser
 
 ------------------------------------------------------------------------------
 #if !MIN_VERSION_base(4,8,0)
-import           Control.Applicative              ((<$>))
+import           Control.Applicative                  ((<$>))
 #endif
-import           Control.Exception                (Exception, throwIO)
-import qualified Control.Exception                as E
-import           Control.Monad                    (void, when)
-import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, skipWhile, take)
-import qualified Data.ByteString.Char8            as S
-import           Data.ByteString.Internal         (ByteString (..), c2w, memchr, w2c)
+import           Control.Exception                    (Exception, throwIO)
+import qualified Control.Exception                    as E
+import           Control.Monad                        (void, when)
+import           Data.Attoparsec.ByteString.Char8     (Parser, hexadecimal, skipWhile, take)
+import qualified Data.ByteString.Char8                as S
+import           Data.ByteString.Internal             (ByteString (..), c2w, memchr, w2c)
 #if MIN_VERSION_bytestring(0, 10, 6)
-import           Data.ByteString.Internal         (accursedUnutterablePerformIO)
+import           Data.ByteString.Internal             (accursedUnutterablePerformIO)
 #else
-import           Data.ByteString.Internal         (inlinePerformIO)
+import           Data.ByteString.Internal             (inlinePerformIO)
 #endif
-import qualified Data.ByteString.Unsafe           as S
+import qualified Data.ByteString.Unsafe               as S
 #if !MIN_VERSION_io_streams(1,2,0)
-import           Data.IORef                       (newIORef, readIORef, writeIORef)
+import           Data.IORef                           (newIORef, readIORef, writeIORef)
 #endif
-import           Data.List                        (sort)
-import           Data.Typeable                    (Typeable)
-import qualified Data.Vector                      as V
-import qualified Data.Vector.Mutable              as MV
-import           Foreign.ForeignPtr               (withForeignPtr)
-import           Foreign.Ptr                      (minusPtr, nullPtr, plusPtr)
-import           Prelude                          hiding (take)
+import           Data.List                            (sort)
+import           Data.Typeable                        (Typeable)
+import qualified Data.Vector                          as V
+import qualified Data.Vector.Mutable                  as MV
+import           Foreign.ForeignPtr                   (withForeignPtr)
+import           Foreign.Ptr                          (minusPtr, nullPtr, plusPtr)
+import           Prelude                              hiding (take)
 ------------------------------------------------------------------------------
-import           Blaze.ByteString.Builder.HTTP    (chunkedTransferEncoding, chunkedTransferTerminator)
-import           Data.ByteString.Builder          (Builder)
-import           System.IO.Streams                (InputStream, OutputStream)
-import qualified System.IO.Streams                as Streams
-import           System.IO.Streams.Attoparsec     (parseFromStream)
+import           Data.ByteString.Builder.HTTP.Chunked (chunkedTransferEncoding, chunkedTransferTerminator)
+import           Data.ByteString.Builder              (Builder)
+import           System.IO.Streams                    (InputStream, OutputStream)
+import qualified System.IO.Streams                    as Streams
+import           System.IO.Streams.Attoparsec         (parseFromStream)
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Types         (Method (..))
-import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat, (<?>))
-import           Snap.Types.Headers               (Headers)
-import qualified Snap.Types.Headers               as H
+import           Snap.Internal.Http.Types             (Method (..))
+import           Snap.Internal.Parsing                (crlf, parseCookie, parseUrlEncoded, unsafeFromNat, (<?>))
+import           Snap.Types.Headers                   (Headers)
+import qualified Snap.Types.Headers                   as H
 
 
 ------------------------------------------------------------------------------
