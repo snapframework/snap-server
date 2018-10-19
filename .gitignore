@@ -25,3 +25,4 @@ cabal.sandbox.config
 result
 test/*.log
 *.log
+.ghc.environment.*
