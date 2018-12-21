@@ -63,6 +63,7 @@ install:
  - HADDOCK=${HADDOCK-true}
  - INSTALLED=${INSTALLED-true}
  - travis_retry cabal update -v
+ - cabal outdated --exit-code
  - sed -i.bak 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
  - rm -fv cabal.project.local
  - "echo 'packages: .' > cabal.project"
