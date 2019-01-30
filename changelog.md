@@ -1,3 +1,6 @@
+## 1.1.1.0
+- Allow `network` 3.0.
+
 ## 1.1.0.0
 
 - Add support for GHC 8.4

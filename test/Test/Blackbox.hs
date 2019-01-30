@@ -127,9 +127,15 @@ startTestSocketServer serverType = do
     SSLTest    -> startServer emptyServerConfig bindSSL fst
                               (uncurry TLS.httpsAcceptFunc)
   where
+#if MIN_VERSION_network(2,7,0)
+    anyport = N.defaultPort
+#else
+    anyport = N.aNY_PORT
+#endif
+
     bindSSL = do
         sockCtx <- TLS.bindHttps "127.0.0.1"
-                                 (fromIntegral N.aNY_PORT)
+                                 (fromIntegral anyport)
                                  "test/cert.pem"
                                  False
                                  "test/key.pem"
@@ -141,7 +147,7 @@ startTestSocketServer serverType = do
 #endif
         return sockCtx
 
-    bindSock = Sock.bindSocket "127.0.0.1" (fromIntegral N.aNY_PORT)
+    bindSock = Sock.bindSocket "127.0.0.1" (fromIntegral anyport)
 
     logAccess !_ !_ !_             = return ()
     logError !_                    = return ()
@@ -485,6 +491,12 @@ testHaProxyLocal :: Int -> Test
 testHaProxyLocal port = testCase "blackbox/haProxyLocal" runIt
 
   where
+#if MIN_VERSION_network(2,7,0)
+    anyport = N.defaultPort
+#else
+    anyport = N.aNY_PORT
+#endif
+
     remoteAddrServer :: N.Socket
                      -> MVar (Maybe String)
                      -> (forall a . IO a -> IO a)
@@ -503,7 +515,7 @@ testHaProxyLocal port = testCase "blackbox/haProxyLocal" runIt
     determineSourceInterfaceAddr =
         timeoutIn 10 $
         bracket
-          (Sock.bindSocket "127.0.0.1" (fromIntegral N.aNY_PORT))
+          (Sock.bindSocket "127.0.0.1" (fromIntegral anyport))
           (eatException . N.close)
           (\ssock -> do
              mv      <- newEmptyMVar

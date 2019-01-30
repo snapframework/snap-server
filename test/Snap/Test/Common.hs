@@ -21,7 +21,8 @@ import qualified Data.ByteString.Char8       as S
 import qualified Data.ByteString.Lazy        as L
 import           Data.Monoid                 (Monoid (mappend, mempty))
 import           Data.Typeable               (Typeable, typeOf)
-import           Network.Socket              (AddrInfo (addrAddress, addrFlags), AddrInfoFlag (AI_NUMERICHOST), Family (AF_INET), Socket, SocketType (Stream), connect, defaultHints, defaultProtocol, getAddrInfo, sClose, socket)
+import           Network.Socket              (Socket)
+import qualified Network.Socket              as N
 import           System.Timeout              (timeout)
 import           Test.HUnit                  (assertFailure)
 import           Test.QuickCheck             (Arbitrary (arbitrary), choose)
@@ -71,18 +72,23 @@ expectExceptionBeforeTimeout act nsecs = do
 ------------------------------------------------------------------------------
 withSock :: Int -> (Socket -> IO a) -> IO a
 withSock port go = do
-    addr <- liftM (addrAddress . Prelude.head) $
-            getAddrInfo (Just myHints)
-                        (Just "127.0.0.1")
-                        (Just $ show port)
+    addr <- liftM (N.addrAddress . Prelude.head) $
+            N.getAddrInfo (Just myHints)
+                          (Just "127.0.0.1")
+                          (Just $ show port)
 
-    sock <- socket AF_INET Stream defaultProtocol
-    connect sock addr
+    sock <- N.socket N.AF_INET N.Stream N.defaultProtocol
+    N.connect sock addr
 
-    go sock `finally` sClose sock
+    go sock `finally` close sock
 
   where
-    myHints = defaultHints { addrFlags = [ AI_NUMERICHOST ] }
+#if MIN_VERSION_network(2,7,0)
+    close = N.close
+#else
+    close = N.sClose
+#endif
+    myHints = N.defaultHints { N.addrFlags = [ N.AI_NUMERICHOST ] }
 
 
 ------------------------------------------------------------------------------

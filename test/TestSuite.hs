@@ -7,7 +7,9 @@ import           Control.Concurrent                             (killThread, tak
 import qualified Control.Exception                              as E
 import           Control.Monad                                  (liftM)
 import           Data.Maybe                                     (maybeToList)
+#if !MIN_VERSION_network(2,7,0)
 import           Network                                        (withSocketsDo)
+#endif
 import           System.Environment
 import           Test.Framework                                 (defaultMain, testGroup)
 ------------------------------------------------------------------------------
@@ -24,6 +26,10 @@ import qualified System.SendFile.Tests                          as SendFile
 #endif
 import qualified Test.Blackbox
 
+#if MIN_VERSION_network(2,7,0)
+withSocketsDo :: IO a -> IO a
+withSocketsDo = id
+#endif
 
 ------------------------------------------------------------------------------
 main :: IO ()

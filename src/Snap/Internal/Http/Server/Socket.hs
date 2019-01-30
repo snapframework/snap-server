@@ -18,7 +18,7 @@ import           Control.Exception                 (bracketOnError, finally, thr
 import           Control.Monad                     (when)
 import           Data.Bits                         (complement, (.&.))
 import           Data.ByteString.Char8             (ByteString)
-import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, listen, setSocketOption, socket)
+import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, setSocketOption, socket)
 import qualified Network.Socket                    as N
 #ifdef HAS_SENDFILE
 import           Network.Socket                    (fdSocket)
@@ -48,7 +48,13 @@ import qualified System.IO.Streams.Network.HAProxy as HA
 
 ------------------------------------------------------------------------------
 bindSocket :: ByteString -> Int -> IO Socket
-bindSocket = bindSocketImpl setSocketOption N.bindSocket listen
+bindSocket = bindSocketImpl setSocketOption bind N.listen
+  where
+#if MIN_VERSION_network(2,7,0)
+    bind = N.bind
+#else
+    bind = N.bindSocket
+#endif
 {-# INLINE bindSocket #-}
 
 
@@ -79,13 +85,18 @@ bindUnixSocket mode path = do
    bracketOnError (socket N.AF_UNIX N.Stream 0) N.close $ \sock -> do
       E.catch (removeLink path) $ \e -> when (not $ isDoesNotExistError e) $ throwIO e
       case mode of
-         Nothing -> N.bindSocket sock (N.SockAddrUnix path)
+         Nothing -> bind sock (N.SockAddrUnix path)
          Just mode' -> bracket (setFileCreationMask $ modeToMask mode')
                               setFileCreationMask
-                              (const $ N.bindSocket sock (N.SockAddrUnix path))
+                              (const $ bind sock (N.SockAddrUnix path))
       N.listen sock 150
       return $! sock
    where
+#if MIN_VERSION_network(2,7,0)
+     bind = N.bind
+#else
+     bind = N.bindSocket
+#endif
      modeToMask p = accessModes .&. complement (fromIntegral p)
 #else
 bindUnixSocket _ path = throwIO (AddressNotSupportedException $ "unix:" ++ path)
@@ -162,11 +173,17 @@ sendFileFunc :: Socket -> SendFileHandler
 #ifdef HAS_SENDFILE
 sendFileFunc sock !_ builder fPath offset nbytes = bracket acquire closeFd go
   where
-    sockFd    = Fd (fdSocket sock)
     acquire   = openFd fPath ReadOnly Nothing defaultFileFlags
-    go fileFd = do sendHeaders builder sockFd
+#if MIN_VERSION_network(3,0,0)
+    go fileFd = do sockFd <- Fd <$> fdSocket sock
+                   sendHeaders builder sockFd
                    sendFile sockFd fileFd offset nbytes
-
+#else
+    acquire   = openFd fPath ReadOnly Nothing defaultFileFlags
+    go fileFd = do let sockFd = Fd $ fdSocket sock
+                   sendHeaders builder sockFd
+                   sendFile sockFd fileFd offset nbytes
+#endif
 
 #else
 sendFileFunc sock buffer builder fPath offset nbytes =

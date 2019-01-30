@@ -25,7 +25,7 @@ import           Data.Maybe            (fromMaybe)
 import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as T
 import           Data.Typeable         (Typeable)
-import           Network.Socket        (AddrInfo (addrAddress, addrFamily, addrSocketType, addrFlags), AddrInfoFlag (AI_NUMERICSERV), Family (AF_INET, AF_INET6), HostName, NameInfoFlag (NI_NUMERICHOST), ServiceName, SockAddr (SockAddrInet, SockAddrInet6, SockAddrUnix), SocketType (Stream), defaultHints, getAddrInfo, getNameInfo, iN6ADDR_ANY, iNADDR_ANY)
+import           Network.Socket        (AddrInfo (addrAddress, addrFamily, addrFlags, addrSocketType), AddrInfoFlag (AI_NUMERICSERV, AI_PASSIVE), Family (AF_INET, AF_INET6), HostName, NameInfoFlag (NI_NUMERICHOST), ServiceName, SockAddr (SockAddrInet, SockAddrInet6, SockAddrUnix), SocketType (Stream), defaultHints, getAddrInfo, getNameInfo)
 
 
 ------------------------------------------------------------------------------
@@ -87,22 +87,25 @@ getSockAddrImpl
      -> Int -> ByteString -> IO (Family, SockAddr)
 getSockAddrImpl !_getAddrInfo p s =
     case () of
-      !_ | s == "*" -> return $! ( AF_INET
-                                 , SockAddrInet (fromIntegral p) iNADDR_ANY
-                                 )
-         | s == "::" -> return $! ( AF_INET6
-                                  , SockAddrInet6 (fromIntegral p) 0 iN6ADDR_ANY 0
-                                  )
-         | otherwise -> do ais <- _getAddrInfo (Just hints) (Just $ S.unpack s)
-                                               (Just $ show p)
-                           if null ais
-                             then throwIO $ AddressNotSupportedException $ show s
-                             else do
-                               let ai = head ais
-                               let fm = addrFamily ai
-                               let sa = addrAddress ai
-                               return (fm, sa)
+      !_ | s == "*" -> getAddrs isIPv4 (Just wildhints) Nothing (Just $ show p)
+         | s == "::" -> getAddrs isIPv6 (Just wildhints) Nothing (Just $ show p)
+         | otherwise -> getAddrs (const True) (Just hints) (Just $ S.unpack s) (Just $ show p)
+
   where
+    isIPv4 ai = addrFamily ai == AF_INET
+    isIPv6 ai = addrFamily ai == AF_INET6
+
+    getAddrs flt a b c = do
+        ais <- filter flt <$> _getAddrInfo a b c
+        if null ais
+          then throwIO $ AddressNotSupportedException $ show s
+          else do
+            let ai = head ais
+            let fm = addrFamily ai
+            let sa = addrAddress ai
+            return (fm, sa)
+
+    wildhints = hints { addrFlags = [AI_NUMERICSERV, AI_PASSIVE] }
     hints = defaultHints { addrFlags = [AI_NUMERICSERV]
                          , addrSocketType = Stream
                          }

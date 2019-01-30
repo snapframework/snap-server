@@ -102,7 +102,7 @@ import           Data.Typeable              (Typeable)
 #else
 import           Data.Typeable              (TyCon, Typeable, Typeable1 (..), mkTyCon3, mkTyConApp)
 #endif
-import           Network                    (Socket)
+import           Network.Socket             (Socket)
 import           Numeric                    (readOct, showOct)
 #if !MIN_VERSION_base(4,6,0)
 import           Prelude                    hiding (catch)
