@@ -108,7 +108,11 @@ Library
     io-streams-haproxy                  >= 1.0      && < 1.1,
     lifted-base                         >= 0.1      && < 0.3,
     mtl                                 >= 2.0      && < 2.3,
-    network                             >= 2.3      && < 3.1,
+
+    -- Commit e8a7c2639477c9eebbced571e603b2c0f40db5cd doesn't actually work
+    -- with network < 3.  For more information see:
+    -- https://github.com/commercialhaskell/stackage/issues/4347
+    network                             >= 3.0      && < 3.1,
     old-locale                          >= 1.0      && < 1.1,
     snap-core                           >= 1.0      && < 1.1,
     text                                >= 0.11     && < 1.3,
