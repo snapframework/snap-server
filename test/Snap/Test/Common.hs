@@ -22,7 +22,7 @@ import qualified Data.ByteString.Lazy        as L
 import           Data.Monoid                 (Monoid (mappend, mempty))
 import           Data.Typeable               (Typeable, typeOf)
 import           Network.Socket              (Socket)
-import qualified Network.Socket              as N
+import qualified Network.Socket              as N hiding (recv)
 import           System.Timeout              (timeout)
 import           Test.HUnit                  (assertFailure)
 import           Test.QuickCheck             (Arbitrary (arbitrary), choose)
