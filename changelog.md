@@ -1,3 +1,6 @@
+## 1.1.1.1
+- Fix for older versions of `network` (sorry about that)
+
 ## 1.1.1.0
 - Allow `network` 3.0.
 
