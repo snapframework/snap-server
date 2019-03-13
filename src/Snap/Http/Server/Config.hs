@@ -32,6 +32,7 @@ module Snap.Http.Server.Config
   , getSSLKey
   , getSSLChainCert
   , getSSLPort
+  , getSSLCiphers
   , getVerbose
   , getStartupHook
   , getUnixSocket
@@ -53,6 +54,7 @@ module Snap.Http.Server.Config
   , setSSLKey
   , setSSLChainCert
   , setSSLPort
+  , setSSLCiphers
   , setVerbose
   , setUnixSocket
   , setUnixSocketAccessMode

@@ -219,7 +219,7 @@ listeners conf = TLS.withTLS $ do
                          , b
                          , ":"
                          , bshow p ],
-                do (sock, ctx) <- TLS.bindHttps b p cert chainCert key
+                do (sock, ctx) <- TLS.bindHttps b p cert chainCert key (getSSLCiphers conf)
                    return (sock, TLS.httpsAcceptFunc sock ctx)
                 )
     httpListener = do

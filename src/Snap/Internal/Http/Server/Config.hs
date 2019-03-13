@@ -39,6 +39,7 @@ module Snap.Internal.Http.Server.Config
   , getSSLChainCert
   , getSSLKey
   , getSSLPort
+  , getSSLCiphers
   , getVerbose
   , getStartupHook
   , getUnixSocket
@@ -60,6 +61,7 @@ module Snap.Internal.Http.Server.Config
   , setSSLChainCert
   , setSSLKey
   , setSSLPort
+  , setSSLCiphers
   , setVerbose
   , setUnixSocket
   , setUnixSocketAccessMode
@@ -212,6 +214,7 @@ data Config m a = Config
     , sslcert        :: Maybe FilePath
     , sslchaincert   :: Maybe Bool
     , sslkey         :: Maybe FilePath
+    , sslCiphers     :: Maybe String
     , unixsocket     :: Maybe FilePath
     , unixaccessmode :: Maybe Int
     , compression    :: Maybe Bool
@@ -251,6 +254,7 @@ instance Show (Config m a) where
                      , "sslcert: "        ++ _sslcert
                      , "sslchaincert: "   ++ _sslchaincert
                      , "sslkey: "         ++ _sslkey
+                     , "sslCiphers: "     ++ _sslCiphers
                      , "unixsocket: "     ++ _unixsocket
                      , "unixaccessmode: " ++ _unixaccessmode
                      , "compression: "    ++ _compression
@@ -271,6 +275,7 @@ instance Show (Config m a) where
         _sslcert        = show $ sslcert        c
         _sslchaincert   = show $ sslchaincert   c
         _sslkey         = show $ sslkey         c
+        _sslCiphers     = show $ sslCiphers     c
         _compression    = show $ compression    c
         _verbose        = show $ verbose        c
         _defaultTimeout = show $ defaultTimeout c
@@ -302,6 +307,7 @@ instance Semigroup (Config m a) where
         , sslcert        = ov sslcert
         , sslchaincert   = ov sslchaincert
         , sslkey         = ov sslkey
+        , sslCiphers     = ov sslCiphers
         , unixsocket     = ov unixsocket
         , unixaccessmode = ov unixaccessmode
         , compression    = ov compression
@@ -330,6 +336,7 @@ instance Monoid (Config m a) where
         , sslcert        = Nothing
         , sslchaincert   = Nothing
         , sslkey         = Nothing
+        , sslCiphers     = Nothing
         , unixsocket     = Nothing
         , unixaccessmode = Nothing
         , compression    = Nothing
@@ -361,6 +368,7 @@ defaultConfig = mempty
     , sslbind        = Nothing
     , sslcert        = Nothing
     , sslkey         = Nothing
+    , sslCiphers     = Nothing
     , sslchaincert   = Nothing
     , defaultTimeout = Just 60
     }
@@ -415,6 +423,10 @@ getSSLChainCert = sslchaincert
 -- | Path to the SSL key file
 getSSLKey         :: Config m a -> Maybe FilePath
 getSSLKey = sslkey
+
+-- | The list of ciphers, as understood by OPENSSL
+getSSLCiphers     :: Config m a -> Maybe String
+getSSLCiphers = sslCiphers
 
 -- | File path to unix socket. Must be absolute path, but allows for symbolic
 -- links.
@@ -497,6 +509,9 @@ setSSLChainCert x c = c { sslchaincert = Just x }
 setSSLKey         :: FilePath                -> Config m a -> Config m a
 setSSLKey x c = c { sslkey = Just x }
 
+setSSLCiphers     :: String                  -> Config m a -> Config m a
+setSSLCiphers x c = c { sslCiphers = Just x }
+
 setUnixSocket     :: FilePath                -> Config m a -> Config m a
 setUnixSocket x c = c { unixsocket = Just x }
 
@@ -566,6 +581,7 @@ completeConfig config = do
     sslVals = map ($ cfg) [ isJust . getSSLPort
                           , isJust . getSSLBind
                           , isJust . getSSLKey
+                          , isJust . getSSLCiphers
                           , isJust . getSSLCert ]
 
     sslValid   = and sslVals
@@ -621,6 +637,9 @@ optDescrs defaults =
     , Option [] ["ssl-key"]
              (ReqArg (\s -> Just $ mempty { sslkey = Just s}) "PATH")
              $ "path to ssl private key in PEM format" ++ defaultO sslkey
+    , Option [] ["ssl-ciphers"]
+             (ReqArg (\s -> Just $ mempty { sslCiphers = Just s}) "CIPHER-LIST")
+             $ "list of ciphers as understood by openssl" ++ defaultO sslCiphers
     , Option "" ["access-log"]
              (ReqArg (Just . setConfig setAccessLog . ConfigFileLog) "PATH")
              $ "access log" ++ defaultC getAccessLog
