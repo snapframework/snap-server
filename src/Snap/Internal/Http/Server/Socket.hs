@@ -21,7 +21,11 @@ import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, setSocketOption, socket)
 import qualified Network.Socket                    as N
 #ifdef HAS_SENDFILE
+#if MIN_VERSION_network(3,1,1)
+import           Network.Socket.Types              (unsafeFdSocket)
+#else
 import           Network.Socket                    (fdSocket)
+#endif
 import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
 import           System.Posix.Types                (Fd (..))
 import           System.SendFile                   (sendFile, sendHeaders)
@@ -174,16 +178,16 @@ sendFileFunc :: Socket -> SendFileHandler
 sendFileFunc sock !_ builder fPath offset nbytes = bracket acquire closeFd go
   where
     acquire   = openFd fPath ReadOnly Nothing defaultFileFlags
-#if MIN_VERSION_network(3,0,0)
-    go fileFd = do sockFd <- Fd `fmap` fdSocket sock
-                   sendHeaders builder sockFd
-                   sendFile sockFd fileFd offset nbytes
+    go fileFd = do 
+#if MIN_VERSION_network(3,1,1)
+                   sockFd <- Fd `fmap` unsafeFdSocket sock
+#elif MIN_VERSION_network(3,0,0)
+                   sockFd <- Fd `fmap` fdSocket sock
 #else
-    go fileFd = do let sockFd = Fd $ fdSocket sock
+                   let sockFd = Fd $ fdSocket sock
+#endif
                    sendHeaders builder sockFd
                    sendFile sockFd fileFd offset nbytes
-#endif
-
 #else
 sendFileFunc sock buffer builder fPath offset nbytes =
     Streams.unsafeWithFileAsInputStartingAt (fromIntegral offset) fPath $

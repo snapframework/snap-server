@@ -105,7 +105,11 @@ bindHttps bindAddress bindPort cert chainCert key =
         (Socket.close . fst)
         $ \(sock, addr) -> do
              Socket.setSocketOption sock Socket.ReuseAddr 1
+#if MIN_VERSION_network(2,7,0)
+             Socket.bind sock addr
+#else
              Socket.bindSocket sock addr
+#endif
              Socket.listen sock 150
 
              ctx <- SSL.context
