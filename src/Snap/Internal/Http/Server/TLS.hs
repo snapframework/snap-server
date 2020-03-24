@@ -25,7 +25,7 @@ import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
-import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, flip, fromIntegral, fst, not, ($), ($!), (.))
+import           Prelude                           (Bool, FilePath, IO, Int, String, Maybe (..), Monad (..), Show, flip, fromIntegral, fst, not, ($), ($!), (.))
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Socket  (acceptAndInitialize)
 import qualified System.IO.Streams                 as Streams
@@ -33,7 +33,7 @@ import qualified System.IO.Streams.SSL             as SStreams
 
 #else
 import           Control.Exception                 (Exception, throwIO)
-import           Prelude                           (Bool, FilePath, IO, Int, Show, id, ($))
+import           Prelude                           (Bool, FilePath, IO, Int, String, Maybe (..), Show, id, ($))
 #endif
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Server.Types   (AcceptFunc (..), SendFileHandler)
@@ -67,9 +67,9 @@ barf = throwIO sslNotSupportedException
 
 
 ------------------------------------------------------------------------------
-bindHttps :: ByteString -> Int -> FilePath -> Bool -> FilePath
+bindHttps :: ByteString -> Int -> FilePath -> Bool -> FilePath -> Maybe String
           -> IO (Socket, SSLContext)
-bindHttps _ _ _ _ _ = barf
+bindHttps _ _ _ _ _ _ = barf
 
 
 ------------------------------------------------------------------------------
@@ -94,8 +94,9 @@ bindHttps :: ByteString
           -> FilePath
           -> Bool
           -> FilePath
+          -> Maybe String
           -> IO (Socket, SSLContext)
-bindHttps bindAddress bindPort cert chainCert key =
+bindHttps bindAddress bindPort cert chainCert key maybeCiphers =
     withTLS $
     bracketOnError
         (do (family, addr) <- getSockAddr bindPort bindAddress
@@ -105,11 +106,16 @@ bindHttps bindAddress bindPort cert chainCert key =
         (Socket.close . fst)
         $ \(sock, addr) -> do
              Socket.setSocketOption sock Socket.ReuseAddr 1
-             Socket.bindSocket sock addr
+             Socket.bind sock addr
              Socket.listen sock 150
 
              ctx <- SSL.context
              SSL.contextSetPrivateKeyFile ctx key
+             case maybeCiphers of
+                 Just ciphers -> 
+                    SSL.contextSetCiphers ctx ciphers
+                 Nothing ->
+                    SSL.contextSetDefaultCiphers ctx
              if chainCert
                then SSL.contextSetCertificateChainFile ctx cert
                else SSL.contextSetCertificateFile ctx cert

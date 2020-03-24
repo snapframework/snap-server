@@ -112,9 +112,9 @@ testTLSKeyMismatch = testCase "session/tls-key-mismatch" $ do
 testCoverTLSStubs :: Test
 testCoverTLSStubs = testCase "session/tls-stubs" $ do
     expectException $ TLS.bindHttps "127.0.0.1" 9999
-                        "test/cert.pem" False "test/key.pem"
+                        "test/cert.pem" False "test/key.pem" Nothing
     expectException $ TLS.bindHttps "127.0.0.1" 9999
-                        "test/cert.pem" True "test/key.pem"
+                        "test/cert.pem" True "test/key.pem" Nothing
     let (AcceptFunc afunc) = TLS.httpsAcceptFunc undefined undefined
     expectException $ mask $ \restore -> afunc restore
     let u = undefined

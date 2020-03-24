@@ -139,6 +139,7 @@ startTestSocketServer serverType = do
                                  "test/cert.pem"
                                  False
                                  "test/key.pem"
+                                 Nothing
 #ifdef OPENSSL
         -- Set client code not to verify
         HTTP.modifyContextSSL $ \ctx -> do
