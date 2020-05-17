@@ -21,7 +21,6 @@ homepage:       http://snapframework.com/
 bug-reports:    https://github.com/snapframework/snap-server/issues
 category:       Web, Snap, IO-Streams
 
-
 extra-source-files:
   CONTRIBUTORS,
   LICENSE,
