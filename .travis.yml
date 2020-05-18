@@ -102,6 +102,7 @@ install:
     echo "  ghc-options: $GHCJOBS +RTS -M6G -RTS" >> $CABALHOME/config
   - cat $CABALHOME/config
   - rm -fv cabal.project cabal.project.local cabal.project.freeze
+  - echo "Running 'cabal v2-update -v'"
   - travis_retry ${CABAL} v2-update -v
   # Generate cabal.project
   - rm -rf cabal.project cabal.project.local cabal.project.freeze
