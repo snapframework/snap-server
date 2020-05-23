@@ -9,7 +9,6 @@ import           Control.Monad                        (liftM)
 import           Control.Parallel.Strategies          (rdeepseq, using)
 import qualified Data.ByteString.Char8                as S
 import qualified Data.ByteString.Lazy.Char8           as L
-import           Data.Int                             (Int64)
 import           Data.List                            (sort)
 import qualified Data.Map                             as Map
 import           Data.Monoid                          (mconcat)
@@ -37,7 +36,6 @@ tests :: [Test]
 tests = [ testShow
         , testCookie
         , testChunked
-        , testChunkDoS
         , testNull
         , testPartial
         , testParseError
@@ -125,22 +123,6 @@ testWriteChunkedTransferEncoding = testCase "parser/writeChunked" $ do
     Streams.write Nothing os'
     s <- liftM (toLazyByteString . mconcat) getList
     assertEqual "chunked" "002\r\nok\r\n0\r\n\r\n" s
-
-
-------------------------------------------------------------------------------
--- | ensure that running 'readChunkedTransferEncoding' against
--- 'transferEncodingChunked' returns the original string
-testChunkDoS :: Test
-testChunkDoS = testCase "parser/chunkedTransferEncoding/DoS" $ do
-    let n = ((2::Int64)^(18 :: Int64) + 10) :: Int64
-    let s = S.concat $ L.toChunks $ L.take n $ L.fromChunks $
-            cycle ["OKOKOKOKOKOKOKOK"]
-    let ch = transferEncodingChunked $ L.fromChunks [s]
-
-    expectException (Streams.fromList (L.toChunks ch) >>=
-                     readChunkedTransferEncoding >>=
-                     Streams.toList)
-
 
 ------------------------------------------------------------------------------
 testCookie :: Test
