@@ -15,7 +15,7 @@ import qualified Data.ByteString.Lazy.Char8    as L
 import           Data.List                     (sort)
 import qualified Data.Map                      as Map
 import           Data.Maybe                    (fromMaybe)
-import           Data.Monoid                   (Monoid (mappend, mconcat, mempty))
+import           Data.Monoid                   ()
 ------------------------------------------------------------------------------
 import           Snap.Core                     (Request (rqParams, rqURI), Snap, getParam, getRequest, logError, modifyResponse, redirect, route, rqClientAddr, rqClientPort, setContentLength, setContentType, setHeader, setResponseBody, setResponseCode, setTimeout, transformRequestBody, writeBS, writeBuilder, writeLBS)
 import           Snap.Internal.Debug           ()

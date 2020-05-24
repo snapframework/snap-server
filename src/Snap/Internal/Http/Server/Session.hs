@@ -35,7 +35,7 @@ import           Data.Maybe                               (fromJust, fromMaybe, 
 #if !MIN_VERSION_base(4,8,0)
 import           Data.Monoid                              (mconcat)
 #endif
-import           Data.Monoid                              ((<>))
+import           Data.Monoid                              ()
 import           Data.Time.Format                         (formatTime)
 import           Data.Typeable                            (Typeable)
 import           Data.Version                             (showVersion)
