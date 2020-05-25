@@ -21,7 +21,11 @@ import           Data.ByteString.Char8             (ByteString)
 import           Network.Socket                    (Socket, SocketOption (NoDelay, ReuseAddr), accept, close, getSocketName, setSocketOption, socket)
 import qualified Network.Socket                    as N
 #ifdef HAS_SENDFILE
+#if MIN_VERSION_network(3,0,0)
 import           Network.Socket                    (unsafeFdSocket)
+#else
+import           Network.Socket                    (fdSocket)
+#endif
 import           System.Posix.IO                   (OpenMode (..), closeFd, defaultFileFlags, openFd)
 import           System.Posix.Types                (Fd (..))
 import           System.SendFile                   (sendFile, sendHeaders)
