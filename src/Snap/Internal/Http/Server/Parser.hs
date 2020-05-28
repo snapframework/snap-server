@@ -29,9 +29,9 @@ module Snap.Internal.Http.Server.Parser
 import           Control.Applicative              ((<$>))
 #endif
 import           Control.Exception                (Exception, throwIO)
-import qualified Control.Exception                as E
 import           Control.Monad                    (void, when)
-import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, skipWhile, take)
+import           Control.Monad.IO.Class           (MonadIO (liftIO))
+import           Data.Attoparsec.ByteString.Char8 (Parser, hexadecimal, takeTill)
 import qualified Data.ByteString.Char8            as S
 import           Data.ByteString.Internal         (ByteString (..), c2w, memchr, w2c)
 #if MIN_VERSION_bytestring(0, 10, 6)
@@ -53,12 +53,12 @@ import           Prelude                          hiding (take)
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder.HTTP    (chunkedTransferEncoding, chunkedTransferTerminator)
 import           Data.ByteString.Builder          (Builder)
-import           System.IO.Streams                (InputStream, OutputStream)
+import           System.IO.Streams                (InputStream, OutputStream, Generator)
 import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
-import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat, (<?>))
+import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat)
 import           Snap.Types.Headers               (Headers)
 import qualified Snap.Types.Headers               as H
 
@@ -351,8 +351,7 @@ methodFromString s         = Method s
 readChunkedTransferEncoding :: InputStream ByteString
                             -> IO (InputStream ByteString)
 readChunkedTransferEncoding input =
-    Streams.makeInputStream $ parseFromStream pGetTransferChunk input
-
+    Streams.fromGenerator (consumeChunks input)
 
 ------------------------------------------------------------------------------
 writeChunkedTransferEncoding :: OutputStream Builder
@@ -384,31 +383,71 @@ writeChunkedTransferEncoding os = do
                              ---------------------
 
 ------------------------------------------------------------------------------
--- We treat chunks larger than this from clients as a denial-of-service attack.
--- 256kB should be enough buffer.
-mAX_CHUNK_SIZE :: Int
-mAX_CHUNK_SIZE = (2::Int)^(18::Int)
+{-
+    For a response body in chunked transfer encoding, iterate over
+    the individual chunks, reading the size parameter, then
+    looping over that chunk in bites of at most bUFSIZ,
+    yielding them to the receiveResponse InputStream accordingly.
+-}
+consumeChunks :: InputStream ByteString -> Generator ByteString ()
+consumeChunks i1 = do
+    !n <- parseSize
+    if n > 0
+        then do
+            -- read one or more bytes, then loop to next chunk
+            go n
+            skipCRLF
+            consumeChunks i1
+        else do
+            -- NB: snap-server doesn't yet support chunked trailer parts
+            -- (see RFC7230#sec4.1.2)
 
+            -- consume final CRLF
+            skipCRLF
 
-------------------------------------------------------------------------------
-pGetTransferChunk :: Parser (Maybe ByteString)
-pGetTransferChunk = parser <?> "pGetTransferChunk"
   where
-    parser = do
-        !hex <- hexadecimal <?> "hexadecimal"
-        skipWhile (/= '\r') <?> "skipToEOL"
-        void crlf <?> "linefeed"
-        if hex >= mAX_CHUNK_SIZE
-          then return $! E.throw $! HttpParseException $!
-               "pGetTransferChunk: chunk of size " ++ show hex ++ " too long."
-          else if hex <= 0
-            then (crlf >> return Nothing) <?> "terminal crlf after 0 length"
-            else do
-                -- now safe to take this many bytes.
-                !x <- take hex <?> "reading data chunk"
-                void crlf <?> "linefeed after data chunk"
-                return $! Just x
+    go 0 = return ()
+    go !n = do
+        (!x',!r) <- liftIO $ readN n i1
+        Streams.yield x'
+        go r
 
+    parseSize = do
+        liftIO $ parseFromStream transferChunkSize i1
+
+    skipCRLF = do
+        liftIO $ void (parseFromStream crlf i1)
+
+    transferChunkSize :: Parser (Int)
+    transferChunkSize = do
+        !n <- hexadecimal
+        -- skip over any chunk extensions (see RFC7230#sec4.1.1)
+        void (takeTill (== '\r'))
+        void crlf
+        return n
+
+    {-
+        The chunk size coming down from the client is somewhat arbitrary;
+        it's really just an indication of how many bytes need to be read
+        before the next size marker or end marker - neither of which has
+        anything to do with streaming on our side. Instead, we'll feed
+        bytes into our InputStream at an appropriate intermediate size.
+    -}
+    bUFSIZ :: Int
+    bUFSIZ = 32752
+
+    {-
+        Read the specified number of bytes up to a maximum of bUFSIZ,
+        returning a resultant ByteString and the number of bytes remaining.
+    -}
+    readN :: Int -> InputStream ByteString -> IO (ByteString, Int)
+    readN n input = do
+        !x' <- Streams.readExactly p input
+        return (x', r)
+      where
+        !d = n - bUFSIZ
+        !p = if d > 0 then bUFSIZ else n
+        !r = if d > 0 then d else 0
 
 ------------------------------------------------------------------------------
 toLower :: ByteString -> ByteString
