@@ -40,9 +40,6 @@ import           Data.ByteString.Internal         (accursedUnutterablePerformIO)
 import           Data.ByteString.Internal         (inlinePerformIO)
 #endif
 import qualified Data.ByteString.Unsafe           as S
-#if !MIN_VERSION_io_streams(1,2,0)
-import           Data.IORef                       (newIORef, readIORef, writeIORef)
-#endif
 import           Data.List                        (sort)
 import           Data.Typeable                    (Typeable)
 import qualified Data.Vector                      as V
@@ -356,26 +353,12 @@ readChunkedTransferEncoding input =
 ------------------------------------------------------------------------------
 writeChunkedTransferEncoding :: OutputStream Builder
                              -> IO (OutputStream Builder)
-#if MIN_VERSION_io_streams(1,2,0)
 writeChunkedTransferEncoding os = Streams.makeOutputStream f
   where
     f Nothing = do
         Streams.write (Just chunkedTransferTerminator) os
         Streams.write Nothing os
     f x = Streams.write (chunkedTransferEncoding `fmap` x) os
-
-#else
-writeChunkedTransferEncoding os = do
-    -- make sure we only send the terminator once.
-    eof <- newIORef True
-    Streams.makeOutputStream $ f eof
-  where
-    f eof Nothing = readIORef eof >>= flip when (do
-        writeIORef eof True
-        Streams.write (Just chunkedTransferTerminator) os
-        Streams.write Nothing os)
-    f _ x = Streams.write (chunkedTransferEncoding `fmap` x) os
-#endif
 
 
                              ---------------------
