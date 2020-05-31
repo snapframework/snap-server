@@ -22,10 +22,8 @@ import           Control.Monad         (liftM)
 import           Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as S
 import           Data.Maybe            (fromMaybe)
-import qualified Data.Text             as T
-import qualified Data.Text.Encoding    as T
 import           Data.Typeable         (Typeable)
-import           Network.Socket        (AddrInfo (addrAddress, addrFamily, addrFlags, addrSocketType), AddrInfoFlag (AI_NUMERICSERV, AI_PASSIVE), Family (AF_INET, AF_INET6), HostName, NameInfoFlag (NI_NUMERICHOST), ServiceName, SockAddr (SockAddrInet, SockAddrInet6, SockAddrUnix), SocketType (Stream), defaultHints, getAddrInfo, getNameInfo)
+import           Network.Socket        (AddrInfo (addrAddress, addrFamily, addrFlags, addrSocketType), AddrInfoFlag (AI_NUMERICSERV, AI_PASSIVE), Family (AF_INET, AF_INET6), HostName, NameInfoFlag (NI_NUMERICHOST), ServiceName, SockAddr (SockAddrInet, SockAddrInet6), SocketType (Stream), defaultHints, getAddrInfo, getNameInfo)
 
 
 ------------------------------------------------------------------------------
@@ -65,13 +63,15 @@ getAddressImpl !_getHostAddr addr =
   case addr of
     SockAddrInet p _      -> host (fromIntegral p)
     SockAddrInet6 p _ _ _ -> host (fromIntegral p)
-    SockAddrUnix path     -> return (-1, prefix path)
 #if MIN_VERSION_network(2,6,0)
     _                     -> fail "Unsupported address type"
+    where
+      host port   = (,) port . S.pack <$> _getHostAddr addr
+#else
+    SockAddrUnix path     -> return (-1, prefix path)
+    where
+      prefix path = T.encodeUtf8 $! T.pack $ "unix:" ++ path
 #endif
-  where
-    prefix path = T.encodeUtf8 $! T.pack $ "unix:" ++ path
-    host port   = (,) port . S.pack <$> _getHostAddr addr
 
 
 ------------------------------------------------------------------------------

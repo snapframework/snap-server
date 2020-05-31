@@ -509,6 +509,7 @@ Executable snap-test-server
     clock,
     containers,
     directory,
+    filepath,
     io-streams,
     io-streams-haproxy,
     lifted-base,
