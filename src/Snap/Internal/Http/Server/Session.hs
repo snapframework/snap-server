@@ -64,7 +64,7 @@ import           Snap.Internal.Core                       (fixupResponse)
 import           Snap.Internal.Http.Server.Clock          (getClockTime)
 import           Snap.Internal.Http.Server.Common         (eatException)
 import           Snap.Internal.Http.Server.Date           (getDateString)
-import           Snap.Internal.Http.Server.Parser         (IRequest (..), getStdConnection, getStdContentLength, getStdContentType, getStdCookie, getStdHost, getStdTransferEncoding, parseCookie, parseRequest, parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
+import           Snap.Internal.Http.Server.Parser         (IRequest (..), HttpParseException(..), getStdConnection, getStdContentLength, getStdContentType, getStdCookie, getStdHost, getStdTransferEncoding, parseCookie, parseRequest, parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
 import           Snap.Internal.Http.Server.Thread         (SnapThread)
 import qualified Snap.Internal.Http.Server.Thread         as Thread
 import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
@@ -300,7 +300,19 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     receiveRequest :: IO Request
     receiveRequest = {-# SCC "httpSession/receiveRequest" #-} do
         readEnd' <- Streams.throwIfProducesMoreThan mAX_HEADERS_SIZE readEnd
-        parseRequest readEnd' >>= toRequest
+        (parseRequest readEnd' `E.catch` parseErrHandler) >>= toRequest
+      where
+        parseErrHandler (HttpParseException emsg) = do
+            let msg = mconcat
+                      [ byteString "HTTP/1.1 400 Bad Request\r\n\r\n"
+                      , byteString (S.pack emsg)
+                      , byteString "\r\n"
+                      , flush
+                      ]
+            writeEndB <- mkBuffer
+            Streams.write (Just msg) writeEndB
+            Streams.write Nothing writeEndB
+            terminateSession BadRequestException
     {-# INLINE receiveRequest #-}
 
     --------------------------------------------------------------------------
