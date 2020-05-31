@@ -11,6 +11,7 @@ module Snap.Internal.Http.Server.Session
   , snapToServerHandler
   , BadRequestException(..)
   , LengthRequiredException(..)
+  , HTTPVersionNotSupportedException(..)
   , TerminateSessionException(..)
   ) where
 
@@ -90,6 +91,9 @@ data LengthRequiredException = LengthRequiredException
   deriving (Typeable, Show)
 instance Exception LengthRequiredException
 
+data HTTPVersionNotSupportedException = HTTPVersionNotSupportedException
+  deriving (Typeable, Show)
+instance Exception HTTPVersionNotSupportedException
 
 ------------------------------------------------------------------------------
 snapToServerHandler :: Snap a -> ServerHandler hookState
@@ -318,6 +322,18 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     --------------------------------------------------------------------------
     toRequest :: IRequest -> IO Request
     toRequest !ireq = {-# SCC "httpSession/toRequest" #-} do
+        -- RFC 7230 section 2.6: "A server can send a 505 (HTTP
+        -- Version Not Supported) response if it wishes, for any
+        -- reason, to refuse service of the client's major protocol
+        -- version."
+        --
+        -- Since HTTP/2 has been released, we *know* that a major
+        -- version larger than 1 is definitely not supported by
+        -- snap-server currently and so it's reasonable to reject such
+        -- doomed to fail requests with the appropriate 505 response
+        -- code early on.
+        when (fst version >= 2) return505
+
         -- HTTP spec section 14.23: "All Internet-based HTTP/1.1 servers MUST
         -- respond with a 400 (Bad Request) status code to any HTTP/1.1 request
         -- message which lacks a Host header field."
@@ -438,6 +454,18 @@ httpSession !buffer !serverHandler !config !sessionData = loop
             Streams.write (Just resp) writeEndB
             Streams.write Nothing writeEndB
             terminateSession LengthRequiredException
+
+        ----------------------------------------------------------------------
+        return505 = do
+            let resp = mconcat
+                     [ byteString "HTTP/1.1 505 HTTP Version Not Supported\r\n\r\n"
+                     , byteString "HTTP version >= 2 not supported\r\n"
+                     , flush
+                     ]
+            writeEndB <- mkBuffer
+            Streams.write (Just resp) writeEndB
+            Streams.write Nothing writeEndB
+            terminateSession HTTPVersionNotSupportedException
 
         ----------------------------------------------------------------------
         parseForm readEnd' = if hasForm
