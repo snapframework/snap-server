@@ -495,7 +495,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         -- For HTTP/1.0: if there is no explicit Connection: Keep-Alive,
         -- close the socket later.
         let v = CI.mk <$> connection
-        when ((version == (1, 1) && v == Just "close") ||
+        when ((version >= (1, 1) && v == Just "close") ||
               (version == (1, 0) && v /= Just "keep-alive")) $
               writeIORef forceConnectionClose True
 
@@ -659,7 +659,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
          -> ResponseBody
          -> (Headers, ResponseBody, Bool)
     noCL req hdrs body =
-        if v == (1,1)
+        if v >= (1,1)
           then let origBody = rspBodyToEnum body
                    body'    = \os -> do
                                  os' <- writeChunkedTransferEncoding os
@@ -738,7 +738,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 mkHeaderLine :: HttpVersion -> Response -> FixedPrim ()
 mkHeaderLine outVer r =
     case outCode of
-        200 | outVer == (1, 1) ->
+        200 | outVer >= (1, 1) ->
                   -- typo in bytestring here
                   fixedPrim 17 $ const (void . cpBS "HTTP/1.1 200 OK\r\n")
         200 | otherwise ->
@@ -747,7 +747,7 @@ mkHeaderLine outVer r =
   where
     outCode = rspStatus r
 
-    v = if outVer == (1,1) then "HTTP/1.1 " else "HTTP/1.0 "
+    v = if outVer >= (1,1) then "HTTP/1.1 " else "HTTP/1.0 "
 
     outCodeStr = S.pack $ show outCode
     space !op = do
