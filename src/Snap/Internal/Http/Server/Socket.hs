@@ -174,16 +174,14 @@ sendFileFunc :: Socket -> SendFileHandler
 sendFileFunc sock !_ builder fPath offset nbytes = bracket acquire closeFd go
   where
     acquire   = openFd fPath ReadOnly Nothing defaultFileFlags
+    go fileFd = do 
 #if MIN_VERSION_network(3,0,0)
-    go fileFd = do sockFd <- Fd `fmap` fdSocket sock
-                   sendHeaders builder sockFd
-                   sendFile sockFd fileFd offset nbytes
+                   sockFd <- Fd `fmap` fdSocket sock
 #else
-    go fileFd = do let sockFd = Fd $ fdSocket sock
+                   let sockFd = Fd $ fdSocket sock
+#endif
                    sendHeaders builder sockFd
                    sendFile sockFd fileFd offset nbytes
-#endif
-
 #else
 sendFileFunc sock buffer builder fPath offset nbytes =
     Streams.unsafeWithFileAsInputStartingAt (fromIntegral offset) fPath $
