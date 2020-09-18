@@ -25,7 +25,7 @@ import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
-import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, flip, fromIntegral, fst, not, ($), ($!), (.))
+import           Prelude                           (Bool(..), FilePath, IO, Int, Maybe (..), Monad (..), Show, flip, fromIntegral, fst, not, ($), ($!), (.), null)
 import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
 import           Snap.Internal.Http.Server.Socket  (acceptAndInitialize)
 import qualified System.IO.Streams                 as Streams
@@ -67,9 +67,9 @@ barf = throwIO sslNotSupportedException
 
 
 ------------------------------------------------------------------------------
-bindHttps :: ByteString -> Int -> FilePath -> Bool -> FilePath
-          -> IO (Socket, SSLContext)
-bindHttps _ _ _ _ _ = barf
+bindHttps :: ByteString -> Int -> FilePath -> Bool -> FilePath -> Bool -> Bool
+          -> FilePath -> IO (Socket, SSLContext)
+bindHttps _ _ _ _ _ _ _ _ = barf
 
 
 ------------------------------------------------------------------------------
@@ -94,8 +94,11 @@ bindHttps :: ByteString
           -> FilePath
           -> Bool
           -> FilePath
+          -> Bool
+          -> Bool
+          -> FilePath
           -> IO (Socket, SSLContext)
-bindHttps bindAddress bindPort cert chainCert key =
+bindHttps bindAddress bindPort cert chainCert key verify verify_once ca_cert =
     withTLS $
     bracketOnError
         (do (family, addr) <- getSockAddr bindPort bindAddress
@@ -113,14 +116,19 @@ bindHttps bindAddress bindPort cert chainCert key =
              if chainCert
                then SSL.contextSetCertificateChainFile ctx cert
                else SSL.contextSetCertificateFile ctx cert
-
+             setVerification ctx verify verify_once
+             when (not $ null ca_cert) $ do
+               SSL.contextSetCAFile ctx ca_cert
              certOK <- SSL.contextCheckPrivateKey ctx
              when (not certOK) $ do
-                 throwIO $ TLSException certificateError
+               throwIO $ TLSException certificateError
              return (sock, ctx)
   where
     certificateError =
       "OpenSSL says that the certificate doesn't match the private key!"
+    setVerification x True False = SSL.contextSetVerificationMode x $ SSL.VerifyPeer True False Nothing
+    setVerification x _ True = SSL.contextSetVerificationMode x $ SSL.VerifyPeer True True Nothing
+    setVerification x False False = SSL.contextSetVerificationMode x $ SSL.VerifyNone
 
 
 ------------------------------------------------------------------------------
