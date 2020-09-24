@@ -214,7 +214,7 @@ Test-suite testsuite
   build-depends:
     attoparsec,
     base,
-    base16-bytestring                   >= 0.1      && < 0.2,
+    base16-bytestring                   >= 0.1      && < 1.1,
     blaze-builder,
     bytestring-builder,
     bytestring,
