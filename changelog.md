@@ -1,3 +1,20 @@
+## 1.1.2.0
+
+- behaviour change: remove maximum chunk size limitation (thanks @hvr)
+
+- bugfix: The OpenSSL backend was broken for `network >= 3`
+
+- allow random 1.2
+
+- allow base16-bytestring 1.0
+
+## 1.1.1.2
+
+- Allow network 3.1
+- Updates for GHC 8.8 and 8.10 support
+- Allow clock 0.8
+
+
 ## 1.1.1.1
 - Fix for older versions of `network` (sorry about that)
 
