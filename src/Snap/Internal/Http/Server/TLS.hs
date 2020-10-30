@@ -25,9 +25,9 @@ import qualified Network.Socket                    as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
-import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, flip, fromIntegral, fst, not, ($), ($!), (.))
-import           Snap.Internal.Http.Server.Address (getAddress, getSockAddr)
-import           Snap.Internal.Http.Server.Socket  (acceptAndInitialize)
+import           Prelude                           (Bool, FilePath, IO, Int, Maybe (..), Monad (..), Show, flip, fromIntegral, not, ($), ($!))
+import           Snap.Internal.Http.Server.Address (getAddress)
+import           Snap.Internal.Http.Server.Socket  (acceptAndInitialize, bindSocket)
 import qualified System.IO.Streams                 as Streams
 import qualified System.IO.Streams.SSL             as SStreams
 
@@ -98,22 +98,14 @@ bindHttps :: ByteString
 bindHttps bindAddress bindPort cert chainCert key =
     withTLS $
     bracketOnError
-        (do (family, addr) <- getSockAddr bindPort bindAddress
-            sock <- Socket.socket family Socket.Stream 0
-            return (sock, addr)
-            )
-        (Socket.close . fst)
-        $ \(sock, addr) -> do
-             Socket.setSocketOption sock Socket.ReuseAddr 1
-             Socket.bindSocket sock addr
-             Socket.listen sock 150
-
+        (bindSocket bindAddress bindPort)
+        Socket.close
+        $ \sock -> do
              ctx <- SSL.context
              SSL.contextSetPrivateKeyFile ctx key
              if chainCert
                then SSL.contextSetCertificateChainFile ctx cert
                else SSL.contextSetCertificateFile ctx cert
-
              certOK <- SSL.contextCheckPrivateKey ctx
              when (not certOK) $ do
                  throwIO $ TLSException certificateError
