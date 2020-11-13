@@ -21,7 +21,7 @@ import           Network.Socket                    (Socket)
 import           Control.Exception                 (Exception, bracketOnError, finally, onException, throwIO)
 import           Control.Monad                     (when)
 import           Data.ByteString.Builder           (byteString)
-import qualified Network.Socket                    as Socket
+import qualified Snap.Internal.Http.Server.Socket  as Socket
 import           OpenSSL                           (withOpenSSL)
 import           OpenSSL.Session                   (SSL, SSLContext)
 import qualified OpenSSL.Session                   as SSL
