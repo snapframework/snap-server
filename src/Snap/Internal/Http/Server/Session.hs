@@ -11,6 +11,7 @@ module Snap.Internal.Http.Server.Session
   , snapToServerHandler
   , BadRequestException(..)
   , LengthRequiredException(..)
+  , HTTPVersionNotSupportedException(..)
   , TerminateSessionException(..)
   ) where
 
@@ -64,7 +65,7 @@ import           Snap.Internal.Core                       (fixupResponse)
 import           Snap.Internal.Http.Server.Clock          (getClockTime)
 import           Snap.Internal.Http.Server.Common         (eatException)
 import           Snap.Internal.Http.Server.Date           (getDateString)
-import           Snap.Internal.Http.Server.Parser         (IRequest (..), getStdConnection, getStdContentLength, getStdContentType, getStdCookie, getStdHost, getStdTransferEncoding, parseCookie, parseRequest, parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
+import           Snap.Internal.Http.Server.Parser         (IRequest (..), HttpParseException(..), getStdConnection, getStdContentLength, getStdContentType, getStdCookie, getStdHost, getStdTransferEncoding, parseCookie, parseRequest, parseUrlEncoded, readChunkedTransferEncoding, writeChunkedTransferEncoding)
 import           Snap.Internal.Http.Server.Thread         (SnapThread)
 import qualified Snap.Internal.Http.Server.Thread         as Thread
 import           Snap.Internal.Http.Server.TimeoutManager (TimeoutManager)
@@ -90,6 +91,9 @@ data LengthRequiredException = LengthRequiredException
   deriving (Typeable, Show)
 instance Exception LengthRequiredException
 
+data HTTPVersionNotSupportedException = HTTPVersionNotSupportedException
+  deriving (Typeable, Show)
+instance Exception HTTPVersionNotSupportedException
 
 ------------------------------------------------------------------------------
 snapToServerHandler :: Snap a -> ServerHandler hookState
@@ -300,12 +304,36 @@ httpSession !buffer !serverHandler !config !sessionData = loop
     receiveRequest :: IO Request
     receiveRequest = {-# SCC "httpSession/receiveRequest" #-} do
         readEnd' <- Streams.throwIfProducesMoreThan mAX_HEADERS_SIZE readEnd
-        parseRequest readEnd' >>= toRequest
+        (parseRequest readEnd' `E.catch` parseErrHandler) >>= toRequest
+      where
+        parseErrHandler (HttpParseException emsg) = do
+            let msg = mconcat
+                      [ byteString "HTTP/1.1 400 Bad Request\r\n\r\n"
+                      , byteString (S.pack emsg)
+                      , byteString "\r\n"
+                      , flush
+                      ]
+            writeEndB <- mkBuffer
+            Streams.write (Just msg) writeEndB
+            Streams.write Nothing writeEndB
+            terminateSession BadRequestException
     {-# INLINE receiveRequest #-}
 
     --------------------------------------------------------------------------
     toRequest :: IRequest -> IO Request
     toRequest !ireq = {-# SCC "httpSession/toRequest" #-} do
+        -- RFC 7230 section 2.6: "A server can send a 505 (HTTP
+        -- Version Not Supported) response if it wishes, for any
+        -- reason, to refuse service of the client's major protocol
+        -- version."
+        --
+        -- Since HTTP/2 has been released, we *know* that a major
+        -- version larger than 1 is definitely not supported by
+        -- snap-server currently and so it's reasonable to reject such
+        -- doomed to fail requests with the appropriate 505 response
+        -- code early on.
+        when (fst version >= 2) return505
+
         -- HTTP spec section 14.23: "All Internet-based HTTP/1.1 servers MUST
         -- respond with a 400 (Bad Request) status code to any HTTP/1.1 request
         -- message which lacks a Host header field."
@@ -428,6 +456,18 @@ httpSession !buffer !serverHandler !config !sessionData = loop
             terminateSession LengthRequiredException
 
         ----------------------------------------------------------------------
+        return505 = do
+            let resp = mconcat
+                     [ byteString "HTTP/1.1 505 HTTP Version Not Supported\r\n\r\n"
+                     , byteString "HTTP version >= 2 not supported\r\n"
+                     , flush
+                     ]
+            writeEndB <- mkBuffer
+            Streams.write (Just resp) writeEndB
+            Streams.write Nothing writeEndB
+            terminateSession HTTPVersionNotSupportedException
+
+        ----------------------------------------------------------------------
         parseForm readEnd' = if hasForm
                                then getForm
                                else return (readEnd', emptyParams)
@@ -455,7 +495,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
         -- For HTTP/1.0: if there is no explicit Connection: Keep-Alive,
         -- close the socket later.
         let v = CI.mk <$> connection
-        when ((version == (1, 1) && v == Just "close") ||
+        when ((version >= (1, 1) && v == Just "close") ||
               (version == (1, 0) && v /= Just "keep-alive")) $
               writeIORef forceConnectionClose True
 
@@ -619,7 +659,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
          -> ResponseBody
          -> (Headers, ResponseBody, Bool)
     noCL req hdrs body =
-        if v == (1,1)
+        if v >= (1,1)
           then let origBody = rspBodyToEnum body
                    body'    = \os -> do
                                  os' <- writeChunkedTransferEncoding os
@@ -698,7 +738,7 @@ httpSession !buffer !serverHandler !config !sessionData = loop
 mkHeaderLine :: HttpVersion -> Response -> FixedPrim ()
 mkHeaderLine outVer r =
     case outCode of
-        200 | outVer == (1, 1) ->
+        200 | outVer >= (1, 1) ->
                   -- typo in bytestring here
                   fixedPrim 17 $ const (void . cpBS "HTTP/1.1 200 OK\r\n")
         200 | otherwise ->
@@ -707,7 +747,7 @@ mkHeaderLine outVer r =
   where
     outCode = rspStatus r
 
-    v = if outVer == (1,1) then "HTTP/1.1 " else "HTTP/1.0 "
+    v = if outVer >= (1,1) then "HTTP/1.1 " else "HTTP/1.0 "
 
     outCodeStr = S.pack $ show outCode
     space !op = do

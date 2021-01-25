@@ -55,7 +55,7 @@ import qualified System.IO.Streams                as Streams
 import           System.IO.Streams.Attoparsec     (parseFromStream)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types         (Method (..))
-import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded, unsafeFromNat)
+import           Snap.Internal.Parsing            (crlf, parseCookie, parseUrlEncoded)
 import           Snap.Types.Headers               (Headers)
 import qualified Snap.Types.Headers               as H
 
@@ -148,13 +148,17 @@ instance Exception HttpParseException
 {-# INLINE parseRequest #-}
 parseRequest :: InputStream ByteString -> IO IRequest
 parseRequest input = do
+    -- RFC 7230 section 3.1.1 defines the first line of a request as
+    --
+    --   request-line = method SP request-target SP HTTP-version CRLF
+    --
     line <- pLine input
     let (!mStr, !s)     = bSp line
     let (!uri, !vStr)   = bSp s
     let method          = methodFromString mStr
-    let !version        = pVer vStr
     let (host, uri')    = getHost uri
     let uri''           = if S.null uri' then "/" else uri'
+    !version <- pVer vStr
 
     stdHdrs <- newMStandardHeaders
     MV.unsafeWrite stdHdrs hostTag host
@@ -173,17 +177,34 @@ parseRequest input = do
                     in (Just $! host, uri)
               | otherwise = (Nothing, s)
 
-    pVer s = if "HTTP/" `S.isPrefixOf` s
-               then pVers (S.unsafeDrop 5 s)
-               else (1, 0)
+    -- RFC 7230 section 2.6 defines
+    --
+    --   HTTP-version = HTTP-name "/" DIGIT "." DIGIT
+    --   HTTP-name    = %x48.54.54.50 ; "HTTP", case-sensitive
+    --
+    pVer s = case bsStripHttpPrefix s of
+      Nothing -> return (1, 0)
+      Just "1.1" -> return (1, 1)
+      Just "1.0" -> return (1, 0)
+      Just vstr
+        | [mjs,'.',mns] <- S.unpack vstr
+        , Just mj <- digitToInt mjs
+        , Just mn <- digitToInt mns -> return (mj,mn)
+        | otherwise -> throwIO $
+            HttpParseException "parse error: invalid HTTP-version in request-line"
+
+    -- NB: 'stripPrefix' operation is available in bytestring-0.10.8 and later
+    bsStripHttpPrefix s
+      | "HTTP/" `S.isPrefixOf` s = Just $! S.unsafeDrop 5 s
+      | otherwise                = Nothing
+
+    digitToInt c
+      | n >= 0, n <= 9 = Just n
+      | otherwise      = Nothing
+      where
+        n = fromEnum c - 0x30
 
     bSp   = splitCh ' '
-
-    pVers s = (c, d)
-      where
-        (!a, !b)   = splitCh '.' s
-        !c         = unsafeFromNat a
-        !d         = unsafeFromNat b
 
 
 ------------------------------------------------------------------------------
