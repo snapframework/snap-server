@@ -2,6 +2,7 @@ Snap Framework HTTP Server Library
 ----------------------------------
 
 [![Build Status](https://travis-ci.org/snapframework/snap-server.svg?branch=master)](https://travis-ci.org/snapframework/snap-server)
+[![Build status](https://github.com/snapframework/snap-server/actions/workflows/ci.yml/badge.svg)](https://github.com/snapframework/snap-server/actions/workflows/ci.yml)
 
 This is the Snap Framework HTTP Server library.  For more information about
 Snap, read the `README.SNAP.md` or visit the Snap project website at
