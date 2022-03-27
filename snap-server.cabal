@@ -1,3 +1,4 @@
+cabal-version:  2.2
 name:           snap-server
 version:        1.1.2.0
 synopsis:       A web server for the Snap Framework
@@ -11,12 +12,11 @@ description:
   provides a clean and efficient Haskell programming interface to the HTTP
   protocol.
 
-license:        BSD3
+license:        BSD-3-Clause
 license-file:   LICENSE
 author:         Snap Framework Authors  (see CONTRIBUTORS)
 maintainer:     snap@snapframework.com
 build-type:     Simple
-cabal-version:  >= 1.10
 homepage:       http://snapframework.com/
 bug-reports:    https://github.com/snapframework/snap-server/issues
 category:       Web, Snap, IO-Streams
@@ -147,27 +147,28 @@ Library
     build-depends: HsOpenSSL       >= 0.10.4 && < 0.12,
                    openssl-streams >= 1.1    && < 1.3
 
-  if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.Linux
+  if !flag(portable)
+    if os(linux)
+      cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.Linux
 
--- Disabling sendfile() on OSX for now. See
---
--- https://github.com/snapframework/snap-core/issues/274 and
--- https://github.com/snapframework/snap-core/issues/91
---
-  if os(darwin) && !flag(portable)
-     cpp-options: -DHAS_UNIX_SOCKETS
-  -- if os(darwin) && !flag(portable)
-  --   cpp-options: -DOSX -DHAS_UNIX_SOCKETS
+    -- Disabling sendfile() on OSX for now. See
+    --
+    -- https://github.com/snapframework/snap-core/issues/274 and
+    -- https://github.com/snapframework/snap-core/issues/91
+    --
+    elif os(darwin)
+       cpp-options: -DHAS_UNIX_SOCKETS
+    -- if os(darwin) && !flag(portable)
+    --   cpp-options: -DOSX -DHAS_UNIX_SOCKETS
 
-  if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.FreeBSD
+    elif os(freebsd)
+      cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.FreeBSD
 
   if impl(ghc >= 6.12.0)
     ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -fno-warn-unused-do-bind
@@ -283,31 +284,32 @@ Test-suite testsuite
     build-depends: HsOpenSSL,
                    openssl-streams
 
-  if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.Linux,
-      System.SendFile.Tests
-    c-sources: test/cbits/errno_util.c
+  if !flag(portable)
+    if os(linux)
+      cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.Linux,
+        System.SendFile.Tests
+      c-sources: test/cbits/errno_util.c
 
-  if os(darwin) && !flag(portable)
-     cpp-options: -DHAS_UNIX_SOCKETS
---  if os(darwin) && !flag(portable)
---    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
---    other-modules:
---      System.SendFile,
---      System.SendFile.Darwin,
---      System.SendFile.Tests
---    c-sources: test/cbits/errno_util.c
+    elif os(darwin)
+       cpp-options: -DHAS_UNIX_SOCKETS
+  --  if os(darwin) && !flag(portable)
+  --    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+  --    other-modules:
+  --      System.SendFile,
+  --      System.SendFile.Darwin,
+  --      System.SendFile.Tests
+  --    c-sources: test/cbits/errno_util.c
 
-  if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.FreeBSD,
-      System.SendFile.Tests
-    c-sources: test/cbits/errno_util.c
+    elif os(freebsd)
+      cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.FreeBSD,
+        System.SendFile.Tests
+      c-sources: test/cbits/errno_util.c
 
   cpp-options: -DTESTSUITE
 
@@ -385,25 +387,26 @@ Executable snap-test-pong-server
   else
     build-depends: unix
 
-  if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.Linux
+  if !flag(portable)
+    if os(linux)
+      cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.Linux
 
-  if os(darwin) && !flag(portable)
-     cpp-options: -DHAS_UNIX_SOCKETS
---  if os(darwin) && !flag(portable)
---    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
---    other-modules:
---      System.SendFile,
---      System.SendFile.Darwin
+    elif os(darwin)
+       cpp-options: -DHAS_UNIX_SOCKETS
+  --  if os(darwin) && !flag(portable)
+  --    cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+  --    other-modules:
+  --      System.SendFile,
+  --      System.SendFile.Darwin
 
-  if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.FreeBSD
+    elif os(freebsd)
+      cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.FreeBSD
 
   if flag(openssl)
     cpp-options: -DOPENSSL
@@ -483,25 +486,25 @@ Executable snap-test-server
   else
     build-depends: unix
 
-  if os(linux) && !flag(portable)
-    cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.Linux
+  if !flag(portable)
+    if os(linux)
+      cpp-options: -DLINUX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.Linux
+    elif os(darwin)
+       cpp-options: -DHAS_UNIX_SOCKETS
+    -- if os(darwin) && !flag(portable)
+    --   cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+    --   other-modules:
+    --     System.SendFile,
+    --     System.SendFile.Darwin
 
-  if os(darwin) && !flag(portable)
-     cpp-options: -DHAS_UNIX_SOCKETS
-  -- if os(darwin) && !flag(portable)
-  --   cpp-options: -DOSX -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-  --   other-modules:
-  --     System.SendFile,
-  --     System.SendFile.Darwin
-
-  if os(freebsd) && !flag(portable)
-    cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
-    other-modules:
-      System.SendFile,
-      System.SendFile.FreeBSD
+    elif os(freebsd)
+      cpp-options: -DFREEBSD -DHAS_SENDFILE -DHAS_UNIX_SOCKETS
+      other-modules:
+        System.SendFile,
+        System.SendFile.FreeBSD
 
   build-depends:
     attoparsec,
