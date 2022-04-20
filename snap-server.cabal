@@ -96,7 +96,7 @@ Library
     Snap.Internal.Http.Server.TLS
 
   build-depends:
-    attoparsec                          >= 0.12     && < 0.14,
+    attoparsec                          >= 0.12     && < 0.15,
     base                                >= 4.6      && < 4.15,
     blaze-builder                       >= 0.4      && < 0.5,
     bytestring                          >= 0.9.1    && < 0.12,
