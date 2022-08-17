@@ -25,6 +25,8 @@ jobs:
             cabal: '3.6'
           - ghc: '9.0.2'
             cabal: '3.6'
+          - ghc: '9.2.4'
+            cabal: '3.8.1.0'
 
     steps:
     - uses: actions/checkout@v2
