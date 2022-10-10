@@ -1,0 +1,6 @@
+resolver: nightly-2022-10-06
+packages: 
+- .
+extra-deps:
+- ../readable
+- ../snap-core

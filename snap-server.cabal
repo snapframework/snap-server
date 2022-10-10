@@ -1,5 +1,5 @@
 name:           snap-server
-version:        1.1.2.0
+version:        1.1.2.1
 synopsis:       A web server for the Snap Framework
 description:
   Snap is a simple and fast web development framework and server written in
@@ -41,7 +41,8 @@ tested-with:
   GHC==8.4.4,
   GHC==8.6.5,
   GHC==8.8.3,
-  GHC==8.10.1
+  GHC==8.10.1,
+  GHC==9.2.4
 
 Flag portable
   Description: Compile in cross-platform mode. No platform-specific code or
@@ -97,7 +98,7 @@ Library
 
   build-depends:
     attoparsec                          >= 0.12     && < 0.15,
-    base                                >= 4.6      && < 4.16,
+    base                                >= 4.6      && < 4.17,
     blaze-builder                       >= 0.4      && < 0.5,
     bytestring                          >= 0.9.1    && < 0.12,
     case-insensitive                    >= 1.1      && < 1.3,
