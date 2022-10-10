@@ -115,7 +115,7 @@ Library
     time                                >= 1.0      && < 1.13,
     transformers                        >= 0.3      && < 0.6,
     unix-compat                         >= 0.2      && < 0.6,
-    vector                              >= 0.7      && < 0.13
+    vector                              >= 0.7      && < 0.14
 
   other-extensions:
     BangPatterns,
