@@ -366,6 +366,7 @@ Executable snap-test-pong-server
   default-language: Haskell2010
 
   other-modules:
+    Control.Concurrent.Extended
     Paths_snap_server,
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Clock,
@@ -419,6 +420,7 @@ Executable snap-test-pong-server
     case-insensitive,
     clock,
     containers,
+    filepath,
     io-streams,
     io-streams-haproxy,
     lifted-base,
@@ -464,7 +466,11 @@ Executable snap-test-server
   default-language: Haskell2010
 
   other-modules:
+    Control.Concurrent.Extended,
     Paths_snap_server,
+    Snap.Http.Server,
+    Snap.Http.Server.Config,
+    Snap.Http.Server.Types,
     Snap.Internal.Http.Server.Address,
     Snap.Internal.Http.Server.Clock,
     Snap.Internal.Http.Server.Common,
@@ -473,10 +479,13 @@ Executable snap-test-server
     Snap.Internal.Http.Server.Parser,
     Snap.Internal.Http.Server.Session,
     Snap.Internal.Http.Server.Socket,
+    Snap.Internal.Http.Server.TLS,
     Snap.Internal.Http.Server.Thread,
     Snap.Internal.Http.Server.TimeoutManager,
-    Snap.Internal.Http.Server.TLS,
-    Snap.Internal.Http.Server.Types
+    Snap.Internal.Http.Server.Types,
+    System.FastLogger,
+    Test.Common.Rot13,
+    Test.Common.TestHandler
 
   if flag(portable) || os(windows)
     cpp-options: -DPORTABLE
@@ -513,6 +522,7 @@ Executable snap-test-server
     clock,
     containers,
     directory,
+    filepath,
     io-streams,
     io-streams-haproxy,
     lifted-base,
