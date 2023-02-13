@@ -77,4 +77,4 @@ main = do
     killThread tid
 
   where
-    output os = Streams.write (Just $ fromByteString "pong") os >> return os
+    output os = Streams.write (Just "pong") os >> return os

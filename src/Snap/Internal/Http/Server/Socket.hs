@@ -173,7 +173,12 @@ sendFileFunc :: Socket -> SendFileHandler
 #ifdef HAS_SENDFILE
 sendFileFunc sock !_ builder fPath offset nbytes = bracket acquire closeFd go
   where
+#if MIN_VERSION_unix(2,8,0)
+    acquire   = openFd fPath ReadOnly defaultFileFlags
+#else
     acquire   = openFd fPath ReadOnly Nothing defaultFileFlags
+#endif
+
 #if MIN_VERSION_network(3,0,0)
     go fileFd = do sockFd <- Fd `fmap` fdSocket sock
                    sendHeaders builder sockFd

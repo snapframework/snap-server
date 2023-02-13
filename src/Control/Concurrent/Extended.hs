@@ -19,7 +19,12 @@ import           GHC.Conc.Sync          (ThreadId (..))
 #ifdef LABEL_THREADS
 import           Control.Concurrent     (forkIOWithUnmask, forkOnWithUnmask,
                                          myThreadId)
+#if MIN_VERSION_base(4,18,0)
+import qualified Data.ByteString.Char8  as C8
+import           GHC.Conc               (labelThread)
+#else
 import           GHC.Base               (labelThread#)
+#endif
 import           Foreign.C.String       (CString)
 import           GHC.IO                 (IO (..))
 import           GHC.Ptr                (Ptr (..))
@@ -77,6 +82,12 @@ labelMe label = do
 -- | Like 'labelThread' but uses a Latin-1 encoded 'ByteString' instead of a
 -- 'String'.
 labelThreadBs :: ThreadId -> B.ByteString -> IO ()
+#if MIN_VERSION_base(4,18,0)
+labelThreadBs tid =
+  -- The 'labelThread#' signature changed: it now requires a UTF-8 encoded
+  -- ByteArray#.
+  labelThread tid . C8.unpack
+#else
 labelThreadBs tid bs = B.useAsCString bs $ labelThreadCString tid
 
 
@@ -86,9 +97,10 @@ labelThreadCString :: ThreadId -> CString -> IO ()
 labelThreadCString (ThreadId t) (Ptr p) =
     IO $ \s -> case labelThread# t p s of
                  s1 -> (# s1, () #)
+#endif
+
 #elif defined(TESTSUITE)
 labelMe !_ = return $! ()
 #else
 labelMe _label = return $! ()
 #endif
-
