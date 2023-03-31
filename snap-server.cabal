@@ -1,3 +1,4 @@
+cabal-version:  2.2
 name:           snap-server
 version:        1.1.2.1
 synopsis:       A web server for the Snap Framework
@@ -11,12 +12,11 @@ description:
   provides a clean and efficient Haskell programming interface to the HTTP
   protocol.
 
-license:        BSD3
+license:        BSD-3-Clause
 license-file:   LICENSE
 author:         Snap Framework Authors  (see CONTRIBUTORS)
 maintainer:     snap@snapframework.com
 build-type:     Simple
-cabal-version:  >= 1.10
 homepage:       http://snapframework.com/
 bug-reports:    https://github.com/snapframework/snap-server/issues
 category:       Web, Snap, IO-Streams
