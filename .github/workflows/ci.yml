@@ -1,73 +1,128 @@
-# modified from https://github.com/jgm/pandoc/blob/master/.github/workflows/ci.yml
+# Modified from https://kodimensional.dev/github-actions
+
 name: CI
 
 on:
+  pull_request:
+    types: [synchronize, opened, reopened]
+    paths-ignore:
+      - "**.md"
+      - "*.sh"
+      - "CONTRIBUTORS"
+      - "LICENSE"
   push:
     branches:
-    - '**'
-    paths-ignore: []
-  pull_request:
-    paths-ignore: []
+      - 'master'
+  schedule:
+    # Additionally run once per week (At 00:00 on Sunday) to maintain cache.
+    - cron: '0 0 * * 0'
 
 jobs:
-  linux:
+  cabal:
+    name: ${{ matrix.os }} / ghc ${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
 
-    runs-on: ubuntu-20.04
     strategy:
-      fail-fast: false
       matrix:
-        versions:
-          - ghc: '8.6.5'
-            cabal: '3.6'
-          - ghc: '8.8.4'
-            cabal: '3.6'
-          - ghc: '8.10.7'
-            cabal: '3.6'
-          - ghc: '9.0.2'
-            cabal: '3.6'
-          - ghc: '9.2.4'
-            cabal: '3.8.1.0'
-          - ghc: '9.4.1'
-            cabal: '3.8.1.0'
+        os: [ubuntu-latest]
+        ghc:
+          - "8.8"
+          - "8.10"
+          - "9.0"
+          - "9.2"
+          - "9.4"
+          - "9.6"
+        include:
+          - { os: macOS-latest,   ghc: "9.6" }
+          # HsOpenSSL fails to build on Windows without openssl.
+          # - { os: windows-latest, ghc: "9.6" }
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
-    # need to install older cabal/ghc versions from ppa repository
+      - name: Setup Haskell
+        uses: haskell/actions/setup@v2
+        id: setup-haskell-cabal
+        with:
+          ghc-version: ${{ matrix.ghc }}
 
-    - name: Install recent cabal/ghc
-      uses: haskell/actions/setup@v1
-      with:
-        ghc-version: ${{ matrix.versions.ghc }}
-        cabal-version: ${{ matrix.versions.cabal }}
+      - name: Configure
+        run: |
+          cabal configure --enable-tests --enable-benchmarks --enable-documentation
+          cabal build --dry-run
 
-    # declare/restore cached things
-    # caching doesn't work for scheduled runs yet
-    # https://github.com/actions/cache/issues/63
+      - name: Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ hashFiles('dist-newstyle/cache/plan.json') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-
 
-    - name: Cache cabal global package db
-      id:   cabal-global
-      uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cabal
-        key: ${{ runner.os }}-${{ matrix.versions.ghc }}-${{ matrix.versions.cabal }}-cabal-global-${{ hashFiles('cabal.project') }}
+      - name: Install dependencies
+        run: |
+          cabal build all --only-dependencies
 
-    - name: Cache cabal work
-      id:   cabal-local
-      uses: actions/cache@v2
-      with:
-        path: |
-          dist-newstyle
-        key: ${{ runner.os }}-${{ matrix.versions.ghc }}-${{ matrix.versions.cabal }}-cabal-local
+      - name: Build
+        run: |
+          cabal build all
 
-    - name: Install dependencies
-      run: |
-        cabal update
-        cabal build all --dependencies-only --enable-tests --disable-optimization
-    - name: Build
-      run: |
-        cabal build all --enable-tests --disable-optimization 2>&1 | tee build.log
-    - name: Test
-      run: |
-        cabal test all --disable-optimization
+      - name: Test
+        run: |
+          cabal test all
+
+      - name: Documentation
+        if: matrix.ghc >= '9.4'
+        run: |
+          cabal haddock
+
+  stack:
+    name: stack / ghc ${{ matrix.ghc }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          # GHC version must match https://www.stackage.org/nightly
+          - stack: "latest"
+            ghc: "9.4"
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: haskell/actions/setup@v2
+        name: Setup Haskell Stack
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          stack-version: ${{ matrix.stack }}
+
+      - name: Configure
+        run: |
+          cat <<EOF > stack.yaml
+            packages:
+              - '.'
+            resolver: nightly-2023-03-31
+          EOF
+          stack config set system-ghc true --global
+          stack config set resolver nightly
+
+      - uses: actions/cache@v3
+        name: Cache
+        with:
+          path: |
+            ~/.stack
+          key: ${{ runner.os }}-${{ matrix.ghc }}-stack
+
+
+      - name: Install dependencies
+        run: |
+          stack build --test --bench --no-run-tests --no-run-benchmarks --only-dependencies
+
+      - name: Build
+        run: |
+          stack build --test --bench --no-run-tests --no-run-benchmarks
+
+      - name: Test
+        run: |
+          stack test
