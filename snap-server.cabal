@@ -114,7 +114,7 @@ Library
     text                                >= 0.11     && < 2.1,
     time                                >= 1.0      && < 1.13,
     transformers                        >= 0.3      && < 0.7,
-    unix-compat                         >= 0.2      && < 0.7,
+    unix-compat                         >= 0.2      && < 0.8,
     vector                              >= 0.7      && < 0.14
 
   other-extensions:
