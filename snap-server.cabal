@@ -211,6 +211,8 @@ Test-suite testsuite
     Test.Common.TestHandler
 
   build-depends:
+    -- aeson dependency needed until http-streams depends on an unreleased attoparsec-aeson.
+    aeson                               >= 0.9.0.0 && < 2.2.0.0,
     attoparsec,
     base,
     base16-bytestring                   >= 0.1      && < 1.1,
