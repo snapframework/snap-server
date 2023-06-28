@@ -40,9 +40,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Haskell
+      - name: Set up GHC ${{ matrix.ghc-version }}
         uses: haskell/actions/setup@v2
-        id: setup-haskell-cabal
+        id: setup
         with:
           ghc-version: ${{ matrix.ghc }}
 
@@ -51,31 +51,35 @@ jobs:
           cabal configure --enable-tests --enable-benchmarks --enable-documentation
           cabal build --dry-run
 
-      - name: Cache
-        uses: actions/cache@v3
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v3
+        id: cache
+        env:
+          key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}
         with:
-          path: |
-            ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
-          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{ hashFiles('dist-newstyle/cache/plan.json') }}
-          restore-keys: |
-            ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ env.key }}-plan-${{ hashFiles('dist-newstyle/cache/plan.json') }}
+          restore-keys: ${{ env.key }}-
 
       - name: Install dependencies
-        run: |
-          cabal build all --only-dependencies
+        run: cabal build all --only-dependencies
+
+      - name: Save cached dependencies
+        uses: actions/cache/save@v3
+        if: ${{ steps.cache.outputs.cache-primary-key != steps.cache.outputs.cache-matched-key }}
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
       - name: Build
-        run: |
-          cabal build all
+        run: cabal build all
 
       - name: Test
-        run: |
-          cabal test all
+        run: cabal test all
 
       - name: Documentation
         if: matrix.ghc >= '9.4'
-        run: |
-          cabal haddock
+        run: cabal haddock
 
   stack:
     name: stack / ghc ${{ matrix.ghc }}
@@ -86,7 +90,7 @@ jobs:
         include:
           # GHC version must match https://www.stackage.org/nightly
           - stack: "latest"
-            ghc: "9.4"
+            ghc: "9.6"
 
     steps:
       - uses: actions/checkout@v3
@@ -102,7 +106,10 @@ jobs:
           cat <<EOF > stack.yaml
             packages:
               - '.'
-            resolver: nightly-2023-03-31
+            resolver: nightly-2023-06-27
+            extra-deps:
+              - 'test-framework-hunit-0.3.0.2'
+              - 'test-framework-quickcheck2-0.3.0.5'
           EOF
           stack config set system-ghc true --global
           stack config set resolver nightly
