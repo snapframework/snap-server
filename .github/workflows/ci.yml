@@ -32,8 +32,9 @@ jobs:
           - "9.2"
           - "9.4"
           - "9.6"
+          - "9.8"
         include:
-          - { os: macOS-latest,   ghc: "9.6" }
+          - { os: macOS-latest,   ghc: "9.8" }
           # HsOpenSSL fails to build on Windows without openssl.
           # - { os: windows-latest, ghc: "9.6" }
 
@@ -41,7 +42,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Set up GHC ${{ matrix.ghc-version }}
-        uses: haskell/actions/setup@v2
+        uses: haskell-actions/setup@v2
         id: setup
         with:
           ghc-version: ${{ matrix.ghc }}
@@ -95,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: haskell/actions/setup@v2
+      - uses: haskell-actions/setup@v2
         name: Setup Haskell Stack
         with:
           ghc-version: ${{ matrix.ghc }}
