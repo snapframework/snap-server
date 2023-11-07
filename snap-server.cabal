@@ -510,6 +510,9 @@ Executable snap-test-server
       System.SendFile,
       System.SendFile.FreeBSD
 
+  if !impl(ghc >= 8.0)
+    build-depends: semigroups >= 0.16 && < 0.19
+
   build-depends:
     attoparsec,
     base,
@@ -532,7 +535,8 @@ Executable snap-test-server
     time,
     transformers,
     unix-compat,
-    vector
+    vector,
+    filepath
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
                -fno-warn-unused-do-bind -threaded -rtsopts
