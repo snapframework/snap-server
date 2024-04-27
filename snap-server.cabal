@@ -106,11 +106,11 @@ Library
     io-streams-haproxy                  >= 1.0      && < 1.1,
     lifted-base                         >= 0.1      && < 0.3,
     mtl                                 >= 2.0      && < 2.4,
-    network                             >= 2.3      && < 3.2,
+    network                             >= 2.3      && < 4,
     old-locale                          >= 1.0      && < 1.1,
     snap-core                           >= 1.0      && < 1.1,
     text                                >= 0.11     && < 2.2,
-    time                                >= 1.0      && < 1.13,
+    time                                >= 1.0      && < 2,
     transformers                        >= 0.3      && < 0.7,
     unix-compat                         >= 0.2      && < 0.8,
     vector                              >= 0.7      && < 0.14
