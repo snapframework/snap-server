@@ -330,7 +330,7 @@ Benchmark benchmark
     blaze-builder,
     bytestring,
     bytestring-builder,
-    criterion                           >= 0.6     && < 1.7,
+    criterion                           >= 0.6     && < 2,
     io-streams,
     io-streams-haproxy,
     snap-core,
