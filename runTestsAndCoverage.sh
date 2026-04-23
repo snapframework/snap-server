@@ -8,7 +8,8 @@ export LANG=C
 rm -Rf testsuite.tix
 
 # TODO How do we find the executable without knowing the version number in dist-newstyle?
-./dist-newstyle/build/snap-server-1.0.0.0/build/testsuite/testsuite -j4 -a1000 $*
+TESTSUITE=`find . -type f -perm 775 -name 'testsuite'`
+$TESTSUITE -j4 -a1000 $*
 
 DIR="./dist-newstyle/hpc"
 

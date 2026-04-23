@@ -53,10 +53,10 @@ The docs get put in `dist/doc/html/`.
 ## Building the testsuite
 
 The `snap-server` has a fairly comprehensive test suite. To build and run it,
-`cd` into the `test/` directory and run
+run
 
-    $ cabal configure            # for the stock backend, or..
-    $ cabal configure -fopenssl  # for the SSL backend
+    $ cabal configure --enable-tests            # for the stock backend, or..
+    $ cabal configure -fopenssl --enable-tests  # for the SSL backend
     
     $ cabal build
 
